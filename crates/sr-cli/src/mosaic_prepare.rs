@@ -1,12 +1,12 @@
 //! Automatic, bounded mono mosaic preparation. Input pixels are never modified.
 use crate::mosaic::{FrameSpec, Grid, Plan};
 use crate::mosaic_prepare_geometry::Catalog;
-use anyhow::{ensure, Context, Result};
+use anyhow::{Context, Result, ensure};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use sr_core::{
-    star::Star, CfaPattern, DefectMask, FrameMetadata, NoiseModel, NoiseSource, RawFrame,
-    SamplePlane,
+    CfaPattern, DefectMask, FrameMetadata, NoiseModel, NoiseSource, RawFrame, SamplePlane,
+    star::Star,
 };
 use sr_raw::window::{FitsWindowReader, SampleUnits};
 use std::{
@@ -52,14 +52,21 @@ fn stage_copy(path: &Path, stage: &Path) -> Result<(String, PathBuf)> {
             hash.update(&buffer[..count]);
             std::io::Write::write_all(&mut target, &buffer[..count])?;
         }
-        target.into_inner().map_err(|e| e.into_error())?.sync_all()?;
+        target
+            .into_inner()
+            .map_err(|e| e.into_error())?
+            .sync_all()?;
         Ok(format!("{:x}", hash.finalize()))
     })();
     let hash = match copied {
         Ok(hash) => hash,
         Err(e) => {
             let _ = fs::remove_file(&partial);
-            return Err(e.context(format!("Staging {} into {}", path.display(), stage.display())));
+            return Err(e.context(format!(
+                "Staging {} into {}",
+                path.display(),
+                stage.display()
+            )));
         }
     };
     let staged = stage.join(format!("{hash}.fits"));
@@ -102,7 +109,10 @@ pub(crate) fn collect(input: &Path) -> Result<Vec<PathBuf>> {
                 let entry = entry?;
                 let kind = entry.file_type()?;
                 if kind.is_dir() {
-                    ensure!(directories + pending.len() < 10000, "Too many input subfolders; choose a more specific folder");
+                    ensure!(
+                        directories + pending.len() < 10000,
+                        "Too many input subfolders; choose a more specific folder"
+                    );
                     pending.push(entry.path());
                 } else if kind.is_file() && sr_raw::format_of(&entry.path()).is_some() {
                     paths.push(entry.path());
@@ -222,7 +232,11 @@ fn detect(reader: &mut FitsWindowReader, noise: NoiseModel) -> Result<Vec<Star>>
     Ok(stars)
 }
 
-fn load_catalog(original: &Path, cache: &Path, stage: Option<&Path>) -> Result<(Catalog, String, u64, String)> {
+fn load_catalog(
+    original: &Path,
+    cache: &Path,
+    stage: Option<&Path>,
+) -> Result<(Catalog, String, u64, String)> {
     let before = fs::metadata(original)?;
     let (hash, staged) = match stage {
         Some(stage) => {
@@ -324,7 +338,8 @@ fn load_catalog(original: &Path, cache: &Path, stage: Option<&Path>) -> Result<(
     };
     let after = fs::metadata(path)?;
     ensure!(
-        staged.is_some() || (before.len() == after.len() && before.modified()? == after.modified()?),
+        staged.is_some()
+            || (before.len() == after.len() && before.modified()? == after.modified()?),
         "Source changed during preparation: {}",
         path.display()
     );
@@ -501,11 +516,16 @@ pub(crate) fn run(
         let grid = canvas(&frames)?;
         // Reproducible evidence for a failed photometry run, deliberately not a
         // buildable Plan: only plan.json publishes a completed preparation.
-        let mut diagnostic = fs::OpenOptions::new().write(true).create_new(true)
+        let mut diagnostic = fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
             .open(output.join("registration.json"))?;
-        serde_json::to_writer(&mut diagnostic, &serde_json::json!({
-            "frames": &frames, "pairs": &geometry.pairs, "anchor": geometry.anchor,
-        }))?;
+        serde_json::to_writer(
+            &mut diagnostic,
+            &serde_json::json!({
+                "frames": &frames, "pairs": &geometry.pairs, "anchor": geometry.anchor,
+            }),
+        )?;
         diagnostic.sync_all()?;
         drop(diagnostic);
         let stars = catalogs
@@ -586,11 +606,17 @@ mod tests {
         assert!(fs::read(&staged).unwrap() == bytes);
         // A damaged copy under the right name is replaced, not trusted.
         fs::write(&staged, b"damaged").unwrap();
-        assert_eq!(stage_copy(&source, &stage).unwrap(), (hash.clone(), staged.clone()));
+        assert_eq!(
+            stage_copy(&source, &stage).unwrap(),
+            (hash.clone(), staged.clone())
+        );
         assert!(fs::read(&staged).unwrap() == bytes);
         let (again, _) = stage_copy(&source, &stage).unwrap();
         assert_eq!(again, hash);
-        let names: Vec<_> = fs::read_dir(&stage).unwrap().map(|e| e.unwrap().file_name()).collect();
+        let names: Vec<_> = fs::read_dir(&stage)
+            .unwrap()
+            .map(|e| e.unwrap().file_name())
+            .collect();
         assert_eq!(names.len(), 1, "no partial copies left behind: {names:?}");
         fs::remove_dir_all(&root).unwrap();
     }
@@ -598,18 +624,26 @@ mod tests {
     #[test]
     fn preparation_rejects_existing_output_without_writes() {
         let root = std::env::temp_dir();
-        assert!(run(Path::new("missing"), &root, 2048, None, None)
-            .unwrap_err()
-            .to_string()
-            .contains("already exists"));
+        assert!(
+            run(Path::new("missing"), &root, 2048, None, None)
+                .unwrap_err()
+                .to_string()
+                .contains("already exists")
+        );
     }
     #[test]
     fn invalid_budget_fails_before_input_access() {
         assert!(
-            run(Path::new("missing"), Path::new("missing-output"), 0, None, None)
-                .unwrap_err()
-                .to_string()
-                .contains("budget")
+            run(
+                Path::new("missing"),
+                Path::new("missing-output"),
+                0,
+                None,
+                None
+            )
+            .unwrap_err()
+            .to_string()
+            .contains("budget")
         );
     }
     #[test]

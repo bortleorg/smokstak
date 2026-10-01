@@ -2,7 +2,7 @@
 use std::collections::{HashMap, VecDeque};
 use std::path::{Path, PathBuf};
 
-use anyhow::{bail, ensure, Context, Result};
+use anyhow::{Context, Result, bail, ensure};
 use sr_core::projection::FrameProjection;
 use sr_core::{
     CfaPattern, DefectMask, FrameMetadata, NoiseModel, RawFrame, Rect, SamplePlane, WarpField,
@@ -57,9 +57,10 @@ impl BandCache {
 
     fn evict(&mut self) {
         if let Some(key) = self.order.pop_front()
-            && let Some(band) = self.bands.remove(&key) {
-                self.bytes -= band.capacity() * std::mem::size_of::<f32>();
-            }
+            && let Some(band) = self.bands.remove(&key)
+        {
+            self.bytes -= band.capacity() * std::mem::size_of::<f32>();
+        }
     }
 }
 
@@ -89,7 +90,10 @@ impl PreparedSource {
         let reader = FitsWindowReader::open(path, &sr_raw::ReadOptions::default())
             .with_context(|| format!("opening mosaic source {}", path.display()))?;
         if reader.sample_units() == SampleUnits::PhysicalFloat {
-            bail!("{}: calibrated floating-point sources are not supported by this mosaic merge yet; the merger excludes values outside (0, 1)", path.display());
+            bail!(
+                "{}: calibrated floating-point sources are not supported by this mosaic merge yet; the merger excludes values outside (0, 1)",
+                path.display()
+            );
         }
         let (width, height) = reader.dimensions();
         let warp = projection
@@ -212,16 +216,32 @@ impl PreparedSource {
 
     /// The same samples as `read_rect`, assembled from cached full-width bands.
     /// `index` identifies this source in the shared cache.
-    pub fn read_rect_cached(&mut self, index: usize, rect: Rect, cache: &mut BandCache) -> Result<SourceTile> {
-        ensure!(rect.width > 0 && rect.height > 0
-            && rect.x + rect.width <= self.width && rect.y + rect.height <= self.height,
-            "cached source window outside {}", self.path.display());
+    pub fn read_rect_cached(
+        &mut self,
+        index: usize,
+        rect: Rect,
+        cache: &mut BandCache,
+    ) -> Result<SourceTile> {
+        ensure!(
+            rect.width > 0
+                && rect.height > 0
+                && rect.x + rect.width <= self.width
+                && rect.y + rect.height <= self.height,
+            "cached source window outside {}",
+            self.path.display()
+        );
         let mut values = vec![0.; rect.width * rect.height];
-        for band_y in (rect.y / BAND_ROWS..=(rect.y + rect.height - 1) / BAND_ROWS).map(|b| b * BAND_ROWS) {
+        for band_y in
+            (rect.y / BAND_ROWS..=(rect.y + rect.height - 1) / BAND_ROWS).map(|b| b * BAND_ROWS)
+        {
             let key = (index, band_y);
             if cache.bands.contains_key(&key) {
                 cache.hits += 1;
-                let position = cache.order.iter().position(|k| *k == key).expect("cached band is ordered");
+                let position = cache
+                    .order
+                    .iter()
+                    .position(|k| *k == key)
+                    .expect("cached band is ordered");
                 cache.order.remove(position);
             } else {
                 cache.misses += 1;
@@ -241,7 +261,8 @@ impl PreparedSource {
             for y in first..last {
                 let source = (y - band_y) * self.width + rect.x;
                 let target = (y - rect.y) * rect.width;
-                values[target..target + rect.width].copy_from_slice(&band[source..source + rect.width]);
+                values[target..target + rect.width]
+                    .copy_from_slice(&band[source..source + rect.width]);
             }
         }
         // A band larger than the whole capacity is used once and not retained.
@@ -351,11 +372,20 @@ mod tests {
     fn cached_windows_match_direct_reads_under_any_capacity() {
         static NEXT: AtomicU64 = AtomicU64::new(0);
         let path = std::env::temp_dir().join(format!(
-            "mosaic-bands-{}-{}.fits", std::process::id(), NEXT.fetch_add(1, Ordering::Relaxed)));
+            "mosaic-bands-{}-{}.fits",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed)
+        ));
         let (width, height) = (37, 3 * BAND_ROWS + 11);
         let mut bytes = String::new();
-        for (key, value) in [("SIMPLE", "T".to_string()), ("BITPIX", "16".into()), ("NAXIS", "2".into()),
-            ("NAXIS1", width.to_string()), ("NAXIS2", height.to_string()), ("BZERO", "32768".into())] {
+        for (key, value) in [
+            ("SIMPLE", "T".to_string()),
+            ("BITPIX", "16".into()),
+            ("NAXIS", "2".into()),
+            ("NAXIS1", width.to_string()),
+            ("NAXIS2", height.to_string()),
+            ("BZERO", "32768".into()),
+        ] {
             bytes.push_str(&format!("{:<80}", format!("{key:<8}= {value}")));
         }
         bytes.push_str(&format!("{:<80}", "END"));
@@ -369,8 +399,14 @@ mod tests {
         let noise = NoiseModel::nominal(100.0, 65535.0);
         let mut source = PreparedSource::open(&path, &projection(), noise).unwrap();
         let band = BAND_ROWS * width * 4;
-        let windows = [Rect::new(0, 0, 37, 5), Rect::new(3, 60, 20, 80), Rect::new(10, 150, 27, 53),
-            Rect::new(0, 0, 37, height), Rect::new(36, 200, 1, 3), Rect::new(3, 60, 20, 80)];
+        let windows = [
+            Rect::new(0, 0, 37, 5),
+            Rect::new(3, 60, 20, 80),
+            Rect::new(10, 150, 27, 53),
+            Rect::new(0, 0, 37, height),
+            Rect::new(36, 200, 1, 3),
+            Rect::new(3, 60, 20, 80),
+        ];
         for capacity in [0, band / 2, band, 2 * band, 100 * band] {
             let mut cache = BandCache::default();
             cache.set_capacity(capacity);
@@ -379,10 +415,18 @@ mod tests {
                 let cached = source.read_rect_cached(0, rect, &mut cache).unwrap().frame;
                 for y in 0..rect.height {
                     for x in 0..rect.width {
-                        assert_eq!(cached.value(x, y), direct.value(x, y), "capacity {capacity} {rect:?}");
+                        assert_eq!(
+                            cached.value(x, y),
+                            direct.value(x, y),
+                            "capacity {capacity} {rect:?}"
+                        );
                     }
                 }
-                assert!(cache.bytes() <= capacity, "capacity {capacity}: {} retained", cache.bytes());
+                assert!(
+                    cache.bytes() <= capacity,
+                    "capacity {capacity}: {} retained",
+                    cache.bytes()
+                );
             }
             if capacity >= 4 * band {
                 assert!(cache.hits > 0);
@@ -453,16 +497,22 @@ mod tests {
                 }
             }
         }
-        assert!(source
-            .source_rect((0.0, 0.0), Rect::new(10000, 10000, 10, 10), 1.0, 2.0)
-            .unwrap()
-            .is_none());
-        assert!(source
-            .source_rect((0.0, 0.0), Rect::new(0, 0, 10, 10), 0.0, 2.0)
-            .is_err());
-        assert!(source
-            .source_rect((0.0, 0.0), Rect::new(usize::MAX, 0, 10, 10), 1.0, 2.0)
-            .is_err());
+        assert!(
+            source
+                .source_rect((0.0, 0.0), Rect::new(10000, 10000, 10, 10), 1.0, 2.0)
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            source
+                .source_rect((0.0, 0.0), Rect::new(0, 0, 10, 10), 0.0, 2.0)
+                .is_err()
+        );
+        assert!(
+            source
+                .source_rect((0.0, 0.0), Rect::new(usize::MAX, 0, 10, 10), 1.0, 2.0)
+                .is_err()
+        );
     }
     #[test]
     fn calibrated_float_sources_are_explicitly_refused() {

@@ -27,7 +27,7 @@ use sr_core::plane::Plane;
 use sr_reconstruct::kernel::KernelField;
 use sr_reconstruct::robustness::RobustnessMaps;
 use sr_synth::metrics::{
-    compare, compare_excluding, slanted_edge_mtf, star_chroma, Comparison, MtfResult, StarChroma,
+    Comparison, MtfResult, StarChroma, compare, compare_excluding, slanted_edge_mtf, star_chroma,
 };
 use sr_synth::{SynthBurst, SynthConfig};
 
@@ -64,21 +64,13 @@ impl Scenario {
     /// image and the merge starts from much closer. Holding it to the mosaic
     /// margin would not be a stricter test, it would be a different one.
     fn psnr_margin_db(&self) -> f32 {
-        if self.config.mono {
-            0.3
-        } else {
-            1.0
-        }
+        if self.config.mono { 0.3 } else { 1.0 }
     }
 
     /// The same, for resolution: on a monochrome burst the merge has to resolve
     /// more than one frame does, rather than more by a set fraction.
     fn mtf_margin(&self) -> f32 {
-        if self.config.mono {
-            1.0
-        } else {
-            1.05
-        }
+        if self.config.mono { 1.0 } else { 1.05 }
     }
 }
 
@@ -113,13 +105,21 @@ fn scenarios(frames: usize, sensor: usize) -> Vec<Scenario> {
         Scenario {
             name: "static",
             description: "no inter-frame motion at all",
-            config: SynthConfig { shift_sigma: 0.0, seed: 0xC0C0, ..base.clone() },
+            config: SynthConfig {
+                shift_sigma: 0.0,
+                seed: 0xC0C0,
+                ..base.clone()
+            },
             expect_super_resolution: false,
         },
         Scenario {
             name: "motion",
             description: "an object crossing the frame in half the exposures",
-            config: SynthConfig { moving_object: true, seed: 0xD1CE, ..base.clone() },
+            config: SynthConfig {
+                moving_object: true,
+                seed: 0xD1CE,
+                ..base.clone()
+            },
             expect_super_resolution: true,
         },
         Scenario {
@@ -136,7 +136,11 @@ fn scenarios(frames: usize, sensor: usize) -> Vec<Scenario> {
         Scenario {
             name: "hotpixels",
             description: "a sensor with bad sites that no dark frame declared",
-            config: SynthConfig { hot_pixels: 150, seed: 0x5EED, ..base.clone() },
+            config: SynthConfig {
+                hot_pixels: 150,
+                seed: 0x5EED,
+                ..base.clone()
+            },
             expect_super_resolution: true,
         },
         Scenario {
@@ -229,7 +233,12 @@ fn score_registration(
 /// Baseline A: the best single frame, demosaiced and interpolated up to the
 /// output size. If multi-frame reconstruction cannot beat this, it is not
 /// contributing anything.
-fn single_frame_baseline(frame: &RawFrame, scale: f32, out_w: usize, out_h: usize) -> [Plane<f32>; 3] {
+fn single_frame_baseline(
+    frame: &RawFrame,
+    scale: f32,
+    out_w: usize,
+    out_h: usize,
+) -> [Plane<f32>; 3] {
     let rgb = as_three(&sr_raw::demosaic_bilinear(frame), frame.channels());
     let mut out = [
         Plane::<f32>::new(out_w, out_h),
@@ -297,7 +306,11 @@ fn compare_region(
     let w = w.min(recon[0].width.saturating_sub(x));
     let h = h.min(recon[0].height.saturating_sub(y));
     let crop = |p: &[Plane<f32>; 3]| {
-        [p[0].crop(x, y, w, h), p[1].crop(x, y, w, h), p[2].crop(x, y, w, h)]
+        [
+            p[0].crop(x, y, w, h),
+            p[1].crop(x, y, w, h),
+            p[2].crop(x, y, w, h),
+        ]
     };
     compare(&crop(recon), &crop(truth), 2)
 }
@@ -322,8 +335,7 @@ fn run_scenario(
     let scale = sc.config.scale;
 
     // Same entry points the real pipeline uses.
-    let guide_luma: Vec<Plane<f32>> =
-        synth.frames.iter().map(|f| f.guide_rgb().luma()).collect();
+    let guide_luma: Vec<Plane<f32>> = synth.frames.iter().map(|f| f.guide_rgb().luma()).collect();
     let mut qualities: Vec<sr_core::frame::FrameQuality> = guide_luma
         .iter()
         .zip(&synth.frames)
@@ -346,7 +358,9 @@ fn run_scenario(
 
     let proxies: Vec<sr_register::pyramid::RegistrationImage> = guide_luma
         .iter()
-        .map(|l| sr_register::pyramid::RegistrationImage::build(l, cfg_base.registration.pyramid_levels))
+        .map(|l| {
+            sr_register::pyramid::RegistrationImage::build(l, cfg_base.registration.pyramid_levels)
+        })
         .collect();
     let mut choice =
         sr_register::reference::select_reference(&proxies, &qualities, &cfg_base.registration);
@@ -387,7 +401,11 @@ fn run_scenario(
     );
 
     let reg_score = score_registration(&synth, &warps, choice.index, sensor);
-    println!("reference frame: {} of {}", choice.index, synth.frames.len());
+    println!(
+        "reference frame: {} of {}",
+        choice.index,
+        synth.frames.len()
+    );
     println!(
         "registration: global RMS {:.3} px, worst {:.3} px, full-field RMS {:.3} px, local warp {}",
         reg_score.global_rms,
@@ -414,7 +432,11 @@ fn run_scenario(
             .filter(|r| r.probes > 0)
             .map(|r| r.residual_rms)
             .collect();
-        if rms.is_empty() { 0.5 } else { sr_core::math::median(&rms) * 2.0 }
+        if rms.is_empty() {
+            0.5
+        } else {
+            sr_core::math::median(&rms) * 2.0
+        }
     };
 
     // Fixed-pattern defects, found the way the real pipeline finds them: from
@@ -426,8 +448,11 @@ fn run_scenario(
     // the gate holds.
     let burst_motion = {
         let c = sensor as f32 * 0.5;
-        let centres: Vec<(f32, f32)> =
-            synth.true_warps.iter().map(|w| w.global.apply(c, c)).collect();
+        let centres: Vec<(f32, f32)> = synth
+            .true_warps
+            .iter()
+            .map(|w| w.global.apply(c, c))
+            .collect();
         let xs: Vec<f32> = centres.iter().map(|p| p.0).collect();
         let ys: Vec<f32> = centres.iter().map(|p| p.1).collect();
         let (mx, my) = (sr_core::math::median(&xs), sr_core::math::median(&ys));
@@ -438,11 +463,10 @@ fn run_scenario(
         sr_core::math::median(&d)
     };
     let defects = if cfg_base.detect_defects && burst_motion >= sr_noise::defects::MIN_MOTION_PX {
-        let (mask, report) =
-            sr_noise::defects::find_fixed_pattern(
-                &synth.frames.iter().collect::<Vec<_>>(),
-                &sc.config.noise,
-            );
+        let (mask, report) = sr_noise::defects::find_fixed_pattern(
+            &synth.frames.iter().collect::<Vec<_>>(),
+            &sc.config.noise,
+        );
         for f in synth.frames.iter_mut() {
             f.defects = mask.clone();
         }
@@ -462,9 +486,9 @@ fn run_scenario(
             choice.index,
             &synth.exposure_scale,
         )
-            .iter()
-            .map(|p| p.map)
-            .collect()
+        .iter()
+        .map(|p| p.map)
+        .collect()
     } else {
         synth
             .exposure_scale
@@ -505,7 +529,11 @@ fn run_scenario(
     // A monochrome sensor measures the latent's green channel, so that is the
     // truth its reconstruction is scored against.
     let truth = if sc.config.mono {
-        [synth.truth[1].clone(), synth.truth[1].clone(), synth.truth[1].clone()]
+        [
+            synth.truth[1].clone(),
+            synth.truth[1].clone(),
+            synth.truth[1].clone(),
+        ]
     } else {
         synth.truth.clone()
     };
@@ -554,16 +582,22 @@ fn run_scenario(
         (Backend::HandheldBurstSr, "burst SR (structure-aware)"),
     ];
     for (backend, label) in backends {
-        let cfg = ReconstructionConfig { backend, ..cfg_base.clone() };
+        let cfg = ReconstructionConfig {
+            backend,
+            ..cfg_base.clone()
+        };
         let kernel_guide = synth.frames[choice.index].structure_guide_rgb().luma();
         let ref_luma = &kernel_guide;
         let noise_sigma = sr_reconstruct::kernel::guide_noise_sigma(ref_luma)
             .max(0.05 * sc.config.noise.std_dev(ref_luma.mean().max(0.0)));
         let kernels = match backend {
-            Backend::HandheldBurstSr => {
-                KernelField::for_sensor(ref_luma, noise_sigma, synth.frames.len(),
-                    synth.frames[choice.index].cfa, &cfg.kernel)
-            }
+            Backend::HandheldBurstSr => KernelField::for_sensor(
+                ref_luma,
+                noise_sigma,
+                synth.frames.len(),
+                synth.frames[choice.index].cfa,
+                &cfg.kernel,
+            ),
             _ => KernelField::isotropic(
                 ref_luma.width,
                 ref_luma.height,
@@ -612,11 +646,7 @@ fn run_scenario(
                 product.channels,
             )?;
             let p = out_dir.join(format!("{}-{}.tif", sc.name, backend.name()));
-            sr_output::write_product16(
-                &p,
-                &sr_color::to_rendered(&product.rgb),
-                product.channels,
-            )?;
+            sr_output::write_product16(&p, &sr_color::to_rendered(&product.rgb), product.channels)?;
         }
     }
 
@@ -624,8 +654,14 @@ fn run_scenario(
         std::fs::create_dir_all(out_dir)?;
         // Keep native values for downstream accuracy audits. The display
         // TIFFs clip highlights and cannot establish linear colour accuracy.
-        sr_output::write_rgb32f(&out_dir.join(format!("{}-truth.linear.tif", sc.name)), &truth)?;
-        sr_output::write_rgb32f(&out_dir.join(format!("{}-single-frame.linear.tif", sc.name)), &single)?;
+        sr_output::write_rgb32f(
+            &out_dir.join(format!("{}-truth.linear.tif", sc.name)),
+            &truth,
+        )?;
+        sr_output::write_rgb32f(
+            &out_dir.join(format!("{}-single-frame.linear.tif", sc.name)),
+            &single,
+        )?;
         sr_output::write_rgb16(
             &out_dir.join(format!("{}-truth.tif", sc.name)),
             &sr_color::to_rendered(&truth),
@@ -655,12 +691,22 @@ fn run_scenario(
             s.label,
             s.comparison.psnr_mean_db,
             s.comparison.ssim,
-            s.mtf.as_ref().map(|m| format!("{:.4}", m.mtf50)).unwrap_or_else(|| "-".into()),
-            s.mtf.as_ref().map(|m| format!("{:.3}", m.overshoot)).unwrap_or_else(|| "-".into()),
+            s.mtf
+                .as_ref()
+                .map(|m| format!("{:.4}", m.mtf50))
+                .unwrap_or_else(|| "-".into()),
+            s.mtf
+                .as_ref()
+                .map(|m| format!("{:.3}", m.overshoot))
+                .unwrap_or_else(|| "-".into()),
             s.comparison.chroma_error,
             s.texture.psnr_mean_db,
-            s.chroma.map(|c| format!("{:.4}", c.core_scatter)).unwrap_or_else(|| "-".into()),
-            s.chroma.map(|c| format!("{:.4}", c.halo_drift)).unwrap_or_else(|| "-".into()),
+            s.chroma
+                .map(|c| format!("{:.4}", c.core_scatter))
+                .unwrap_or_else(|| "-".into()),
+            s.chroma
+                .map(|c| format!("{:.4}", c.halo_drift))
+                .unwrap_or_else(|| "-".into()),
             s.elapsed_ms
         );
     }
@@ -709,8 +755,7 @@ fn run_scenario(
             ),
         );
         check(
-            burst_sr.comparison.psnr_mean_db
-                > single.comparison.psnr_mean_db + sc.psnr_margin_db(),
+            burst_sr.comparison.psnr_mean_db > single.comparison.psnr_mean_db + sc.psnr_margin_db(),
             format!(
                 "burst SR beats a single interpolated frame by {:.2} dB",
                 burst_sr.comparison.psnr_mean_db - single.comparison.psnr_mean_db
@@ -797,12 +842,18 @@ fn run_scenario(
             / robustness.rejected_fraction.len() as f32;
         check(
             mean_rejected > 0.001,
-            format!("the moving object was detected and rejected ({:.3}% of samples)", mean_rejected * 100.0),
+            format!(
+                "the moving object was detected and rejected ({:.3}% of samples)",
+                mean_rejected * 100.0
+            ),
         );
     }
 
     if sc.name == "turbulence" {
-        check(local_applied, "local warp refinement engaged on a deformed burst".into());
+        check(
+            local_applied,
+            "local warp refinement engaged on a deformed burst".into(),
+        );
     }
 
     if sc.name == "static" {
@@ -832,11 +883,7 @@ fn run_scenario(
         // miss nor a defect anyone is harmed by.
         planted.retain(|&i| {
             let (x, y) = (i % n, i / n);
-            let buried = synth
-                .frames
-                .iter()
-                .filter(|f| f.value(x, y) >= 1.0)
-                .count();
+            let buried = synth.frames.iter().filter(|f| f.value(x, y) >= 1.0).count();
             buried * 2 <= synth.frames.len()
         });
         let (mask, report) = defects.as_ref().expect("the defect scan runs by default");
@@ -913,7 +960,14 @@ pub fn run(
             }
         }
     }
-    println!("\n{}", if all_ok { "All checks passed." } else { "Some checks FAILED." });
+    println!(
+        "\n{}",
+        if all_ok {
+            "All checks passed."
+        } else {
+            "Some checks FAILED."
+        }
+    );
     if keep {
         println!("Outputs kept in {}", out.display());
     }

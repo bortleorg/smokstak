@@ -10,20 +10,20 @@
 //! knows which it is looking at.
 
 pub mod fits;
-pub mod window;
 mod validate;
+pub mod window;
 pub mod xisf;
 
 pub use fits::RowOrder;
-pub use validate::{exposure_level, validate_burst, BurstValidation, FieldReport, Severity};
+pub use validate::{BurstValidation, FieldReport, Severity, exposure_level, validate_burst};
 
 use std::fs::File;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
+use rawler::RawImageData;
 use rawler::rawimage::RawPhotometricInterpretation;
 use rawler::rawsource::RawSource;
-use rawler::RawImageData;
 use sha2::{Digest, Sha256};
 
 use sr_core::cfa::{CfaColor, CfaPattern};
@@ -169,10 +169,9 @@ pub fn collect_files(input: &Path, pattern: Option<&str>) -> Result<Vec<PathBuf>
     out.sort();
     if out.is_empty() {
         return Err(match &want {
-            Some(w) if !w.is_empty() => SrError::Input(format!(
-                "no files matching *.{w} under {}",
-                input.display()
-            )),
+            Some(w) if !w.is_empty() => {
+                SrError::Input(format!("no files matching *.{w} under {}", input.display()))
+            }
             _ => SrError::Input(format!(
                 "no camera raw, FITS or XISF files under {}; recognised extensions are {}, {}                  and {}",
                 input.display(),
@@ -224,17 +223,27 @@ fn read_file_list(list: &Path, pattern: Option<&str>) -> Result<Vec<PathBuf>> {
             raw.to_path_buf()
         } else {
             let beside = base.join(raw);
-            if beside.is_file() { beside } else { raw.to_path_buf() }
+            if beside.is_file() {
+                beside
+            } else {
+                raw.to_path_buf()
+            }
         };
         let where_ = format!("{}, line {}", list.display(), n + 1);
         if !p.is_file() {
-            return Err(SrError::Input(format!("{}: {} is not a file", where_, p.display())));
+            return Err(SrError::Input(format!(
+                "{}: {} is not a file",
+                where_,
+                p.display()
+            )));
         }
         let ext = extension_of(&p);
         if let Some(w) = &want
-            && !w.is_empty() && &ext != w {
-                continue;
-            }
+            && !w.is_empty()
+            && &ext != w
+        {
+            continue;
+        }
         if format_of(&p).is_none() {
             return Err(SrError::Input(format!(
                 "{}: {} is not a format we read; recognised extensions are {}, {} and {}",
@@ -258,7 +267,10 @@ fn read_file_list(list: &Path, pattern: Option<&str>) -> Result<Vec<PathBuf>> {
         )));
     }
     if out.is_empty() {
-        return Err(SrError::Input(format!("{} names no frames", list.display())));
+        return Err(SrError::Input(format!(
+            "{} names no frames",
+            list.display()
+        )));
     }
     // Sorted like a directory listing, so the same set of frames produces the
     // same reference and the same result however the list was ordered.
@@ -304,7 +316,10 @@ pub fn deduplicate(paths: Vec<PathBuf>) -> (Vec<PathBuf>, Vec<Duplicate>) {
             // report it far better than this can.
             None => kept.push(p),
             Some(d) => match seen.get(&d) {
-                Some(first) => dropped.push(Duplicate { dropped: p, same_as: first.clone() }),
+                Some(first) => dropped.push(Duplicate {
+                    dropped: p,
+                    same_as: first.clone(),
+                }),
                 None => {
                     seen.insert(d, p.clone());
                     kept.push(p);
@@ -384,7 +399,11 @@ fn colour_matrix(img: &rawler::RawImage) -> [[f32; 3]; 3] {
                 out[r][c] = m[r * 3 + c];
             }
         }
-        if out.iter().flatten().any(|v| v.is_finite() && v.abs() > 1e-6) {
+        if out
+            .iter()
+            .flatten()
+            .any(|v| v.is_finite() && v.abs() > 1e-6)
+        {
             return out;
         }
     }
@@ -427,8 +446,8 @@ pub fn decode_with(path: &Path, opts: &ReadOptions) -> Result<RawFrame> {
 /// rather than clamped, and flagged in the mask, so downstream stages can tell
 /// "dark" from "clipped".
 fn decode_camera_raw(path: &Path) -> Result<RawFrame> {
-    let src = RawSource::new(path)
-        .map_err(|e| SrError::Input(format!("{}: {e}", path.display())))?;
+    let src =
+        RawSource::new(path).map_err(|e| SrError::Input(format!("{}: {e}", path.display())))?;
     let decoder = rawler::get_decoder(&src)
         .map_err(|e| SrError::Input(format!("{}: {e}", path.display())))?;
     let params = rawler::decoders::RawDecodeParams::default();
@@ -480,7 +499,7 @@ fn decode_camera_raw(path: &Path) -> Result<RawFrame> {
             return Err(SrError::Input(format!(
                 "{}: floating point RAW is not handled in v0",
                 path.display()
-            )))
+            )));
         }
     };
     if data.len() < full_w * full_h {
@@ -514,9 +533,21 @@ fn decode_camera_raw(path: &Path) -> Result<RawFrame> {
 
     let wb = img.wb_coeffs;
     let wb_rgb = [
-        if wb[0].is_finite() && wb[0] > 0.0 { wb[0] } else { 1.0 },
-        if wb[1].is_finite() && wb[1] > 0.0 { wb[1] } else { 1.0 },
-        if wb[2].is_finite() && wb[2] > 0.0 { wb[2] } else { 1.0 },
+        if wb[0].is_finite() && wb[0] > 0.0 {
+            wb[0]
+        } else {
+            1.0
+        },
+        if wb[1].is_finite() && wb[1] > 0.0 {
+            wb[1]
+        } else {
+            1.0
+        },
+        if wb[2].is_finite() && wb[2] > 0.0 {
+            wb[2]
+        } else {
+            1.0
+        },
     ];
 
     let metadata = FrameMetadata {
@@ -553,7 +584,15 @@ fn decode_camera_raw(path: &Path) -> Result<RawFrame> {
         sha256_prefix: sha256_prefix(path).unwrap_or_default(),
     };
 
-    Ok(RawFrame { width: cw, height: ch, samples, cfa, defects, noise, metadata })
+    Ok(RawFrame {
+        width: cw,
+        height: ch,
+        samples,
+        cfa,
+        defects,
+        noise,
+        metadata,
+    })
 }
 
 /// Decode a whole burst in parallel.
@@ -576,8 +615,16 @@ pub fn decode_all(paths: &[PathBuf], opts: &ReadOptions) -> Result<Vec<RawFrame>
 /// preview output — never as reconstruction input.
 pub fn demosaic_bilinear(frame: &RawFrame) -> [Plane<f32>; 3] {
     let (w, h) = (frame.width, frame.height);
-    let mut sum = [Plane::<f32>::new(w, h), Plane::<f32>::new(w, h), Plane::<f32>::new(w, h)];
-    let mut cnt = [Plane::<f32>::new(w, h), Plane::<f32>::new(w, h), Plane::<f32>::new(w, h)];
+    let mut sum = [
+        Plane::<f32>::new(w, h),
+        Plane::<f32>::new(w, h),
+        Plane::<f32>::new(w, h),
+    ];
+    let mut cnt = [
+        Plane::<f32>::new(w, h),
+        Plane::<f32>::new(w, h),
+        Plane::<f32>::new(w, h),
+    ];
 
     // Scatter each measured site into its own channel, then fill the gaps from
     // the neighbourhood of the same channel.
@@ -592,7 +639,11 @@ pub fn demosaic_bilinear(frame: &RawFrame) -> [Plane<f32>; 3] {
             }
         }
     }
-    let mut out = [Plane::<f32>::new(w, h), Plane::<f32>::new(w, h), Plane::<f32>::new(w, h)];
+    let mut out = [
+        Plane::<f32>::new(w, h),
+        Plane::<f32>::new(w, h),
+        Plane::<f32>::new(w, h),
+    ];
     // A monochrome sensor's sites are all recorded as green, so only the middle
     // plane is filled. Everything downstream expects a monochrome image in the
     // shape a monochrome reconstruction has — channel 0, and nothing else — so
@@ -651,7 +702,11 @@ pub fn cfa_histogram(frame: &RawFrame) -> [f32; 3] {
         }
     }
     let total = (n[0] + n[1] + n[2]).max(1) as f32;
-    [n[0] as f32 / total, n[1] as f32 / total, n[2] as f32 / total]
+    [
+        n[0] as f32 / total,
+        n[1] as f32 / total,
+        n[2] as f32 / total,
+    ]
 }
 
 /// Colour of the CFA site, exposed for callers that only hold a pattern.
@@ -727,7 +782,10 @@ mod dedup_tests {
         let a = write(&dir, "a.fit", b"real");
         let missing = dir.join("gone.fit");
         let (kept, dropped) = deduplicate(vec![a, missing.clone()]);
-        assert!(kept.contains(&missing), "an unreadable file was silently dropped");
+        assert!(
+            kept.contains(&missing),
+            "an unreadable file was silently dropped"
+        );
         assert!(dropped.is_empty());
         std::fs::remove_dir_all(&dir).ok();
     }

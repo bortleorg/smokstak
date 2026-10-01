@@ -80,13 +80,25 @@ impl ColorTransform {
     /// matrix alone would introduce a colour cast.
     pub fn from_metadata(meta: &FrameMetadata) -> ColorTransform {
         let wb = {
-            let g = if meta.wb_coeffs[1].abs() > 1e-6 { meta.wb_coeffs[1] } else { 1.0 };
+            let g = if meta.wb_coeffs[1].abs() > 1e-6 {
+                meta.wb_coeffs[1]
+            } else {
+                1.0
+            };
             [meta.wb_coeffs[0] / g, 1.0, meta.wb_coeffs[2] / g]
         };
         let wb = [
-            if wb[0].is_finite() && wb[0] > 0.0 { wb[0] } else { 1.0 },
+            if wb[0].is_finite() && wb[0] > 0.0 {
+                wb[0]
+            } else {
+                1.0
+            },
             1.0,
-            if wb[2].is_finite() && wb[2] > 0.0 { wb[2] } else { 1.0 },
+            if wb[2].is_finite() && wb[2] > 0.0 {
+                wb[2]
+            } else {
+                1.0
+            },
         ];
 
         let xyz_to_cam = meta.xyz_to_cam;
@@ -115,7 +127,11 @@ impl ColorTransform {
         }
 
         match mat3_inverse(&rgb_to_cam) {
-            Some(m) => ColorTransform { wb, cam_to_srgb: m, fallback: false },
+            Some(m) => ColorTransform {
+                wb,
+                cam_to_srgb: m,
+                fallback: false,
+            },
             None => ColorTransform {
                 wb,
                 cam_to_srgb: [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
@@ -275,11 +291,19 @@ fn encoding_with(rgb: &[Plane<f32>; 3], encode: bool) -> Encoding {
         .step_by(stride)
         .map(|i| {
             let l = 0.2126 * rgb[0].data[i] + 0.7152 * rgb[1].data[i] + 0.0722 * rgb[2].data[i];
-            if encode { srgb_encode(l) } else { l.clamp(0.0, 1.0) }
+            if encode {
+                srgb_encode(l)
+            } else {
+                l.clamp(0.0, 1.0)
+            }
         })
         .collect();
     lum.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-    let sky = if lum.is_empty() { 0.0 } else { lum[lum.len() / 2] };
+    let sky = if lum.is_empty() {
+        0.0
+    } else {
+        lum[lum.len() / 2]
+    };
     Encoding {
         sky,
         headroom: (1.0 - sky).max(0.0),
@@ -386,7 +410,11 @@ mod tests {
     use super::*;
 
     fn meta_with(xyz_to_cam: [[f32; 3]; 3], wb: [f32; 3]) -> FrameMetadata {
-        FrameMetadata { xyz_to_cam, wb_coeffs: wb, ..Default::default() }
+        FrameMetadata {
+            xyz_to_cam,
+            wb_coeffs: wb,
+            ..Default::default()
+        }
     }
 
     #[test]
@@ -407,7 +435,10 @@ mod tests {
         ];
         t.apply(&mut rgb);
         let (r, g, b) = (rgb[0].data[0], rgb[1].data[0], rgb[2].data[0]);
-        assert!((r - g).abs() < 1e-3 && (b - g).abs() < 1e-3, "not neutral: {r} {g} {b}");
+        assert!(
+            (r - g).abs() < 1e-3 && (b - g).abs() < 1e-3,
+            "not neutral: {r} {g} {b}"
+        );
         assert!((g - 0.5).abs() < 1e-3, "brightness changed: {g}");
     }
 
@@ -426,7 +457,10 @@ mod tests {
 
     #[test]
     fn white_balance_is_green_normalised() {
-        let t = ColorTransform::from_metadata(&meta_with([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]], [2.0, 1.0, 1.5]));
+        let t = ColorTransform::from_metadata(&meta_with(
+            [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
+            [2.0, 1.0, 1.5],
+        ));
         assert!((t.wb[1] - 1.0).abs() < 1e-9);
         assert!((t.wb[0] - 2.0).abs() < 1e-6);
     }
@@ -468,7 +502,11 @@ mod encoding_tests {
     fn a_dark_sky_leaves_the_range_above_it() {
         let e = encoding_of(&image(64, 64, [0.10, 0.17, 0.12]));
         assert!(e.sky < 0.5, "sky at {} of full scale", e.sky);
-        assert!(e.headroom > 0.5, "only {} of range above the sky", e.headroom);
+        assert!(
+            e.headroom > 0.5,
+            "only {} of range above the sky",
+            e.headroom
+        );
         assert_eq!(e.clipped, [0, 0, 0]);
         assert_eq!(e.uneven, 0);
     }
@@ -479,7 +517,11 @@ mod encoding_tests {
         // background alone occupies most of what the file can hold.
         let e = encoding_of(&image(64, 64, [0.22, 0.39, 0.27]));
         assert!(e.sky > 0.55, "sky at only {} of full scale", e.sky);
-        assert!(e.headroom < 0.45, "{} of range left above the sky", e.headroom);
+        assert!(
+            e.headroom < 0.45,
+            "{} of range left above the sky",
+            e.headroom
+        );
     }
 
     #[test]
@@ -511,7 +553,6 @@ mod encoding_tests {
         assert_eq!(e, Encoding::default());
         assert_eq!(e.uneven_fraction(), 0.0);
     }
-
 }
 
 #[cfg(test)]
@@ -525,7 +566,11 @@ mod sky_span_tests {
             Plane::filled(90, 90, 0.17f32),
             Plane::filled(90, 90, 0.12f32),
         ]);
-        assert!(e.sky_span < 0.01, "a flat sky reported a span of {}", e.sky_span);
+        assert!(
+            e.sky_span < 0.01,
+            "a flat sky reported a span of {}",
+            e.sky_span
+        );
     }
 
     #[test]
@@ -564,6 +609,10 @@ mod sky_span_tests {
             }
         }
         let e = encoding_of(&p);
-        assert!(e.sky_span < 0.01, "stars were read as a gradient: {}", e.sky_span);
+        assert!(
+            e.sky_span < 0.01,
+            "stars were read as a gradient: {}",
+            e.sky_span
+        );
     }
 }

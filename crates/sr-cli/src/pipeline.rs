@@ -77,12 +77,19 @@ fn estimate_chromatic_aberration(
 fn chroma_sample_indices(weights: &[f32], reference: usize) -> Vec<usize> {
     // Rejected exposures must not change the optical correction applied to
     // accepted ones. Space probes through contributors, not the loaded burst.
-    let active: Vec<_> = weights.iter().enumerate()
-        .filter_map(|(i, &w)| (w.is_finite() && w > 0.0).then_some(i)).collect();
+    let active: Vec<_> = weights
+        .iter()
+        .enumerate()
+        .filter_map(|(i, &w)| (w.is_finite() && w > 0.0).then_some(i))
+        .collect();
     let n = active.len();
-    if n <= 6 { return active; }
+    if n <= 6 {
+        return active;
+    }
     let mut sample: Vec<_> = (0..6).map(|k| active[k * (n - 1) / 5]).collect();
-    if active.contains(&reference) { sample.push(reference); }
+    if active.contains(&reference) {
+        sample.push(reference);
+    }
     sample.sort_unstable();
     sample.dedup();
     sample
@@ -242,7 +249,10 @@ pub fn survey(spec: &InputSpec, json: &Path) -> Result<()> {
             println!("surveyed {n} of {total}");
             let mut row = SurveyRow {
                 path: p.to_string_lossy().into_owned(),
-                file: p.file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default(),
+                file: p
+                    .file_name()
+                    .map(|s| s.to_string_lossy().into_owned())
+                    .unwrap_or_default(),
                 filter: sr_raw::peek_filter(p).unwrap_or_default(),
                 ..Default::default()
             };
@@ -263,9 +273,15 @@ pub fn survey(spec: &InputSpec, json: &Path) -> Result<()> {
         .collect();
     flag_frames(&mut rows);
     let flagged = rows.iter().filter(|r| !r.flags.is_empty()).count();
-    println!("survey in {:.2?}: {flagged} of {total} frames flagged", t.elapsed());
-    std::fs::write(json, serde_json::to_string(&serde_json::json!({ "frames": rows }))?)
-        .with_context(|| format!("writing {}", json.display()))?;
+    println!(
+        "survey in {:.2?}: {flagged} of {total} frames flagged",
+        t.elapsed()
+    );
+    std::fs::write(
+        json,
+        serde_json::to_string(&serde_json::json!({ "frames": rows }))?,
+    )
+    .with_context(|| format!("writing {}", json.display()))?;
     Ok(())
 }
 
@@ -283,7 +299,11 @@ pub(crate) fn flag_frames(rows: &mut [SurveyRow]) {
         let group: Vec<usize> = (0..rows.len())
             .filter(|&i| rows[i].filter == filter && rows[i].error.is_empty())
             .collect();
-        let starred: Vec<usize> = group.iter().copied().filter(|&i| rows[i].stars.is_some()).collect();
+        let starred: Vec<usize> = group
+            .iter()
+            .copied()
+            .filter(|&i| rows[i].stars.is_some())
+            .collect();
         // The rule the stack uses to decide what its own sharpness came from.
         let by_stars = !group.is_empty() && starred.len() * 4 >= group.len() * 3;
         let raw: Vec<f32> = group
@@ -291,7 +311,11 @@ pub(crate) fn flag_frames(rows: &mut [SurveyRow]) {
             .filter(|&&i| rows[i].stars.is_some() == by_stars)
             .filter_map(|&i| rows[i].sharpness)
             .collect();
-        let median = if raw.is_empty() { 0.0 } else { sr_core::math::median(&raw) };
+        let median = if raw.is_empty() {
+            0.0
+        } else {
+            sr_core::math::median(&raw)
+        };
         for &i in &group {
             let same_scale = rows[i].stars.is_some() == by_stars;
             rows[i].sharpness = match rows[i].sharpness {
@@ -302,14 +326,24 @@ pub(crate) fn flag_frames(rows: &mut [SurveyRow]) {
         if group.len() < SURVEY_MIN_GROUP || raw.is_empty() {
             continue;
         }
-        let of = if filter.is_empty() { "the set".to_string() } else { format!("filter {filter}") };
+        let of = if filter.is_empty() {
+            "the set".to_string()
+        } else {
+            format!("filter {filter}")
+        };
 
         if by_stars {
-            let ecc: Vec<f32> = starred.iter().filter_map(|&i| rows[i].eccentricity).collect();
+            let ecc: Vec<f32> = starred
+                .iter()
+                .filter_map(|&i| rows[i].eccentricity)
+                .collect();
             let med_ecc = sr_core::math::median(&ecc);
             let threshold = elongation_threshold(med_ecc);
-            let counts: Vec<f32> =
-                starred.iter().filter_map(|&i| rows[i].stars).map(|c| c as f32).collect();
+            let counts: Vec<f32> = starred
+                .iter()
+                .filter_map(|&i| rows[i].stars)
+                .map(|c| c as f32)
+                .collect();
             let med_count = sr_core::math::median(&counts);
             for &i in &group {
                 let r = &mut rows[i];
@@ -355,7 +389,10 @@ pub(crate) fn flag_frames(rows: &mut [SurveyRow]) {
     }
     for r in rows.iter_mut().filter(|r| !r.error.is_empty()) {
         let text = format!("could not be read: {}", r.error);
-        r.flags.push(SurveyFlag { kind: "unreadable", text });
+        r.flags.push(SurveyFlag {
+            kind: "unreadable",
+            text,
+        });
     }
 }
 
@@ -402,10 +439,9 @@ fn choose_frames(
             );
             let t = Instant::now();
             let survey = survey_all(paths, opts, stars)?;
-            let med = sr_core::math::median(
-                &survey.iter().map(|s| s.sharpness).collect::<Vec<_>>(),
-            )
-            .max(1e-20);
+            let med =
+                sr_core::math::median(&survey.iter().map(|s| s.sharpness).collect::<Vec<_>>())
+                    .max(1e-20);
             let measured = survey.iter().filter(|s| s.stars.is_some()).count();
             let mut order: Vec<&FrameSurvey> = survey.iter().collect();
             order.sort_by(|a, b| {
@@ -507,8 +543,16 @@ pub struct InputSpec<'a> {
 }
 
 pub fn load_burst(spec: &InputSpec) -> Result<LoadedBurst> {
-    let InputSpec { path: input, pattern, max_frames, select, read, star_metrics, filter, .. } =
-        *spec;
+    let InputSpec {
+        path: input,
+        pattern,
+        max_frames,
+        select,
+        read,
+        star_metrics,
+        filter,
+        ..
+    } = *spec;
     let read = &read;
     let mut all = match spec.ordered_paths {
         Some(paths) => paths.to_vec(),
@@ -638,7 +682,10 @@ pub fn load_burst(spec: &InputSpec) -> Result<LoadedBurst> {
     );
     if let Some(dir) = spec.spill_dir {
         std::fs::create_dir_all(dir)?;
-        log::info!("retained sample, guide and pyramid buffers use private disk-backed storage at {}; OS paging still controls resident memory", dir.display());
+        log::info!(
+            "retained sample, guide and pyramid buffers use private disk-backed storage at {}; OS paging still controls resident memory",
+            dir.display()
+        );
     }
     if spec.spill_dir.is_none() && projected > 24 * 1024 * 1024 * 1024 {
         log::warn!(
@@ -651,11 +698,14 @@ pub fn load_burst(spec: &InputSpec) -> Result<LoadedBurst> {
     }
     let t = Instant::now();
     let frames = if let Some(dir) = spec.spill_dir {
-        paths.iter().map(|path| {
-            let mut frame = sr_raw::decode_with(path, read)?;
-            frame.samples.spill(dir)?;
-            Ok(frame)
-        }).collect::<Result<Vec<_>>>()?
+        paths
+            .iter()
+            .map(|path| {
+                let mut frame = sr_raw::decode_with(path, read)?;
+                frame.samples.spill(dir)?;
+                Ok(frame)
+            })
+            .collect::<Result<Vec<_>>>()?
     } else {
         sr_raw::decode_all(&paths, read)?
     };
@@ -682,11 +732,16 @@ pub fn load_burst(spec: &InputSpec) -> Result<LoadedBurst> {
     };
 
     let t = Instant::now();
-    let guide_luma: Vec<Plane<f32>> = frames.par_iter().map(|f| {
-        let mut guide = f.guide_rgb().luma();
-        if let Some(dir) = spec.spill_dir { guide.spill(dir)?; }
-        Ok(guide)
-    }).collect::<Result<_>>()?;
+    let guide_luma: Vec<Plane<f32>> = frames
+        .par_iter()
+        .map(|f| {
+            let mut guide = f.guide_rgb().luma();
+            if let Some(dir) = spec.spill_dir {
+                guide.spill(dir)?;
+            }
+            Ok(guide)
+        })
+        .collect::<Result<_>>()?;
     log::info!("built registration proxies in {:.2?}", t.elapsed());
 
     let mut qualities: Vec<FrameQuality> = guide_luma
@@ -721,7 +776,11 @@ pub fn load_burst(spec: &InputSpec) -> Result<LoadedBurst> {
     // This is the initial inspect/header summary. Reconstruction measures each
     // filter's usable members separately below. A grid-only frame contributes
     // no data and must not become even the summary's fallback noise model.
-    let noise_frames = if reference_is_extra { &frames[1..] } else { &frames[..] };
+    let noise_frames = if reference_is_extra {
+        &frames[1..]
+    } else {
+        &frames[..]
+    };
     let (noise, noise_source) = sr_noise::estimate_burst(noise_frames);
     log::info!(
         "noise model: var = {:.3e} * x + {:.3e} (from {})",
@@ -777,7 +836,12 @@ struct CachedRegistration {
 /// configuration structs go in whole, so a field added to one of them changes
 /// the fingerprint without anyone having to remember this function exists.
 fn registration_fingerprint(burst: &LoadedBurst, cfg: &ReconstructionConfig) -> String {
-    registration_fingerprint_of(&burst.frames, cfg, burst.sharpness_from_stars, burst.forced_reference)
+    registration_fingerprint_of(
+        &burst.frames,
+        cfg,
+        burst.sharpness_from_stars,
+        burst.forced_reference,
+    )
 }
 
 fn registration_fingerprint_of(
@@ -828,9 +892,12 @@ pub fn register_burst(
         .frames
         .par_iter()
         .map(|f| {
-            let mut proxy = RegistrationImage::build(&f.registration_luma(), cfg.registration.pyramid_levels);
+            let mut proxy =
+                RegistrationImage::build(&f.registration_luma(), cfg.registration.pyramid_levels);
             if let Some(dir) = burst.spill_dir.as_deref() {
-                for level in &mut proxy.levels { level.spill(dir)?; }
+                for level in &mut proxy.levels {
+                    level.spill(dir)?;
+                }
             }
             Ok(proxy)
         })
@@ -887,8 +954,10 @@ pub fn register_burst(
     log::info!("global registration in {:.2?}", t.elapsed());
 
     // Proxy coordinates are half the sensor pitch in each axis.
-    let mut globals: Vec<sr_core::geometry::GlobalTransform> =
-        registrations.iter().map(|r| r.transform.rescale(2.0)).collect();
+    let mut globals: Vec<sr_core::geometry::GlobalTransform> = registrations
+        .iter()
+        .map(|r| r.transform.rescale(2.0))
+        .collect();
 
     // Polish each placement against the stars themselves.
     //
@@ -962,15 +1031,16 @@ pub fn register_burst(
         }
     }
 
-    let mut warps: Vec<WarpField> = globals
-        .iter()
-        .map(|g| WarpField::global_only(*g))
-        .collect();
+    let mut warps: Vec<WarpField> = globals.iter().map(|g| WarpField::global_only(*g)).collect();
 
     if !matches!(cfg.local_warp, sr_core::config::LocalWarpMode::Off) {
         let (w, h) = proxies[choice.index].dims();
         let fields = sr_register::distortion::refine_stars(
-            choice.index, &star_lists, &globals, w*2, h*2,
+            choice.index,
+            &star_lists,
+            &globals,
+            w * 2,
+            h * 2,
         );
         for (warp, field) in warps.iter_mut().zip(fields) {
             warp.local = field;
@@ -983,19 +1053,29 @@ pub fn register_burst(
     // Auto correlation acceptance must also agree with point-source geometry.
     // Explicit `on` keeps its documented force behavior for diagnostic trials.
     if matches!(cfg.local_warp, sr_core::config::LocalWarpMode::Auto) {
-        let (w,h) = proxies[choice.index].dims();
+        let (w, h) = proxies[choice.index].dims();
         let mut vetoed = 0;
-        for (i,warp) in warps.iter_mut().enumerate() {
-            if stellar_fields[i] { continue; }
+        for (i, warp) in warps.iter_mut().enumerate() {
+            if stellar_fields[i] {
+                continue;
+            }
             if let Some(field) = &warp.local
                 && sr_register::distortion::validates_correlation(
-                    &star_lists[choice.index],&star_lists[i],&warp.global,field,w*2,h*2,
-                ) == Some(false) {
-                    warp.local = None;
-                    vetoed += 1;
-                }
+                    &star_lists[choice.index],
+                    &star_lists[i],
+                    &warp.global,
+                    field,
+                    w * 2,
+                    h * 2,
+                ) == Some(false)
+            {
+                warp.local = None;
+                vetoed += 1;
+            }
         }
-        if vetoed > 0 { log::info!("stellar validation rejected {vetoed} correlation fields"); }
+        if vetoed > 0 {
+            log::info!("stellar validation rejected {vetoed} correlation fields");
+        }
     }
     let local_warp_applied = warps.iter().any(|w| w.local.is_some());
     if local_warp_applied {
@@ -1008,7 +1088,11 @@ pub fn register_burst(
         .map(|r| r.residual_rms)
         .collect();
     // Proxy pixels are half a sensor pixel.
-    let residual_sigma = if rms.is_empty() { 0.5 } else { sr_core::math::median(&rms) * 2.0 };
+    let residual_sigma = if rms.is_empty() {
+        0.5
+    } else {
+        sr_core::math::median(&rms) * 2.0
+    };
 
     cache.store(
         "registration",
@@ -1021,7 +1105,13 @@ pub fn register_burst(
             residual_sigma,
         },
     );
-    Ok(RegisteredBurst { choice, registrations, warps, local_warp_applied, residual_sigma })
+    Ok(RegisteredBurst {
+        choice,
+        registrations,
+        warps,
+        local_warp_applied,
+        residual_sigma,
+    })
 }
 
 /// Whether a scale above 1.0 has anything to recover, as opposed to enough
@@ -1149,7 +1239,9 @@ fn registration_seeds(
             if let Some(m) = m {
                 log::debug!(
                     "frame {i}: placed by {} stars, turned {:.2} deg, residual {:.2} px",
-                    m.pairs, m.rotation_deg, m.residual
+                    m.pairs,
+                    m.rotation_deg,
+                    m.residual
                 );
             }
             (i, m)
@@ -1199,7 +1291,10 @@ fn plate_solve_seeds(
     let Some(ref_wcs) = burst.frames[reference].metadata.wcs else {
         return vec![None; burst.frames.len()];
     };
-    let (w, h) = (burst.frames[reference].width, burst.frames[reference].height);
+    let (w, h) = (
+        burst.frames[reference].width,
+        burst.frames[reference].height,
+    );
     let mut solved = 0usize;
     let seeds: Vec<Option<sr_core::geometry::GlobalTransform>> = burst
         .frames
@@ -1212,7 +1307,14 @@ fn plate_solve_seeds(
             // which is half that pitch, so only the translation changes.
             Some(
                 sr_core::geometry::GlobalTransform {
-                    m: [a[0] as f32, a[1] as f32, a[2] as f32, a[3] as f32, a[4] as f32, a[5] as f32],
+                    m: [
+                        a[0] as f32,
+                        a[1] as f32,
+                        a[2] as f32,
+                        a[3] as f32,
+                        a[4] as f32,
+                        a[5] as f32,
+                    ],
                 }
                 .rescale(0.5),
             )
@@ -1370,10 +1472,13 @@ fn report_stars(burst: &LoadedBurst, warnings: &mut Vec<String>) {
     let ecc: Vec<f32> = measured.iter().map(|m| m.eccentricity).collect();
     let med_hfd = sr_core::math::median(&hfd);
     let med_ecc = sr_core::math::median(&ecc);
-    let arcsec = StarMetrics { hfd: med_hfd, ..Default::default() }
-        .hfd_arcsec(meta.pixel_pitch_um, meta.focal_length)
-        .map(|a| format!(" ({a:.2} arcsec)"))
-        .unwrap_or_default();
+    let arcsec = StarMetrics {
+        hfd: med_hfd,
+        ..Default::default()
+    }
+    .hfd_arcsec(meta.pixel_pitch_um, meta.focal_length)
+    .map(|a| format!(" ({a:.2} arcsec)"))
+    .unwrap_or_default();
 
     println!(
         "\nPoint sources: {:.0} stars per frame, half-flux diameter {med_hfd:.2} px{arcsec} \
@@ -1415,16 +1520,19 @@ fn report_stars(burst: &LoadedBurst, warnings: &mut Vec<String>) {
 /// A burst that needed a large correction is telling the operator something
 /// about the shoot — cloud, moonrise, a lens cap of dew — and burying that in a
 /// gain the merge quietly applied would be the wrong kind of automatic.
-fn report_photometry(
-    matches: &[FramePhotometry],
-    burst: &LoadedBurst,
-    warnings: &mut Vec<String>,
-) {
+fn report_photometry(matches: &[FramePhotometry], burst: &LoadedBurst, warnings: &mut Vec<String>) {
     let level = sr_core::math::median(
-        &burst.qualities.iter().map(|q| q.mean_level).collect::<Vec<_>>(),
+        &burst
+            .qualities
+            .iter()
+            .map(|q| q.mean_level)
+            .collect::<Vec<_>>(),
     )
     .max(1e-4);
-    let changes: Vec<f32> = matches.iter().map(|m| m.map.relative_change(level)).collect();
+    let changes: Vec<f32> = matches
+        .iter()
+        .map(|m| m.map.relative_change(level))
+        .collect();
     let worst = changes.iter().cloned().fold(0.0f32, f32::max);
     let fell_back: Vec<usize> = matches
         .iter()
@@ -1517,16 +1625,26 @@ fn reset_decode_masks(frames: &mut [RawFrame], original: &[sr_core::samples::Def
 
 /// Add this filter's sensor evidence to original decode masks, preserving both
 /// independent decode failures and masks belonging to other filter members.
-fn install_group_mask(frames: &mut [RawFrame], members: &[usize], mask: &sr_core::samples::DefectMask) {
+fn install_group_mask(
+    frames: &mut [RawFrame],
+    members: &[usize],
+    mask: &sr_core::samples::DefectMask,
+) {
     let needs_union = members.iter().any(|&i| !frames[i].defects.is_empty());
     let sites: Vec<usize> = if needs_union {
-        (0..mask.width * mask.height).filter(|&i| mask.get(i)).collect()
-    } else { Vec::new() };
+        (0..mask.width * mask.height)
+            .filter(|&i| mask.get(i))
+            .collect()
+    } else {
+        Vec::new()
+    };
     for &i in members {
         if frames[i].defects.is_empty() {
             frames[i].defects = mask.clone();
         } else {
-            for &site in &sites { frames[i].defects.set(site); }
+            for &site in &sites {
+                frames[i].defects.set(site);
+            }
         }
     }
 }
@@ -1546,10 +1664,13 @@ fn apply_defect_mask(
     // fingerprint goes in rather than being restated.
     let key = Fingerprint::new()
         .text("defects-persistent-mono-four-v5-group-original-masks")
-        .text(&registration_fingerprint(burst, &ReconstructionConfig {
-            reference: Some(reg.choice.index),
-            ..Default::default()
-        }))
+        .text(&registration_fingerprint(
+            burst,
+            &ReconstructionConfig {
+                reference: Some(reg.choice.index),
+                ..Default::default()
+            },
+        ))
         .frames(&burst.frames)
         .indices(&group.members)
         .config(&burst.noise)
@@ -1637,9 +1758,7 @@ fn registration_summary(burst: &LoadedBurst, reg: &RegisteredBurst) -> String {
 
     out.push_str(&format!(
         "\nReference frame: {} ({})\n  {}\n",
-        reg.choice.index,
-        burst.frames[reg.choice.index].metadata.file_name,
-        reg.choice.reason
+        reg.choice.index, burst.frames[reg.choice.index].metadata.file_name, reg.choice.reason
     ));
     out.push_str(&format!(
         "\nBurst motion (sensor pixels):\n  median {:.2}, max {:.2}, envelope radius {:.2}\n",
@@ -1659,15 +1778,19 @@ fn registration_summary(burst: &LoadedBurst, reg: &RegisteredBurst) -> String {
             .collect::<Vec<_>>()
             .join(", ")
     ));
-    let rms: Vec<f32> = reg.registrations.iter().map(|r| r.residual_rms * 2.0).collect();
+    let rms: Vec<f32> = reg
+        .registrations
+        .iter()
+        .map(|r| r.residual_rms * 2.0)
+        .collect();
     out.push_str(&format!(
         "  registration residual: median {:.3} px, worst {:.3} px (sensor scale)\n",
         sr_core::math::median(&rms),
         rms.iter().cloned().fold(0.0f32, f32::max)
     ));
     if reg.local_warp_applied {
-        let mean: f32 = reg.warps.iter().map(|w| w.max_local()).sum::<f32>()
-            / reg.warps.len().max(1) as f32;
+        let mean: f32 =
+            reg.warps.iter().map(|w| w.max_local()).sum::<f32>() / reg.warps.len().max(1) as f32;
         out.push_str(&format!(
             "  local warp: applied, mean peak displacement {mean:.2} sensor px\n"
         ));
@@ -1684,11 +1807,7 @@ fn registration_summary(burst: &LoadedBurst, reg: &RegisteredBurst) -> String {
     out
 }
 
-pub fn inspect(
-    spec: &InputSpec,
-    quick: bool,
-    json: Option<&Path>,
-) -> Result<()> {
+pub fn inspect(spec: &InputSpec, quick: bool, json: Option<&Path>) -> Result<()> {
     let burst = load_burst(spec)?;
     let mut out = report_header(&burst);
     out.push_str(&quality_table(&burst));
@@ -1747,7 +1866,11 @@ fn frame_rows(
     // reported a gain of 1.0 and an offset of 0.0 no matter what the match
     // actually did — the merge used the right channel, but the CSV that exists
     // to check the merge did not.
-    let pc = if burst.frames.first().map(|f| f.is_mono()).unwrap_or(false) { 0 } else { 1 };
+    let pc = if burst.frames.first().map(|f| f.is_mono()).unwrap_or(false) {
+        0
+    } else {
+        1
+    };
     (0..burst.frames.len())
         .map(|i| {
             let r = &reg.registrations[i];
@@ -1829,7 +1952,8 @@ fn write_registration_diagnostics(
             "limitations": "conditional residuals, not calibrated confidence; inspect match fractions and cell coverage; catalogues may contain defects/blends and overlap fitting stars; reference self-match is not independent evidence",
             "changes_merge_weights": false,
             "frames": alignment,
-        }))?)?;
+        }))?,
+    )?;
     sr_diagnostics::write_frames_csv(
         &dir.join("global-registration.csv"),
         &frame_rows(burst, reg, None, &used, &photometry_of(burst, reg, true)),
@@ -1920,11 +2044,7 @@ fn write_registration_diagnostics(
     Ok(())
 }
 
-pub fn register(
-    spec: &InputSpec,
-    cfg: &ReconstructionConfig,
-    diagnostics: &Path,
-) -> Result<()> {
+pub fn register(spec: &InputSpec, cfg: &ReconstructionConfig, diagnostics: &Path) -> Result<()> {
     let burst = load_burst(spec)?;
     print!("{}", report_header(&burst));
     for w in &burst.validation.fatal {
@@ -1935,7 +2055,10 @@ pub fn register(
     print!("{}", registration_summary(&burst, &reg));
 
     write_registration_diagnostics(diagnostics, &burst, &reg, cfg.roi)?;
-    println!("\nRegistration diagnostics written to {}", diagnostics.display());
+    println!(
+        "\nRegistration diagnostics written to {}",
+        diagnostics.display()
+    );
     Ok(())
 }
 
@@ -1948,7 +2071,9 @@ pub fn register(
 fn frame_weights(burst: &LoadedBurst, reg: &RegisteredBurst) -> Vec<f32> {
     let mut w: Vec<f32> = (0..burst.frames.len())
         .map(|i| {
-            if !registration_usable(&reg.registrations[i]) { return 0.0; }
+            if !registration_usable(&reg.registrations[i]) {
+                return 0.0;
+            }
             let conf = reg.registrations[i].confidence.clamp(0.0, 1.0);
             let sharp = burst.qualities[i].sharpness.clamp(0.5, 2.0);
             conf * sharp
@@ -1965,9 +2090,10 @@ fn frame_weights(burst: &LoadedBurst, reg: &RegisteredBurst) -> Vec<f32> {
     // would otherwise be counted once per batch, which across twenty batches
     // is twenty copies of one exposure.
     if burst.reference_is_extra
-        && let Some(i) = burst.forced_reference {
-            w[i] = 0.0;
-        }
+        && let Some(i) = burst.forced_reference
+    {
+        w[i] = 0.0;
+    }
     w
 }
 
@@ -1981,16 +2107,41 @@ pub(crate) fn registration_usable(r: &sr_register::global::GlobalRegistration) -
         && (r.confidence >= 0.05 || r.residual_p50 <= 1.0)
 }
 
-fn registered_group(group: &FilterGroup, regs: &[sr_register::global::GlobalRegistration]) -> Result<FilterGroup> {
-    let active: Vec<bool> = group.active.iter().enumerate()
+fn registered_group(
+    group: &FilterGroup,
+    regs: &[sr_register::global::GlobalRegistration],
+) -> Result<FilterGroup> {
+    let active: Vec<bool> = group
+        .active
+        .iter()
+        .enumerate()
         .map(|(i, &live)| live && regs.get(i).is_some_and(registration_usable))
         .collect();
-    let members: Vec<usize> = group.members.iter().copied().filter(|&i| active[i]).collect();
-    anyhow::ensure!(!members.is_empty(), "no reliably registered exposures remain in filter group {}", group.name);
-    let reference = if active[group.reference] { group.reference } else {
-        *members.iter().max_by(|&&a, &&b| regs[a].confidence.total_cmp(&regs[b].confidence)).unwrap()
+    let members: Vec<usize> = group
+        .members
+        .iter()
+        .copied()
+        .filter(|&i| active[i])
+        .collect();
+    anyhow::ensure!(
+        !members.is_empty(),
+        "no reliably registered exposures remain in filter group {}",
+        group.name
+    );
+    let reference = if active[group.reference] {
+        group.reference
+    } else {
+        *members
+            .iter()
+            .max_by(|&&a, &&b| regs[a].confidence.total_cmp(&regs[b].confidence))
+            .unwrap()
     };
-    Ok(FilterGroup { name: group.name.clone(), active, members, reference })
+    Ok(FilterGroup {
+        name: group.name.clone(),
+        active,
+        members,
+        reference,
+    })
 }
 
 fn local_quality_maps(burst: &LoadedBurst) -> Vec<LocalQualityMap> {
@@ -2072,16 +2223,26 @@ fn prepare_group(
 ) -> Result<GroupInputs> {
     let reference = reg.choice.index;
     let registered = registered_group(group, &reg.registrations)?;
-    let excluded: Vec<usize> = group.active.iter().zip(&registered.active).enumerate()
-        .filter_map(|(i, (&was, &now))| (was && !now).then_some(i)).collect();
+    let excluded: Vec<usize> = group
+        .active
+        .iter()
+        .zip(&registered.active)
+        .enumerate()
+        .filter_map(|(i, (&was, &now))| (was && !now).then_some(i))
+        .collect();
     if !excluded.is_empty() {
-        let note = format!("{} frame(s) excluded before photometry: unreliable registration", excluded.len());
+        let note = format!(
+            "{} frame(s) excluded before photometry: unreliable registration",
+            excluded.len()
+        );
         println!("{note}");
         warnings.push(note);
         for i in excluded {
             let r = &reg.registrations[i];
-            println!("    frame {i} ({}): registration confidence {:.4}, median residual {:.2} guide pixels",
-                burst.frames[i].metadata.file_name, r.confidence, r.residual_p50);
+            println!(
+                "    frame {i} ({}): registration confidence {:.4}, median residual {:.2} guide pixels",
+                burst.frames[i].metadata.file_name, r.confidence, r.residual_p50
+            );
         }
     }
     let group = &registered;
@@ -2093,8 +2254,13 @@ fn prepare_group(
     let (noise, source) = group_noise(&burst.frames, &group.members);
     burst.noise = noise;
     burst.noise_source = source;
-    log::info!("filter {:?} noise model: var = {:.3e} * x + {:.3e} (from {})",
-        group.name, burst.noise.alpha, burst.noise.beta, burst.noise_source);
+    log::info!(
+        "filter {:?} noise model: var = {:.3e} * x + {:.3e} (from {})",
+        group.name,
+        burst.noise.alpha,
+        burst.noise.beta,
+        burst.noise_source
+    );
 
     // Fixed-pattern defects, once the burst's motion is known. Order matters
     // both ways: the scan needs the burst to have moved before it can tell a
@@ -2127,7 +2293,10 @@ fn prepare_group(
             .into_par_iter()
             .map(|i| {
                 if group.active.get(i).copied().unwrap_or(false) || i == group.reference {
-                    sr_quality::stars::positions_for_photometry(&burst.frames[i], STAR_PHOTOMETRY_LIMIT)
+                    sr_quality::stars::positions_for_photometry(
+                        &burst.frames[i],
+                        STAR_PHOTOMETRY_LIMIT,
+                    )
                 } else {
                     Vec::new()
                 }
@@ -2164,7 +2333,11 @@ fn prepare_group(
     // into trees at dawn are like this, and the trees they leave in the stack
     // are the first thing anyone sees.
     let level = sr_core::math::median(
-        &burst.qualities.iter().map(|q| q.mean_level).collect::<Vec<_>>(),
+        &burst
+            .qualities
+            .iter()
+            .map(|q| q.mean_level)
+            .collect::<Vec<_>>(),
     )
     .max(1e-4);
     let mut active = group.active.clone();
@@ -2175,7 +2348,10 @@ fn prepare_group(
             continue;
         }
         let obstructed = f.map.blocked_fraction();
-        let swing = (0..3).map(|c| f.map.field_amplitude(c)).fold(0.0f32, f32::max) / level;
+        let swing = (0..3)
+            .map(|c| f.map.field_amplitude(c))
+            .fold(0.0f32, f32::max)
+            / level;
         if let Some(reason) = photometric_exclusion(obstructed, swing) {
             active[i] = false;
             frame_exclusions[i] = Some(reason);
@@ -2183,10 +2359,7 @@ fn prepare_group(
         }
     }
     if !dropped.is_empty() {
-        println!(
-            "  {} frame(s) dropped as not of this sky:",
-            dropped.len()
-        );
+        println!("  {} frame(s) dropped as not of this sky:", dropped.len());
         for &(i, obstructed, swing) in &dropped {
             println!(
                 "    frame {i} ({}): obstructed over {:.0}% of the frame, sky varying {:.0}% \
@@ -2237,7 +2410,10 @@ fn prepare_group(
     if cfg.robustness.enabled {
         let mean = robustness.rejected_fraction.iter().sum::<f32>()
             / robustness.rejected_fraction.len().max(1) as f32;
-        log::info!("robustness: {:.2}% of the burst suppressed on average", mean * 100.0);
+        log::info!(
+            "robustness: {:.2}% of the burst suppressed on average",
+            mean * 100.0
+        );
     }
 
     let mut weights = frame_weights(burst, reg);
@@ -2253,8 +2429,14 @@ fn prepare_group(
 
     // Excluded exposures (including other filters and a grid-only reference)
     // supply no samples and must not shrink the reconstruction kernel.
-    let contributing = weights.iter().filter(|w| w.is_finite() && **w > 0.0).count();
-    log::info!("kernel: {contributing} contributing frames out of {} loaded", burst.frames.len());
+    let contributing = weights
+        .iter()
+        .filter(|w| w.is_finite() && **w > 0.0)
+        .count();
+    log::info!(
+        "kernel: {contributing} contributing frames out of {} loaded",
+        burst.frames.len()
+    );
 
     // Structure-aware kernels, from the reference guide.
     let t = Instant::now();
@@ -2342,8 +2524,10 @@ fn choose_lucky(
         LuckyMode::Off => (None, "off".to_string()),
         LuckyMode::Fraction(f) => {
             let sel = build(&local_quality_maps(burst), f);
-            let note =
-                format!("keeping the best {:.0}% of frames per region", sel.fraction * 100.0);
+            let note = format!(
+                "keeping the best {:.0}% of frames per region",
+                sel.fraction * 100.0
+            );
             (Some(sel), note)
         }
         LuckyMode::Auto => {
@@ -2434,9 +2618,7 @@ fn finish_product(
     let t = Instant::now();
     let color = sr_color::ColorTransform::from_metadata(&burst.frames[reference].metadata);
     if color.fallback {
-        warnings.push(
-            "no usable camera colour matrix; output colour is not colorimetric".into(),
-        );
+        warnings.push("no usable camera colour matrix; output colour is not colorimetric".into());
     }
     // Background, before the colour transform: vignetting is a property of the
     // optics and the sensor, so it is removed in the domain it happened in.
@@ -2473,7 +2655,13 @@ fn finish_product(
         restoration = Some(r);
     }
 
-    FinishedProduct { linear, color, gain, background, restoration }
+    FinishedProduct {
+        linear,
+        color,
+        gain,
+        background,
+        restoration,
+    }
 }
 
 /// What a batch contributes, before it is normalised into an image.
@@ -2513,7 +2701,10 @@ fn write_accumulator(
         "reference_file": reference.metadata.file_name,
         "reference_sha256_prefix": reference.metadata.sha256_prefix,
     });
-    std::fs::write(dir.join("accumulator.json"), serde_json::to_string_pretty(&meta)?)?;
+    std::fs::write(
+        dir.join("accumulator.json"),
+        serde_json::to_string_pretty(&meta)?,
+    )?;
     println!(
         "Accumulator written to {} ({} frames, {} x {}); add it to others with `smokstak combine`",
         dir.display(),
@@ -2531,9 +2722,10 @@ fn write_stack_outputs(
     finished: &FinishedProduct,
 ) -> Result<Vec<String>> {
     if let Some(parent) = out.output.parent()
-        && !parent.as_os_str().is_empty() {
-            std::fs::create_dir_all(parent)?;
-        }
+        && !parent.as_os_str().is_empty()
+    {
+        std::fs::create_dir_all(parent)?;
+    }
     let mut output_files = Vec::new();
 
     if let (Some(m), Some(dir)) = (&finished.background, out.diagnostics) {
@@ -2573,10 +2765,17 @@ fn write_stack_outputs(
     let rendered = as_product(&rendered, product.channels);
     sr_output::write_product16(out.output, &rendered, product.channels)?;
     output_files.push(out.output.display().to_string());
-    println!("Wrote {} ({} x {})", out.output.display(), product.width, product.height);
+    println!(
+        "Wrote {} ({} x {})",
+        out.output.display(),
+        product.width,
+        product.height
+    );
     match &how {
         sr_color::stretch::Rendering::Stretched { per_channel } => {
-            let s = per_channel.get(per_channel.len() / 2).unwrap_or(&per_channel[0]);
+            let s = per_channel
+                .get(per_channel.len() / 2)
+                .unwrap_or(&per_channel[0]);
             println!(
                 "Rendered:          sky placed at a quarter of the range in each channel; \
                  shadows clipped at {:.4}, midtone {:.4}; white at {:.3}/{:.3}/{:.3}",
@@ -2622,7 +2821,13 @@ fn write_stack_outputs(
         output_files.push(p.display().to_string());
     }
 
-    for p in sr_output::write_scientific_copies(out.output, &finished.linear, product.channels, out.fits, out.xisf)? {
+    for p in sr_output::write_scientific_copies(
+        out.output,
+        &finished.linear,
+        product.channels,
+        out.fits,
+        out.xisf,
+    )? {
         println!("Wrote {} (32-bit float master)", p.display());
         output_files.push(p.display().to_string());
     }
@@ -2669,8 +2874,16 @@ fn as_product(planes: &[Plane<f32>], channels: usize) -> [Plane<f32>; 3] {
     let empty = Plane::<f32>::new(0, 0);
     [
         planes.first().cloned().unwrap_or_else(|| empty.clone()),
-        if channels > 1 { planes[1].clone() } else { empty.clone() },
-        if channels > 2 { planes[2].clone() } else { empty },
+        if channels > 1 {
+            planes[1].clone()
+        } else {
+            empty.clone()
+        },
+        if channels > 2 {
+            planes[2].clone()
+        } else {
+            empty
+        },
     ]
 }
 
@@ -2733,7 +2946,11 @@ fn write_stack_diagnostics(
         )?;
     }
 
-    let used: Vec<bool> = inputs.weights.iter().map(|w| w.is_finite() && *w > 0.0).collect();
+    let used: Vec<bool> = inputs
+        .weights
+        .iter()
+        .map(|w| w.is_finite() && *w > 0.0)
+        .collect();
     // Preserve the actual spatial corrections and exclusions, not just the
     // central green offset in frames.csv. Coordinates span the full reference
     // sensor even when this run reconstructs an ROI.
@@ -2798,7 +3015,9 @@ fn write_weight_probes(
                 1
             } else if frame.is_mono() {
                 0
-            } else { c };
+            } else {
+                c
+            };
             norm / (burst.noise.variance(sky[c]) * photo.gain_of(c).powi(2)).max(1e-12)
         });
         let mut probes = Vec::with_capacity(216);
@@ -2809,9 +3028,15 @@ fn write_weight_probes(
                         let x = (px as f32 + 0.5) * reference.width as f32 / 6.0 + dx;
                         let y = (py as f32 + 0.5) * reference.height as f32 / 4.0 + dy;
                         let covered = reg.warps[i].inverse_map(x, y).is_some_and(|(sx, sy)| {
-                            sx >= 0.0 && sy >= 0.0 && sx < frame.width as f32 && sy < frame.height as f32
+                            sx >= 0.0
+                                && sy >= 0.0
+                                && sx < frame.width as f32
+                                && sy < frame.height as f32
                         });
-                        let blocked = photo.blocked_at(2.0*x/frame.width as f32-1.0, 2.0*y/frame.height as f32-1.0);
+                        let blocked = photo.blocked_at(
+                            2.0 * x / frame.width as f32 - 1.0,
+                            2.0 * y / frame.height as f32 - 1.0,
+                        );
                         let robustness = if matches!(cfg.backend, Backend::RgbMeanBaseline) {
                             1.0
                         } else {
@@ -2822,7 +3047,9 @@ fn write_weight_probes(
                         let base: [f32; 3] = std::array::from_fn(|c| {
                             if covered && !blocked && inputs.weights[i] > 0.0 {
                                 noise_weight[c] * robustness * local * lucky * inputs.weights[i]
-                            } else { 0.0 }
+                            } else {
+                                0.0
+                            }
                         });
                         probes.push(serde_json::json!({
                             "patch": [px, py], "reference_xy": [x, y],
@@ -2845,7 +3072,10 @@ fn write_weight_probes(
         "limitations": "Pre-kernel coordinate probes, not deposited exposure fractions. Excludes sample-specific defects/clipping, chromatic displacement, kernel support, and profile-fit response; mask/coverage checked at the probe coordinate. Use green probes for raw-sky traces.",
         "frames": frames,
     });
-    std::fs::write(dir.join("weight-probes.json"), serde_json::to_vec(&evidence)?)?;
+    std::fs::write(
+        dir.join("weight-probes.json"),
+        serde_json::to_vec(&evidence)?,
+    )?;
     Ok(())
 }
 
@@ -2869,11 +3099,19 @@ fn stack_group(
     // know that filter groups exist.
     let output = per_filter_path(run.out.output, &group.name);
     let diagnostics = run.out.diagnostics.map(|d| {
-        if group.name.is_empty() { d.to_path_buf() } else { d.join(&group.name) }
+        if group.name.is_empty() {
+            d.to_path_buf()
+        } else {
+            d.join(&group.name)
+        }
     });
     let preview = run.out.preview.map(|p| per_filter_path(p, &group.name));
     let accumulate = run.out.accumulate.map(|d| {
-        if group.name.is_empty() { d.to_path_buf() } else { d.join(&group.name) }
+        if group.name.is_empty() {
+            d.to_path_buf()
+        } else {
+            d.join(&group.name)
+        }
     });
     let out = OutputSpec {
         output: &output,
@@ -2883,8 +3121,16 @@ fn stack_group(
         ..run.out
     };
 
-    let inputs =
-        prepare_group(burst, reg, group, cfg, cache, run.correct_ca, &mut timings, &mut warnings)?;
+    let inputs = prepare_group(
+        burst,
+        reg,
+        group,
+        cfg,
+        cache,
+        run.correct_ca,
+        &mut timings,
+        &mut warnings,
+    )?;
 
     let merge = sr_reconstruct::MergeInputs {
         frames: &burst.frames,
@@ -2901,7 +3147,11 @@ fn stack_group(
 
     log::info!(
         "merging {} frames with the {} backend at {:.2}x",
-        inputs.weights.iter().filter(|w| w.is_finite() && **w > 0.0).count(),
+        inputs
+            .weights
+            .iter()
+            .filter(|w| w.is_finite() && **w > 0.0)
+            .count(),
         cfg.backend.name(),
         cfg.scale
     );
@@ -2917,8 +3167,14 @@ fn stack_group(
         write_accumulator(dir, &product, &burst.frames[reference], contributing)?;
     }
 
-    let finished =
-        finish_product(&mut product, burst, reference, cfg, &mut timings, &mut warnings);
+    let finished = finish_product(
+        &mut product,
+        burst,
+        reference,
+        cfg,
+        &mut timings,
+        &mut warnings,
+    );
 
     let t = Instant::now();
     let output_files = write_stack_outputs(&out, &product, &finished)?;
@@ -2936,25 +3192,62 @@ fn stack_group(
                 let used = inputs.weights[i].is_finite() && inputs.weights[i] > 0.0;
                 let registered = registration_usable(&reg.registrations[i]);
                 let mut row = crate::frame_review::ReviewFrame {
-                    path: burst.paths[i].clone(), filter: burst.frames[i].metadata.filter.clone().unwrap_or_default(),
-                    capture_time: None, exposure_seconds: None, iso_or_gain: None,
-                    photometric_gain: Some(inputs.fits[i].map.gain[..burst.frames[i].channels()].to_vec()),
+                    path: burst.paths[i].clone(),
+                    filter: burst.frames[i].metadata.filter.clone().unwrap_or_default(),
+                    capture_time: None,
+                    exposure_seconds: None,
+                    iso_or_gain: None,
+                    photometric_gain: Some(
+                        inputs.fits[i].map.gain[..burst.frames[i].channels()].to_vec(),
+                    ),
                     photometry_source: Some(inputs.fits[i].source.name().to_string()),
-                    obstruction_mask: Some(inputs.fits[i].map.blocked.iter().map(|r| r.to_vec()).collect()),
+                    obstruction_mask: Some(
+                        inputs.fits[i]
+                            .map
+                            .blocked
+                            .iter()
+                            .map(|r| r.to_vec())
+                            .collect(),
+                    ),
                     status: if used { "used" } else { "not-used" }.into(),
-                    reason: if used { format!("Eligible: confidence {:.4} × bounded sharpness {:.4}. Local coverage and rejection still apply.",
-                            reg.registrations[i].confidence.clamp(0.0,1.0), burst.qualities[i].sharpness.clamp(0.5,2.0)) }
-                        else if !registered { format!("Registration rejected: confidence {:.4}, median residual {:.3} sensor px. Requires finite positive confidence and finite residual, with confidence ≥0.05 or residual ≤2 sensor px.",
-                            reg.registrations[i].confidence, reg.registrations[i].residual_p50*2.0) }
-                        else { inputs.frame_exclusions[i].clone().unwrap_or_else(|| "Zero or invalid production frame factor".into()) },
+                    reason: if used {
+                        format!(
+                            "Eligible: confidence {:.4} × bounded sharpness {:.4}. Local coverage and rejection still apply.",
+                            reg.registrations[i].confidence.clamp(0.0, 1.0),
+                            burst.qualities[i].sharpness.clamp(0.5, 2.0)
+                        )
+                    } else if !registered {
+                        format!(
+                            "Registration rejected: confidence {:.4}, median residual {:.3} sensor px. Requires finite positive confidence and finite residual, with confidence ≥0.05 or residual ≤2 sensor px.",
+                            reg.registrations[i].confidence,
+                            reg.registrations[i].residual_p50 * 2.0
+                        )
+                    } else {
+                        inputs.frame_exclusions[i]
+                            .clone()
+                            .unwrap_or_else(|| "Zero or invalid production frame factor".into())
+                    },
                     weight: inputs.weights[i].is_finite().then_some(inputs.weights[i]),
-                    hfd: burst.stars[i].map(|s|s.hfd), eccentricity: burst.stars[i].map(|s|s.eccentricity),
-                    residual: reg.registrations[i].residual_p50.is_finite().then_some(reg.registrations[i].residual_p50*2.0),
-                    suppressed: (used && cfg.robustness.enabled && !matches!(cfg.backend, Backend::RgbMeanBaseline))
-                        .then(|| inputs.robustness.rejected_fraction[i]),
-                    preview_asset: None, preview_note: String::new(),
+                    hfd: burst.stars[i].map(|s| s.hfd),
+                    eccentricity: burst.stars[i].map(|s| s.eccentricity),
+                    residual: reg.registrations[i]
+                        .residual_p50
+                        .is_finite()
+                        .then_some(reg.registrations[i].residual_p50 * 2.0),
+                    suppressed: (used
+                        && cfg.robustness.enabled
+                        && !matches!(cfg.backend, Backend::RgbMeanBaseline))
+                    .then(|| inputs.robustness.rejected_fraction[i]),
+                    preview_asset: None,
+                    preview_note: String::new(),
                 };
-                crate::frame_review::capture(dir, &mut row, &burst.frames[i], registered.then_some(&reg.warps[i]), center)?;
+                crate::frame_review::capture(
+                    dir,
+                    &mut row,
+                    &burst.frames[i],
+                    registered.then_some(&reg.warps[i]),
+                    center,
+                )?;
                 review.push(row);
             }
             crate::frame_review::write(dir, &review)?;
@@ -3020,7 +3313,12 @@ pub fn stack(
             .validation
             .fatal
             .retain(|m| !m.starts_with("the burst holds more than one filter"));
-        if let Some(f) = burst.validation.fields.iter_mut().find(|f| f.field == "Filter") {
+        if let Some(f) = burst
+            .validation
+            .fields
+            .iter_mut()
+            .find(|f| f.field == "Filter")
+        {
             f.severity = sr_raw::Severity::Note;
         }
     }
@@ -3118,7 +3416,15 @@ pub fn stack(
         // Arc-backed masks make this reset cheap, and a group's early exits
         // (no motion/no defects/disabled scan) cannot retain a previous scan.
         reset_decode_masks(&mut burst.frames, &decode_masks);
-        stack_group(&run, &mut burst, &reg, group, &cache, timings.clone(), warnings.clone())?;
+        stack_group(
+            &run,
+            &mut burst,
+            &reg,
+            group,
+            &cache,
+            timings.clone(),
+            warnings.clone(),
+        )?;
     }
     Ok(())
 }
@@ -3146,8 +3452,14 @@ fn build_manifest(
     RunManifest {
         program: "smokstak".into(),
         version: env!("CARGO_PKG_VERSION").into(),
-        build_profile: if cfg!(debug_assertions) { "debug".into() } else { "release".into() },
-        revision: option_env!("SRSTACK_REVISION").unwrap_or("unrecorded").into(),
+        build_profile: if cfg!(debug_assertions) {
+            "debug".into()
+        } else {
+            "release".into()
+        },
+        revision: option_env!("SRSTACK_REVISION")
+            .unwrap_or("unrecorded")
+            .into(),
         started_utc,
         host: sr_diagnostics::HostInfo::default(),
         dependencies: sr_diagnostics::dependency_versions(),
@@ -3214,7 +3526,9 @@ fn photometry_of(
         // gain is the one the merge used and not one from a path nothing runs.
         let stars: Vec<Vec<sr_core::star::Star>> = (0..burst.frames.len())
             .into_par_iter()
-            .map(|i| sr_quality::stars::positions_for_photometry(&burst.frames[i], STAR_PHOTOMETRY_LIMIT))
+            .map(|i| {
+                sr_quality::stars::positions_for_photometry(&burst.frames[i], STAR_PHOTOMETRY_LIMIT)
+            })
             .collect();
         sr_quality::photometry::match_with_stars(
             &burst.frames,
@@ -3263,9 +3577,10 @@ fn write_preview_of(
 ) -> Result<()> {
     if display_referred {
         if let Some(parent) = path.parent()
-            && !parent.as_os_str().is_empty() {
-                std::fs::create_dir_all(parent)?;
-            }
+            && !parent.as_os_str().is_empty()
+        {
+            std::fs::create_dir_all(parent)?;
+        }
         let view: Vec<Plane<f32>> = linear.iter().take(channels).cloned().collect();
         sr_output::write_preview_png(path, &view, max_edge)?;
         println!(
@@ -3286,17 +3601,29 @@ fn write_preview_of(
     let white = sr_color::stretch::ceiling_from_data(linear, channels);
     let (view, how) = sr_color::stretch::render(linear, channels, &white);
     if let Some(parent) = path.parent()
-        && !parent.as_os_str().is_empty() {
-            std::fs::create_dir_all(parent)?;
-        }
+        && !parent.as_os_str().is_empty()
+    {
+        std::fs::create_dir_all(parent)?;
+    }
     sr_output::write_preview_png(path, &view, max_edge)?;
     match how {
         sr_color::stretch::Rendering::Stretched { per_channel } => {
-            let s = per_channel.get(per_channel.len() / 2).unwrap_or(&per_channel[0]);
+            let s = per_channel
+                .get(per_channel.len() / 2)
+                .unwrap_or(&per_channel[0]);
             let median = sr_core::math::median(
-                &linear[0].data.iter().step_by(101).cloned().collect::<Vec<_>>(),
+                &linear[0]
+                    .data
+                    .iter()
+                    .step_by(101)
+                    .cloned()
+                    .collect::<Vec<_>>(),
             );
-            println!("Preview written to {} ({})", path.display(), s.describe(median));
+            println!(
+                "Preview written to {} ({})",
+                path.display(),
+                s.describe(median)
+            );
         }
         sr_color::stretch::Rendering::Encoded => println!(
             "Preview written to {} (no stretch needed; the result is already legible)",
@@ -3329,10 +3656,13 @@ fn exclude_grid_reference(groups: &mut Vec<FilterGroup>, grid: usize, qualities:
         group.members.retain(|&i| i != grid);
         if group.reference == grid
             && let Some(&reference) = group.members.iter().max_by(|&&a, &&b| {
-                qualities[a].composite().total_cmp(&qualities[b].composite())
-            }) {
-                group.reference = reference;
-            }
+                qualities[a]
+                    .composite()
+                    .total_cmp(&qualities[b].composite())
+            })
+        {
+            group.reference = reference;
+        }
     }
     // --split-by-filter must not emit an empty master for the external filter.
     groups.retain(|group| !group.members.is_empty());
@@ -3377,7 +3707,12 @@ fn filter_groups(burst: &LoadedBurst, qualities: &[FrameQuality]) -> Vec<FilterG
                         .unwrap_or(std::cmp::Ordering::Equal)
                 })
                 .unwrap_or(&0);
-            FilterGroup { name, active, members, reference }
+            FilterGroup {
+                name,
+                active,
+                members,
+                reference,
+            }
         })
         .collect()
 }
@@ -3387,7 +3722,10 @@ fn per_filter_path(base: &Path, name: &str) -> PathBuf {
     if name.is_empty() {
         return base.to_path_buf();
     }
-    let stem = base.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
+    let stem = base
+        .file_stem()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_default();
     let ext = base.extension().map(|s| s.to_string_lossy().to_string());
     let file = match ext {
         Some(e) => format!("{stem}_{name}.{e}"),
@@ -3441,9 +3779,16 @@ pub fn composite(
             "{name}: {}x{} from {path} ({})",
             image.width,
             image.height,
-            if linear { "linear" } else { "sRGB-encoded, decoded on read" }
+            if linear {
+                "linear"
+            } else {
+                "sRGB-encoded, decoded on read"
+            }
         );
-        loaded.push(sr_composite::Channel { name: name.trim().to_string(), image });
+        loaded.push(sr_composite::Channel {
+            name: name.trim().to_string(),
+            image,
+        });
     }
     anyhow::ensure!(!loaded.is_empty(), "no channels given");
 
@@ -3486,7 +3831,11 @@ pub fn composite(
                 )
             })
     };
-    let mapping = [index_of(&wanted[0])?, index_of(&wanted[1])?, index_of(&wanted[2])?];
+    let mapping = [
+        index_of(&wanted[0])?,
+        index_of(&wanted[1])?,
+        index_of(&wanted[2])?,
+    ];
     let luminance = match luminance {
         Some(name) => Some(index_of(name)?),
         None => None,
@@ -3546,8 +3895,10 @@ pub fn composite(
     // a display transform, applied per channel, and it is not a measurement.
     // The fit above still runs first, so the backgrounds start together.
     if stretch_channels {
-        println!("
-Per-channel stretch (display transform, before combining):");
+        println!(
+            "
+Per-channel stretch (display transform, before combining):"
+        );
         for c in loaded.iter_mut() {
             let one = std::slice::from_ref(&c.image);
             let median = sr_color::stretch::background(one, 1).map(|(m, _)| m);
@@ -3556,7 +3907,10 @@ Per-channel stretch (display transform, before combining):");
                     c.image = sr_color::stretch::apply(one, 1, &st).remove(0);
                     println!("  {:<4} {}", c.name, st.describe(m));
                 }
-                _ => println!("  {:<4} left as it was; no usable spread to stretch", c.name),
+                _ => println!(
+                    "  {:<4} left as it was; no usable spread to stretch",
+                    c.name
+                ),
             }
         }
     }
@@ -3591,9 +3945,10 @@ Per-channel stretch (display transform, before combining):");
     }
     let rgb = rgb;
     if let Some(parent) = output.parent()
-        && !parent.as_os_str().is_empty() {
-            std::fs::create_dir_all(parent)?;
-        }
+        && !parent.as_os_str().is_empty()
+    {
+        std::fs::create_dir_all(parent)?;
+    }
     // A stretched channel is already display-referred; putting it through the
     // transfer curve as well would apply two display transforms.
     if stretch_channels {
@@ -3643,7 +3998,11 @@ fn read_finished(path: &Path) -> Result<[Plane<f32>; 3]> {
         image.height,
         image.colour_space,
         image.format,
-        if image.image_type.is_empty() { "no image type".into() } else { image.image_type.clone() }
+        if image.image_type.is_empty() {
+            "no image type".into()
+        } else {
+            image.image_type.clone()
+        }
     );
     Ok([pick(0), pick(1), pick(2)])
 }
@@ -3688,7 +4047,10 @@ pub fn combine(
         let w = meta["width"].as_u64().unwrap_or(0) as usize;
         let h = meta["height"].as_u64().unwrap_or(0) as usize;
         let c = meta["channels"].as_u64().unwrap_or(0) as usize;
-        let reference = meta["reference_sha256_prefix"].as_str().unwrap_or("").to_string();
+        let reference = meta["reference_sha256_prefix"]
+            .as_str()
+            .unwrap_or("")
+            .to_string();
         frames += meta["frames"].as_u64().unwrap_or(0);
 
         match &grid {
@@ -3757,9 +4119,10 @@ pub fn combine(
     log::info!("exposure normalisation gain {gain:.3}");
 
     if let Some(parent) = output.parent()
-        && !parent.as_os_str().is_empty() {
-            std::fs::create_dir_all(parent)?;
-        }
+        && !parent.as_os_str().is_empty()
+    {
+        std::fs::create_dir_all(parent)?;
+    }
     sr_output::write_product16(output, &sr_color::to_rendered(&rgb), channels)?;
     println!("Wrote {} ({w} x {h})", output.display());
     if let Some(p) = preview {
@@ -3785,8 +4148,17 @@ pub fn measure(
 ) -> Result<()> {
     println!(
         "{:<28} {:>9} {:>7} {:>8} {:>9} {:>11} {:>11} {:>9} {:>10} {:>9} {:>8}",
-        "image", "size", "scale", "angle", "straight", "MTF50/out", "MTF50/sensor", "overshoot",
-        "noise", "fringing", "residCA"
+        "image",
+        "size",
+        "scale",
+        "angle",
+        "straight",
+        "MTF50/out",
+        "MTF50/sensor",
+        "overshoot",
+        "noise",
+        "fringing",
+        "residCA"
     );
 
     for token in inputs {
@@ -3816,9 +4188,8 @@ pub fn measure(
             g: rgb[1].clone(),
             b: rgb[2].clone(),
         };
-        let residual_ca = sr_register::chroma::estimate_about(
-            &guide, 96, 12, 1.10, false, ca_centre,
-        );
+        let residual_ca =
+            sr_register::chroma::estimate_about(&guide, 96, 12, 1.10, false, ca_centre);
         // Reported in the image's own pixels, and this guide is full resolution
         // rather than half, so the estimator's doubling is undone.
         let ca_corner = residual_ca.corner_shift[0].max(residual_ca.corner_shift[2]) * 0.5;
@@ -3930,36 +4301,56 @@ pub fn measure(
 mod tests {
     #[test]
     fn photometric_rejection_records_the_gate_that_actually_excluded_a_frame() {
-        assert!(super::photometric_exclusion(0.30,1.0).is_none());
-        let obstructed=super::photometric_exclusion(0.359375,0.62).unwrap();
+        assert!(super::photometric_exclusion(0.30, 1.0).is_none());
+        let obstructed = super::photometric_exclusion(0.359375, 0.62).unwrap();
         assert!(obstructed.contains("35.94%") && obstructed.contains(">30%"));
-        let gradient=super::photometric_exclusion(0.0,1.01).unwrap();
+        let gradient = super::photometric_exclusion(0.0, 1.01).unwrap();
         assert!(gradient.contains("101.00%") && gradient.contains(">100%"));
     }
     use super::*;
 
     fn small_group_frame(filter: &str, beta: f32) -> RawFrame {
         RawFrame {
-            width: 8, height: 8,
+            width: 8,
+            height: 8,
             samples: sr_core::samples::SamplePlane::from_normalised(8, 8, vec![0.2; 64]),
             cfa: sr_core::cfa::CfaPattern::MONO,
             defects: sr_core::samples::DefectMask::none(8, 8),
             noise: sr_core::frame::NoiseModel::new(0.0, beta, sr_core::frame::NoiseSource::Nominal),
-            metadata: sr_core::frame::FrameMetadata { filter: Some(filter.into()), ..Default::default() },
+            metadata: sr_core::frame::FrameMetadata {
+                filter: Some(filter.into()),
+                ..Default::default()
+            },
         }
     }
 
     #[test]
     fn filter_noise_excludes_other_filters_failed_geometry_and_grid_reference() {
-        let mut frames = vec![small_group_frame("O", 0.5), small_group_frame("H", 1e-6),
-            small_group_frame("O", 1e-4), small_group_frame("H", 0.1)];
+        let mut frames = vec![
+            small_group_frame("O", 0.5),
+            small_group_frame("H", 1e-6),
+            small_group_frame("O", 1e-4),
+            small_group_frame("H", 0.1),
+        ];
         let qualities = vec![FrameQuality::default(); 4];
         let mut groups = vec![
-            FilterGroup { name: "H".into(), active: vec![false,true,false,true], members: vec![1,3], reference: 1 },
-            FilterGroup { name: "O".into(), active: vec![true,false,true,false], members: vec![0,2], reference: 0 },
+            FilterGroup {
+                name: "H".into(),
+                active: vec![false, true, false, true],
+                members: vec![1, 3],
+                reference: 1,
+            },
+            FilterGroup {
+                name: "O".into(),
+                active: vec![true, false, true, false],
+                members: vec![0, 2],
+                reference: 0,
+            },
         ];
         exclude_grid_reference(&mut groups, 0, &qualities);
-        let mut registrations: Vec<_> = (0..4).map(sr_register::global::GlobalRegistration::identity).collect();
+        let mut registrations: Vec<_> = (0..4)
+            .map(sr_register::global::GlobalRegistration::identity)
+            .collect();
         registrations[3].confidence = 0.004;
         registrations[3].residual_p50 = 23.0;
         let h = registered_group(&groups[0], &registrations).unwrap();
@@ -3980,21 +4371,30 @@ mod tests {
 
     #[test]
     fn filter_masks_preserve_decode_defects_without_cross_filter_leakage() {
-        let mut frames = vec![small_group_frame("H", 1e-6), small_group_frame("H", 1e-6), small_group_frame("O", 1e-4)];
+        let mut frames = vec![
+            small_group_frame("H", 1e-6),
+            small_group_frame("H", 1e-6),
+            small_group_frame("O", 1e-4),
+        ];
         frames[0].defects.set(3);
         frames[2].defects.set(4);
         let decode: Vec<_> = frames.iter().map(|f| f.defects.clone()).collect();
         let mut h_mask = sr_core::samples::DefectMask::none(8, 8);
         h_mask.set(7);
         install_group_mask(&mut frames, &[0, 1], &h_mask);
-        assert!(frames[0].defects.get(3), "decode defect must survive sensor-mask application");
+        assert!(
+            frames[0].defects.get(3),
+            "decode defect must survive sensor-mask application"
+        );
         assert!(frames[0].defects.get(7));
         assert!(frames[1].defects.get(7));
         assert_eq!(frames[2].defects, decode[2], "H must never mask O");
         // O may return early without any mask (no motion, no defects, disabled
         // detection). Reset alone must restore the exact original state.
         reset_decode_masks(&mut frames, &decode);
-        for (frame, original) in frames.iter().zip(&decode) { assert_eq!(&frame.defects, original); }
+        for (frame, original) in frames.iter().zip(&decode) {
+            assert_eq!(&frame.defects, original);
+        }
         let mut o_mask = sr_core::samples::DefectMask::none(8, 8);
         o_mask.set(9);
         install_group_mask(&mut frames, &[2], &o_mask);
@@ -4003,7 +4403,10 @@ mod tests {
         assert!(!frames[2].defects.get(7));
         assert_eq!(frames[0].defects, decode[0]);
         assert_eq!(frames[1].defects, decode[1]);
-        assert!(!decode[0].get(7), "original shared mask must remain immutable");
+        assert!(
+            !decode[0].get(7),
+            "original shared mask must remain immutable"
+        );
         assert!(!decode[2].get(9));
     }
 
@@ -4045,7 +4448,13 @@ mod tests {
         ];
         flag_frames(&mut rows);
         let kinds = |f: &str| -> Vec<&str> {
-            rows.iter().find(|r| r.file == f).unwrap().flags.iter().map(|f| f.kind).collect()
+            rows.iter()
+                .find(|r| r.file == f)
+                .unwrap()
+                .flags
+                .iter()
+                .map(|f| f.kind)
+                .collect()
         };
 
         assert!(kinds("h0").is_empty());
@@ -4057,8 +4466,15 @@ mod tests {
         for o in ["o0", "o1", "o2", "o3", "o4"] {
             assert!(kinds(o).is_empty(), "{o}: {:?}", kinds(o));
         }
-        assert!((rows[0].sharpness.unwrap() - 1.0).abs() < 0.05, "{:?}", rows[0].sharpness);
-        assert_eq!(rows[3].sharpness, None, "no number comparable to the others'");
+        assert!(
+            (rows[0].sharpness.unwrap() - 1.0).abs() < 0.05,
+            "{:?}",
+            rows[0].sharpness
+        );
+        assert_eq!(
+            rows[3].sharpness, None,
+            "no number comparable to the others'"
+        );
     }
 
     #[test]
@@ -4066,30 +4482,58 @@ mod tests {
         let weights = vec![1.0; 11];
         let selected = chroma_sample_indices(&weights, 3);
         let mut extended = vec![0.0];
-        for &w in &weights { extended.extend([w, 0.0]); }
+        for &w in &weights {
+            extended.extend([w, 0.0]);
+        }
         let extended_selected = chroma_sample_indices(&extended, 7);
         assert!(extended_selected.iter().all(|&i| extended[i] > 0.0));
-        assert_eq!(selected, extended_selected.iter().map(|i| (i - 1) / 2).collect::<Vec<_>>());
-        assert_eq!(chroma_sample_indices(&[0.0, f32::NAN, 1.0, f32::INFINITY, -1.0], 0), vec![2]);
+        assert_eq!(
+            selected,
+            extended_selected
+                .iter()
+                .map(|i| (i - 1) / 2)
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(
+            chroma_sample_indices(&[0.0, f32::NAN, 1.0, f32::INFINITY, -1.0], 0),
+            vec![2]
+        );
         assert!(chroma_sample_indices(&[0.0; 4], 0).is_empty());
         assert_eq!(chroma_sample_indices(&[1.0; 3], 1), vec![0, 1, 2]);
     }
 
     #[test]
     fn grid_only_reference_cannot_define_content_or_emit_a_filter_master() {
-        let qualities: Vec<_> = [100., 1., 2.].into_iter().map(|sharpness| FrameQuality {
-            sharpness, ..Default::default()
-        }).collect();
+        let qualities: Vec<_> = [100., 1., 2.]
+            .into_iter()
+            .map(|sharpness| FrameQuality {
+                sharpness,
+                ..Default::default()
+            })
+            .collect();
         let mut ordinary = vec![FilterGroup {
-            name: String::new(), active: vec![true; 3], members: vec![0, 1, 2], reference: 0,
+            name: String::new(),
+            active: vec![true; 3],
+            members: vec![0, 1, 2],
+            reference: 0,
         }];
         exclude_grid_reference(&mut ordinary, 0, &qualities);
         assert_eq!(ordinary[0].active, [false, true, true]);
         assert_eq!(ordinary[0].members, [1, 2]);
         assert_eq!(ordinary[0].reference, 2);
         let mut split = vec![
-            FilterGroup { name: "O".into(), active: vec![true, false, false], members: vec![0], reference: 0 },
-            FilterGroup { name: "H".into(), active: vec![false, true, true], members: vec![1, 2], reference: 2 },
+            FilterGroup {
+                name: "O".into(),
+                active: vec![true, false, false],
+                members: vec![0],
+                reference: 0,
+            },
+            FilterGroup {
+                name: "H".into(),
+                active: vec![false, true, true],
+                members: vec![1, 2],
+                reference: 2,
+            },
         ];
         exclude_grid_reference(&mut split, 0, &qualities);
         assert_eq!(split.len(), 1);
@@ -4105,20 +4549,36 @@ mod tests {
 
     #[test]
     fn failed_alignment_cannot_enter_photometry_even_with_a_small_positive_weight() {
-        let mut regs: Vec<_> = (0..3).map(sr_register::global::GlobalRegistration::identity).collect();
+        let mut regs: Vec<_> = (0..3)
+            .map(sr_register::global::GlobalRegistration::identity)
+            .collect();
         regs[1].confidence = 0.004;
         regs[1].residual_p50 = 23.0;
         // Low overlap alone is not a reason to discard accurate geometry.
         regs[2].confidence = 0.03;
         regs[2].residual_p50 = 0.1;
-        let group = FilterGroup { name: "test".into(), active: vec![true; 3], members: vec![0,1,2], reference: 1 };
+        let group = FilterGroup {
+            name: "test".into(),
+            active: vec![true; 3],
+            members: vec![0, 1, 2],
+            reference: 1,
+        };
         let valid = registered_group(&group, &regs).unwrap();
         assert_eq!(valid.active, vec![true, false, true]);
-        assert_eq!(valid.members, vec![0,2]);
+        assert_eq!(valid.members, vec![0, 2]);
         assert_eq!(valid.reference, 0);
-        assert!(registered_group(&FilterGroup {
-            name: "bad".into(), active: vec![false,true,false], members: vec![1], reference: 1,
-        }, &regs).is_err());
+        assert!(
+            registered_group(
+                &FilterGroup {
+                    name: "bad".into(),
+                    active: vec![false, true, false],
+                    members: vec![1],
+                    reference: 1,
+                },
+                &regs
+            )
+            .is_err()
+        );
     }
 
     /// The property that makes the cache worth having, and the one that makes
@@ -4200,7 +4660,11 @@ mod tests {
                 ..base.clone()
             },
         ] {
-            assert_ne!(key(&changed), b, "a registration parameter was not fingerprinted");
+            assert_ne!(
+                key(&changed),
+                b,
+                "a registration parameter was not fingerprinted"
+            );
         }
 
         // Which metric ranked the frames decides which one was chosen as the

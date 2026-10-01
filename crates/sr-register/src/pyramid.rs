@@ -164,6 +164,9 @@ mod tests {
         let g = probe_grid(1024, 512, 128, 8);
         assert!(g.len() >= 8);
         assert!(g.iter().all(|&(x, y)| x >= 64.0 && y >= 64.0));
-        assert!(g.iter().all(|&(x, y)| x <= 1024.0 - 64.0 && y <= 512.0 - 64.0));
+        assert!(
+            g.iter()
+                .all(|&(x, y)| x <= 1024.0 - 64.0 && y <= 512.0 - 64.0)
+        );
     }
 }

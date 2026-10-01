@@ -1,5 +1,5 @@
 //! Content-addressed scalar records plus compact, checked sample blocks.
-use super::{stats::PIXELS, Record};
+use super::{Record, stats::PIXELS};
 use crate::cache::{Cache, Fingerprint};
 use anyhow::{Context, Result};
 use sha2::{Digest, Sha256};
@@ -96,7 +96,9 @@ impl Store {
             "sample cache changed during analysis; rerun the command"
         );
         Ok(bytes
-            .as_chunks::<4>().0.iter()
+            .as_chunks::<4>()
+            .0
+            .iter()
             .map(|b| f32::from_le_bytes(*b))
             .collect())
     }

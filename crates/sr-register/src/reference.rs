@@ -44,10 +44,7 @@ pub struct ReferenceChoice {
 /// more than its neighbours do, whatever its other merits.
 ///
 /// Returns a robust per-frame deviation, in image units.
-fn typicality_deviation(
-    proxies: &[RegistrationImage],
-    positions: &[(f32, f32)],
-) -> Vec<f32> {
+fn typicality_deviation(proxies: &[RegistrationImage], positions: &[(f32, f32)]) -> Vec<f32> {
     let n = proxies.len();
     if n < 3 {
         return vec![0.0; n];
@@ -56,7 +53,13 @@ fn typicality_deviation(
     // measurement is about large intrusions, not about detail.
     let depth = proxies.iter().map(|p| p.depth()).min().unwrap_or(1);
     let mut level = depth - 1;
-    while level > 0 && proxies[0].level(level).width.min(proxies[0].level(level).height) < 48 {
+    while level > 0
+        && proxies[0]
+            .level(level)
+            .width
+            .min(proxies[0].level(level).height)
+            < 48
+    {
         level -= 1;
     }
     let scale = (1 << level) as f32;
@@ -243,23 +246,33 @@ pub fn select_reference(
     };
 
     let reason = if deviation[index] > med_dev * 1.5 {
-        format!("{reason}; note that this frame still deviates from the burst median more than most")
+        format!(
+            "{reason}; note that this frame still deviates from the burst median more than most"
+        )
     } else {
         reason
     };
 
-    ReferenceChoice { index, reason, positions: pos, envelope_radius: envelope, scores }
+    ReferenceChoice {
+        index,
+        reason,
+        positions: pos,
+        envelope_radius: envelope,
+        scores,
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     fn scene(w: usize, h: usize, ox: f32, oy: f32, blur: usize) -> Plane<f32> {
         let mut p = Plane::new(w, h);
         let mut seed = 0xBEEFu64;
         let mut next = || {
-            seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            seed = seed
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
             ((seed >> 33) as f32 / (1u32 << 31) as f32) - 0.5
         };
         // Log-spaced spatial frequencies from very coarse to near Nyquist.
@@ -285,11 +298,7 @@ mod tests {
                 p.data[y * w + x] = 0.5 + acc;
             }
         }
-        if blur > 0 {
-            p.blur_n(blur)
-        } else {
-            p
-        }
+        if blur > 0 { p.blur_n(blur) } else { p }
     }
 
     fn quality_of(p: &Plane<f32>) -> FrameQuality {
@@ -312,28 +321,52 @@ mod tests {
 
     #[test]
     fn prefers_a_central_frame_over_an_outlying_sharper_one() {
-        let cfg = RegistrationConfig { global_patch: 64, global_probes: 6, ..Default::default() };
+        let cfg = RegistrationConfig {
+            global_patch: 64,
+            global_probes: 6,
+            ..Default::default()
+        };
         // Frames 0..4 clustered near the origin, frame 5 far away but sharpest.
-        let offsets = [(0.0f32, 0.0f32), (1.0, 0.5), (-0.8, 0.6), (0.5, -1.0), (-0.4, -0.7), (40.0, 30.0)];
+        let offsets = [
+            (0.0f32, 0.0f32),
+            (1.0, 0.5),
+            (-0.8, 0.6),
+            (0.5, -1.0),
+            (-0.4, -0.7),
+            (40.0, 30.0),
+        ];
         let planes: Vec<Plane<f32>> = offsets
             .iter()
             .enumerate()
             .map(|(i, &(ox, oy))| scene(384, 384, ox, oy, if i == 5 { 0 } else { 1 }))
             .collect();
-        let proxies: Vec<RegistrationImage> =
-            planes.iter().map(|p| RegistrationImage::build(p, 3)).collect();
+        let proxies: Vec<RegistrationImage> = planes
+            .iter()
+            .map(|p| RegistrationImage::build(p, 3))
+            .collect();
         let quals: Vec<FrameQuality> = planes.iter().map(quality_of).collect();
 
         let choice = select_reference(&proxies, &quals, &cfg);
-        assert_ne!(choice.index, 5, "picked the outlying frame: {}", choice.reason);
+        assert_ne!(
+            choice.index, 5,
+            "picked the outlying frame: {}",
+            choice.reason
+        );
         // The survey must also have *located* the outlier: its content is
         // displaced by (+40, +30), so the transform that brings it back is the
         // negative of that.
         let (px, py) = choice.positions[5];
-        assert!((px + 40.0).abs() < 1.0 && (py + 30.0).abs() < 1.0, "outlier at ({px}, {py})");
+        assert!(
+            (px + 40.0).abs() < 1.0 && (py + 30.0).abs() < 1.0,
+            "outlier at ({px}, {py})"
+        );
         // `envelope_radius` is a 90th percentile, so with six frames it
         // deliberately ignores the single stray one.
-        assert!(choice.envelope_radius < 5.0, "envelope {}", choice.envelope_radius);
+        assert!(
+            choice.envelope_radius < 5.0,
+            "envelope {}",
+            choice.envelope_radius
+        );
     }
 
     #[test]
@@ -341,7 +374,11 @@ mod tests {
         // Eight frames of a static scene; the last three have a bright blob
         // crossing them. Picking one of those as the reference would make the
         // blob the definition of the scene.
-        let cfg = RegistrationConfig { global_patch: 64, global_probes: 6, ..Default::default() };
+        let cfg = RegistrationConfig {
+            global_patch: 64,
+            global_probes: 6,
+            ..Default::default()
+        };
         let planes: Vec<Plane<f32>> = (0..8)
             .map(|i| {
                 let mut p = scene(256, 256, 0.0, 0.0, 0);
@@ -356,8 +393,10 @@ mod tests {
                 p
             })
             .collect();
-        let proxies: Vec<RegistrationImage> =
-            planes.iter().map(|p| RegistrationImage::build(p, 3)).collect();
+        let proxies: Vec<RegistrationImage> = planes
+            .iter()
+            .map(|p| RegistrationImage::build(p, 3))
+            .collect();
         // The intruding frames also look *sharper*, because a hard-edged blob
         // adds gradient energy. Sharpness alone would elect one of them.
         let quals: Vec<FrameQuality> = planes.iter().map(quality_of).collect();

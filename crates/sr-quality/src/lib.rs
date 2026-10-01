@@ -148,35 +148,37 @@ pub fn local_quality(guide_luma: &Plane<f32>, region: usize) -> LocalQualityMap 
     let gh = h.div_ceil(region);
     let mut sharpness = vec![0.0f32; gw * gh];
 
-    sharpness
-        .par_iter_mut()
-        .enumerate()
-        .for_each(|(idx, out)| {
-            let gx = idx % gw;
-            let gy = idx / gw;
-            let x0 = gx * region;
-            let y0 = gy * region;
-            let x1 = (x0 + region).min(w);
-            let y1 = (y0 + region).min(h);
-            if x1 <= x0 + 2 || y1 <= y0 + 2 {
-                *out = 0.0;
-                return;
+    sharpness.par_iter_mut().enumerate().for_each(|(idx, out)| {
+        let gx = idx % gw;
+        let gy = idx / gw;
+        let x0 = gx * region;
+        let y0 = gy * region;
+        let x1 = (x0 + region).min(w);
+        let y1 = (y0 + region).min(h);
+        if x1 <= x0 + 2 || y1 <= y0 + 2 {
+            *out = 0.0;
+            return;
+        }
+        let mut acc = 0.0f64;
+        let mut n = 0u64;
+        for y in (y0 + 1)..(y1 - 1) {
+            for x in (x0 + 1)..(x1 - 1) {
+                let i = y * w + x;
+                let gx = guide_luma.data[i + 1] - guide_luma.data[i - 1];
+                let gy = guide_luma.data[i + w] - guide_luma.data[i - w];
+                acc += (gx * gx + gy * gy) as f64;
+                n += 1;
             }
-            let mut acc = 0.0f64;
-            let mut n = 0u64;
-            for y in (y0 + 1)..(y1 - 1) {
-                for x in (x0 + 1)..(x1 - 1) {
-                    let i = y * w + x;
-                    let gx = guide_luma.data[i + 1] - guide_luma.data[i - 1];
-                    let gy = guide_luma.data[i + w] - guide_luma.data[i - w];
-                    acc += (gx * gx + gy * gy) as f64;
-                    n += 1;
-                }
-            }
-            *out = (acc / n.max(1) as f64) as f32;
-        });
+        }
+        *out = (acc / n.max(1) as f64) as f32;
+    });
 
-    LocalQualityMap { grid_w: gw, grid_h: gh, region, sharpness }
+    LocalQualityMap {
+        grid_w: gw,
+        grid_h: gh,
+        region,
+        sharpness,
+    }
 }
 
 /// Rank frames per region, best first.
@@ -218,8 +220,16 @@ pub fn rank_frames_per_region(maps: &[LocalQualityMap]) -> Vec<Vec<u16>> {
 /// that is a half-flux diameter on some frames and a gradient energy on others
 /// is not a ranking, it is two rankings interleaved, and the frames that
 /// happened to be measured would sort against frames that happened not to be.
-pub fn apply_star_sharpness(qualities: &mut [FrameQuality], stars: &[Option<stars::StarMetrics>]) -> bool {
-    let measured: Vec<f32> = stars.iter().flatten().map(|s| s.hfd).filter(|h| *h > 0.0).collect();
+pub fn apply_star_sharpness(
+    qualities: &mut [FrameQuality],
+    stars: &[Option<stars::StarMetrics>],
+) -> bool {
+    let measured: Vec<f32> = stars
+        .iter()
+        .flatten()
+        .map(|s| s.hfd)
+        .filter(|h| *h > 0.0)
+        .collect();
     if measured.len() * 4 < qualities.len() * 3 || measured.len() < 3 {
         return false;
     }
@@ -265,7 +275,11 @@ mod tests {
         let mut p = Plane::new(w, h);
         for y in 0..h {
             for x in 0..w {
-                let v = if ((x / period) + (y / period)).is_multiple_of(2) { 0.7 } else { 0.3 };
+                let v = if ((x / period) + (y / period)).is_multiple_of(2) {
+                    0.7
+                } else {
+                    0.3
+                };
                 p.data[y * w + x] = v;
             }
         }

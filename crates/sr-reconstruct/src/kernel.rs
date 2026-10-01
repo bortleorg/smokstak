@@ -108,13 +108,23 @@ impl KernelField {
     /// Select the mono sampling kernel or the adaptive mosaic field. Mono
     /// measures every site, so it need not borrow CFA's spatial denoising.
     pub fn for_sensor(
-        guide: &Plane<f32>, noise_sigma: f32, frames: usize,
-        pattern: CfaPattern, cfg: &KernelConfig,
+        guide: &Plane<f32>,
+        noise_sigma: f32,
+        frames: usize,
+        pattern: CfaPattern,
+        cfg: &KernelConfig,
     ) -> Self {
         if pattern.is_mono()
-            && let Some(variance) = cfg.mono_kernel_variance {
-                return Self::isotropic(guide.width, guide.height, variance.max(MIN_K_DETAIL), cfg.radius, 2);
-            }
+            && let Some(variance) = cfg.mono_kernel_variance
+        {
+            return Self::isotropic(
+                guide.width,
+                guide.height,
+                variance.max(MIN_K_DETAIL),
+                cfg.radius,
+                2,
+            );
+        }
         Self::from_reference(guide, noise_sigma, frames, cfg)
     }
 
@@ -228,7 +238,9 @@ impl KernelField {
         // there is one rule here and not two.
         let k_detail = if cfg.scale_detail_with_frames {
             let attenuation = (REFERENCE_FRAMES / frames.max(1) as f32).sqrt().min(1.0);
-            (cfg.k_detail * attenuation).max(MIN_K_DETAIL).min(cfg.k_detail)
+            (cfg.k_detail * attenuation)
+                .max(MIN_K_DETAIL)
+                .min(cfg.k_detail)
         } else {
             cfg.k_detail
         };
@@ -365,18 +377,27 @@ impl KernelField {
     /// describe the same ellipse and must not cancel during interpolation.
     pub fn precision_at(&self, x: f32, y: f32) -> [f32; 3] {
         let matrix = |cx: usize, cy: usize| {
-            let i = if self.is_uniform() { 0 } else { cy * self.width + cx };
+            let i = if self.is_uniform() {
+                0
+            } else {
+                cy * self.width + cx
+            };
             let [ex, ey] = self.dir[i];
             let a = 1.0 / self.inv_across[i];
             let b = 1.0 / self.inv_along[i];
-            [a * ex * ex + b * ey * ey, (a - b) * ex * ey,
-             a * ey * ey + b * ex * ex]
+            [
+                a * ex * ex + b * ey * ey,
+                (a - b) * ex * ey,
+                a * ey * ey + b * ex * ex,
+            ]
         };
         let inverse = |m: [f32; 3]| {
             let det = (m[0] * m[2] - m[1] * m[1]).max(1e-20);
             [m[2] / det, -m[1] / det, m[0] / det]
         };
-        if self.is_uniform() { return inverse(matrix(0, 0)); }
+        if self.is_uniform() {
+            return inverse(matrix(0, 0));
+        }
         // A guide cell averages sensor sites, whose centre is (cell-1)/2.
         let cell = self.cell as f32;
         let gx = ((x - (cell - 1.0) * 0.5) / cell).clamp(0.0, (self.width - 1) as f32);
@@ -385,13 +406,19 @@ impl KernelField {
         let (fx, fy) = (gx - ix as f32, gy - iy as f32);
         let mut q = [0.0; 3];
         for (cx, cy, w) in [
-            (ix, iy, (1.0-fx)*(1.0-fy)),
-            ((ix+1).min(self.width-1), iy, fx*(1.0-fy)),
-            (ix, (iy+1).min(self.height-1), (1.0-fx)*fy),
-            ((ix+1).min(self.width-1), (iy+1).min(self.height-1), fx*fy),
+            (ix, iy, (1.0 - fx) * (1.0 - fy)),
+            ((ix + 1).min(self.width - 1), iy, fx * (1.0 - fy)),
+            (ix, (iy + 1).min(self.height - 1), (1.0 - fx) * fy),
+            (
+                (ix + 1).min(self.width - 1),
+                (iy + 1).min(self.height - 1),
+                fx * fy,
+            ),
         ] {
             let p = matrix(cx, cy);
-            for c in 0..3 { q[c] += w*p[c]; }
+            for c in 0..3 {
+                q[c] += w * p[c];
+            }
         }
         inverse(q)
     }
@@ -426,8 +453,16 @@ mod tests {
         }
         let adaptive = KernelField::from_reference(&guide, 0.002, 10, &cfg);
         for pattern in [CfaPattern::MONO, CfaPattern::RGGB] {
-            let selected = KernelField::for_sensor(&guide, 0.002, 10, pattern,
-                &KernelConfig { mono_kernel_variance: None, ..cfg });
+            let selected = KernelField::for_sensor(
+                &guide,
+                0.002,
+                10,
+                pattern,
+                &KernelConfig {
+                    mono_kernel_variance: None,
+                    ..cfg
+                },
+            );
             assert_eq!(selected.inv_across, adaptive.inv_across);
             assert_eq!(selected.inv_along, adaptive.inv_along);
             assert_eq!(selected.dir, adaptive.dir);
@@ -444,8 +479,12 @@ mod tests {
         // centres. Interpolating their directions or inverse variances does
         // not give the specified arithmetic covariance average.
         let f = KernelField {
-            width: 2, height: 1, cell: 2, radius: 2.0,
-            inv_across: vec![1.0, 0.25], inv_along: vec![0.25, 1.0],
+            width: 2,
+            height: 1,
+            cell: 2,
+            radius: 2.0,
+            inv_across: vec![1.0, 0.25],
+            inv_along: vec![0.25, 1.0],
             dir: vec![[1.0, 0.0], [-1.0, 0.0]],
         };
         assert_eq!(f.precision_at(0.5, 0.5), [1.0, 0.0, 0.25]);
@@ -455,7 +494,10 @@ mod tests {
         assert!((middle[2] - 0.4).abs() < 1e-6);
         let a = f.precision_at(2.0 - 1e-4, 0.5);
         let b = f.precision_at(2.0 + 1e-4, 0.5);
-        assert!((a[0] - b[0]).abs() < 1e-3, "cell boundary changed the kernel abruptly");
+        assert!(
+            (a[0] - b[0]).abs() < 1e-3,
+            "cell boundary changed the kernel abruptly"
+        );
     }
 
     fn vertical_edge(w: usize, h: usize) -> Plane<f32> {
@@ -495,7 +537,10 @@ mod tests {
         // Across the edge, where the detail kernel governs.
         let a = small.weight_at(32, 32, 1.0, 0.0);
         let b = large.weight_at(32, 32, 1.0, 0.0);
-        assert!(b < a * 0.7, "large burst kernel not narrower: {b} against {a}");
+        assert!(
+            b < a * 0.7,
+            "large burst kernel not narrower: {b} against {a}"
+        );
     }
 
     #[test]
@@ -506,7 +551,10 @@ mod tests {
         let cfg = KernelConfig::default();
         let edge = vertical_edge(64, 64);
         let many = KernelField::from_reference(&edge, 0.001, 10_000, &cfg);
-        let floor_cfg = KernelConfig { k_detail: MIN_K_DETAIL, ..cfg };
+        let floor_cfg = KernelConfig {
+            k_detail: MIN_K_DETAIL,
+            ..cfg
+        };
         let floored = KernelField::from_reference(&edge, 0.001, 8, &floor_cfg);
         let a = many.weight_at(32, 32, 1.0, 0.0);
         let b = floored.weight_at(32, 32, 1.0, 0.0);
@@ -515,7 +563,10 @@ mod tests {
 
     #[test]
     fn the_detail_kernel_is_left_alone_when_the_scaling_is_off() {
-        let cfg = KernelConfig { scale_detail_with_frames: false, ..KernelConfig::default() };
+        let cfg = KernelConfig {
+            scale_detail_with_frames: false,
+            ..KernelConfig::default()
+        };
         let edge = vertical_edge(64, 64);
         let small = KernelField::from_reference(&edge, 0.001, 8, &cfg);
         let large = KernelField::from_reference(&edge, 0.001, 96, &cfg);
@@ -531,7 +582,10 @@ mod tests {
         let f = KernelField::from_reference(&flat, 0.001, 8, &cfg);
         let a = f.weight_at(32, 32, 1.0, 0.0);
         let b = f.weight_at(32, 32, 0.0, 1.0);
-        assert!((a - b).abs() < 1e-3, "flat region kernel is not isotropic: {a} vs {b}");
+        assert!(
+            (a - b).abs() < 1e-3,
+            "flat region kernel is not isotropic: {a} vs {b}"
+        );
         // k_denoise = 3 means a 1 px offset barely attenuates.
         assert!(a > 0.8, "flat kernel too narrow: {a}");
     }
@@ -579,8 +633,10 @@ mod tests {
             let field = KernelField::from_reference(&guide, 0.002, 8, &cfg);
             let (dx, dy) = if axis == 0 { (1.0, 0.0) } else { (0.0, 1.0) };
             for x in [31, 32] {
-                assert!(field.weight_at(x, 32, dx, dy) < flat.weight_at(x, 32, dx, dy) * 0.6,
-                    "alternating texture was classified as flat on axis {axis}, phase {x}");
+                assert!(
+                    field.weight_at(x, 32, dx, dy) < flat.weight_at(x, 32, dx, dy) * 0.6,
+                    "alternating texture was classified as flat on axis {axis}, phase {x}"
+                );
             }
         }
     }
@@ -597,8 +653,10 @@ mod tests {
                 }
             }
             weights.sort_by(f32::total_cmp);
-            assert!(weights[weights.len() / 100] > 0.7,
-                "fine-detail detection narrowed too much blank grain for seed {seed}");
+            assert!(
+                weights[weights.len() / 100] > 0.7,
+                "fine-detail detection narrowed too much blank grain for seed {seed}"
+            );
             assert!(weights.iter().sum::<f32>() / weights.len() as f32 > 0.8);
         }
     }
@@ -645,7 +703,10 @@ mod tests {
         let f = KernelField::isotropic(32, 32, 0.25, 2.0, 2);
         let green = f.weight_scaled(4, 4, 0.7, 0.0, 1.0);
         let red = f.weight_scaled(4, 4, 0.7, 0.0, 2.0);
-        assert!(red > green, "wider kernel should weight a distant sample more");
+        assert!(
+            red > green,
+            "wider kernel should weight a distant sample more"
+        );
         // exp(-0.5 * d^2 / (v * s)) with d = 0.7, v = 0.25, s = 2.
         let want = (-0.5f32 * 0.49 / 0.5).exp();
         assert!((red - want).abs() < 1e-5, "{red} vs {want}");

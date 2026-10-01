@@ -115,9 +115,13 @@ fn filters_order_exposure_cache_and_offline_report() {
     }
     fs::write(lights.join("bad.fit"), "not fits").unwrap();
     let cold = run(dir, Path::new("lights"), &[]);
-    assert!(cold["frames"].as_array().unwrap().iter().all(|frame| {
-        Path::new(frame["path"].as_str().unwrap()).is_absolute()
-    }));
+    assert!(
+        cold["frames"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|frame| { Path::new(frame["path"].as_str().unwrap()).is_absolute() })
+    );
     assert_eq!(cold["schema_version"], 3);
     assert_eq!(cold["summary"]["input_frames"], 7);
     assert_eq!(cold["summary"]["cache_hits"], 0);

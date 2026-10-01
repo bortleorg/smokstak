@@ -3,7 +3,7 @@ mod cache;
 mod report;
 mod stats;
 
-use crate::pipeline::{flag_frames, registration_usable, SurveyRow};
+use crate::pipeline::{SurveyRow, flag_frames, registration_usable};
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use sr_core::frame::{FrameMetadata, RawFrame};
@@ -13,7 +13,7 @@ use sr_quality::photometry::{FramePhotometry, PhotometricMatch, PhotometrySource
 use sr_quality::stars::StarMetrics;
 use sr_register::global::GlobalRegistration;
 use sr_register::pyramid::RegistrationImage;
-use stats::{Depth, Fit, Projection, PITCH, PIXELS, TILE};
+use stats::{Depth, Fit, PITCH, PIXELS, Projection, TILE};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
@@ -370,7 +370,9 @@ fn measure(
             true,
         )
     } else {
-        let phot_stars: Vec<_> = [&reference.frame, frame].iter().zip(&star_lists)
+        let phot_stars: Vec<_> = [&reference.frame, frame]
+            .iter()
+            .zip(&star_lists)
             .map(|(f, s)| sr_quality::stars::photometric_catalog(f, &s[..s.len().min(600)]))
             .collect();
         let stellar_gain = sr_quality::photometry::star_gains(
@@ -406,7 +408,9 @@ fn measure(
     let background_median = (!values.is_empty()).then(|| sr_core::math::median(&values));
     let background_mad_sigma = (!values.is_empty()).then(|| sr_core::math::mad_sigma(&values));
     let mut sigmas: Vec<_> = raw
-        .as_chunks::<PIXELS>().0.iter()
+        .as_chunks::<PIXELS>()
+        .0
+        .iter()
         .zip(&valid_tiles)
         .filter(|(_, valid)| **valid)
         .map(|(v, _)| sr_noise::spatial::detrended_tile_sigma(v, TILE))
@@ -765,17 +769,28 @@ pub fn run(args: &Args) -> Result<()> {
         cache_hits: frames.iter().filter(|f| f.cache_hit).count(),
     };
     timings.processing_seconds = started.elapsed().as_secs_f64();
-    let mut report=Report {schema_version:3,program_version:env!("CARGO_PKG_VERSION"),build_sha256:build,
-        project:args.input.display().to_string(),order:"existing input discovery filename order, independently within each filter",
-        method:stats::METHOD,
-        limitations:vec![stats::LIMITATION,
+    let mut report = Report {
+        schema_version: 3,
+        program_version: env!("CARGO_PKG_VERSION"),
+        build_sha256: build,
+        project: args.input.display().to_string(),
+        order: "existing input discovery filename order, independently within each filter",
+        method: stats::METHOD,
+        limitations: vec![
+            stats::LIMITATION,
             "Nearest-detector sampling approximates scene positions within 0.71 target pixels. No interpolation smoothing; two-pixel pitch and duplicate-site rejection reduce spatial covariance.",
             "Spatial residuals include astronomical structure and are not a measurement of random noise or a proven systematic noise floor.",
             "Fits and R-squared are descriptive. Cumulative points are correlated; no IID confidence intervals are claimed. Projections assume recent scaling persists and are not forecasts.",
             "Survey warnings do not automatically reject exposures. Accepted means decoded mono data with usable registration, not a guarantee of photometric quality.",
             "Pairwise standard star/block photometry uses a fixed per-filter anchor; sky fields are off. Burst obstruction masking and burst defect detection are not run.",
-            "Adding frames can change common coverage and relative confidence, so earlier curve values may change. Adding an earlier reference invalidates dependent cached measurements."],
-        requested_samples:args.samples,summary,frames,filters:output_groups,timings};
+            "Adding frames can change common coverage and relative confidence, so earlier curve values may change. Adding an earlier reference invalidates dependent cached measurements.",
+        ],
+        requested_samples: args.samples,
+        summary,
+        frames,
+        filters: output_groups,
+        timings,
+    };
     println!("Writing report...");
     let t = Instant::now();
     let _ = report::html(&report)?;

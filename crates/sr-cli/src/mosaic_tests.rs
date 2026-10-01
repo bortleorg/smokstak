@@ -188,15 +188,29 @@ fn spatial_stellar_response_preserves_scene_across_tiles_and_scales() {
 
 #[test]
 fn relative_log_gain_bounds_include_interior_extrema_and_reject_extrapolation() {
-    let model=RelativeLogGain {center:[0.;2],normalization_scale:1.,coefficients:[0.,0.,-0.1,0.03,0.2]};
-    let bounds=model.log_bounds([-1.,-1.,1.,1.]).unwrap();
-    for iy in 0..21 {for ix in 0..21 {
-        let value=model.factor_at(ix as f64/10.-1.,iy as f64/10.-1.).ln();
-        assert!(value>=bounds[0]-1e-12 && value<=bounds[1]+1e-12);
-    }}
-    let fixture=Fixture::new();let mut candidate=plan(&fixture);
-    candidate.frames[0].relative_log_gain=Some(model);
-    assert!(validate(&candidate,64,128).unwrap_err().to_string().contains("stellar-response"));
+    let model = RelativeLogGain {
+        center: [0.; 2],
+        normalization_scale: 1.,
+        coefficients: [0., 0., -0.1, 0.03, 0.2],
+    };
+    let bounds = model.log_bounds([-1., -1., 1., 1.]).unwrap();
+    for iy in 0..21 {
+        for ix in 0..21 {
+            let value = model
+                .factor_at(ix as f64 / 10. - 1., iy as f64 / 10. - 1.)
+                .ln();
+            assert!(value >= bounds[0] - 1e-12 && value <= bounds[1] + 1e-12);
+        }
+    }
+    let fixture = Fixture::new();
+    let mut candidate = plan(&fixture);
+    candidate.frames[0].relative_log_gain = Some(model);
+    assert!(
+        validate(&candidate, 64, 128)
+            .unwrap_err()
+            .to_string()
+            .contains("stellar-response")
+    );
 }
 
 #[test]
@@ -274,8 +288,14 @@ fn corrected_background_preserves_scene(quadratic: bool, spatial_gain: bool) {
         other.path = fixture.0.join(format!("photometric-{i}.fits"));
         other.gain = [1.25, 0.8][i];
         if spatial_gain {
-            other.relative_log_gain=Some(RelativeLogGain {center:[96.,72.],normalization_scale:128.,
-                coefficients: [[0.07,-0.04,0.09,0.03,-0.06],[-0.05,0.08,-0.07,0.02,0.1]][i]});
+            other.relative_log_gain = Some(RelativeLogGain {
+                center: [96., 72.],
+                normalization_scale: 128.,
+                coefficients: [
+                    [0.07, -0.04, 0.09, 0.03, -0.06],
+                    [-0.05, 0.08, -0.07, 0.02, 0.1],
+                ][i],
+            });
         }
         other.offset = [0.013, -0.019][i];
         other.background_plane = [[0.00021, -0.00016], [-0.00017, 0.00023]][i];
@@ -292,7 +312,7 @@ fn corrected_background_preserves_scene(quadratic: bool, spatial_gain: bool) {
                 + f64::from(other.background_quadratic[0]) * rx * rx
                 + f64::from(other.background_quadratic[1]) * rx * ry
                 + f64::from(other.background_quadratic[2]) * ry * ry;
-            (photometry_scene(rx, ry) - field) / other.matched_gain(rx,ry) * 65535.
+            (photometry_scene(rx, ry) - field) / other.matched_gain(rx, ry) * 65535.
         });
         other.bytes = fs::metadata(&other.path).unwrap().len();
         other.sha256 = source_hash(&other.path).unwrap();
@@ -340,7 +360,9 @@ fn corrected_background_preserves_scene(quadratic: bool, spatial_gain: bool) {
                 }
             }
         }
-        println!("photometry scale {scale}: max tile difference {worst_tile}, correction difference {worst_correction}, background error {worst_background}");
+        println!(
+            "photometry scale {scale}: max tile difference {worst_tile}, correction difference {worst_correction}, background error {worst_background}"
+        );
         assert!(
             worst_tile <= 1e-5,
             "scale {scale}: tile seam difference {worst_tile}"
@@ -427,7 +449,9 @@ fn read_output(path: &Path, width: usize, height: usize) -> Vec<f32> {
     let bytes = fs::read(path).unwrap();
     let (_, offset) = sr_raw::fits::read_header(path).unwrap();
     let values: Vec<_> = bytes[offset as usize..offset as usize + width * height * 4]
-        .as_chunks::<4>().0.iter()
+        .as_chunks::<4>()
+        .0
+        .iter()
         .map(|b| f32::from_be_bytes(*b))
         .collect();
     values
@@ -449,12 +473,26 @@ fn source_band_cache_changes_reads_not_output() {
     let result = build(&plan, &direct, 64, 1024);
     super::READ_DIRECTLY.store(false, std::sync::atomic::Ordering::SeqCst);
     result.unwrap();
-    for name in ["image.fits", "weight.fits", "samples.fits", "preview-linear.fits"] {
-        assert!(fs::read(cached.join(name)).unwrap() == fs::read(direct.join(name)).unwrap(), "{name} differs");
+    for name in [
+        "image.fits",
+        "weight.fits",
+        "samples.fits",
+        "preview-linear.fits",
+    ] {
+        assert!(
+            fs::read(cached.join(name)).unwrap() == fs::read(direct.join(name)).unwrap(),
+            "{name} differs"
+        );
     }
-    let record: serde_json::Value = serde_json::from_slice(&fs::read(cached.join("result.json")).unwrap()).unwrap();
-    assert!(record["source_band_cache"]["hits"].as_u64().unwrap() > 0, "{}", record["source_band_cache"]);
-    let record: serde_json::Value = serde_json::from_slice(&fs::read(direct.join("result.json")).unwrap()).unwrap();
+    let record: serde_json::Value =
+        serde_json::from_slice(&fs::read(cached.join("result.json")).unwrap()).unwrap();
+    assert!(
+        record["source_band_cache"]["hits"].as_u64().unwrap() > 0,
+        "{}",
+        record["source_band_cache"]
+    );
+    let record: serde_json::Value =
+        serde_json::from_slice(&fs::read(direct.join("result.json")).unwrap()).unwrap();
     assert_eq!(record["source_band_cache"]["misses"], 0);
 }
 
@@ -527,25 +565,33 @@ fn tiled_controller_preserves_seams_values_weights_counts_and_uncovered_sky() {
             .abs()
             < 1e-7
     );
-    assert!(manifest["policies"]["rejection"]
-        .as_str()
-        .unwrap()
-        .contains("per-frame photometrically scaled noise"));
-    assert!(manifest["limitations"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .any(|v| v.as_str().unwrap().contains("Global stellar HFD")));
-    assert!(manifest["limitations"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .any(|v| v.as_str().unwrap().contains("Uncalibrated detector")));
+    assert!(
+        manifest["policies"]["rejection"]
+            .as_str()
+            .unwrap()
+            .contains("per-frame photometrically scaled noise")
+    );
+    assert!(
+        manifest["limitations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|v| v.as_str().unwrap().contains("Global stellar HFD"))
+    );
+    assert!(
+        manifest["limitations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|v| v.as_str().unwrap().contains("Uncalibrated detector"))
+    );
     let sentinel = fs::read(small.join("image.fits")).unwrap();
-    assert!(build(&plan, &small, 64, 128)
-        .unwrap_err()
-        .to_string()
-        .contains("already exists"));
+    assert!(
+        build(&plan, &small, 64, 128)
+            .unwrap_err()
+            .to_string()
+            .contains("already exists")
+    );
     assert_eq!(fs::read(small.join("image.fits")).unwrap(), sentinel);
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
@@ -556,20 +602,24 @@ fn invalid_registration_and_failed_build_never_publish_completed_output() {
     let mut plan = plan(&fixture);
     let output = fixture.0.join("rejected");
     plan.frames[1].registration_p90 = 2.;
-    assert!(build(&plan, &output, 64, 128)
-        .unwrap_err()
-        .to_string()
-        .contains("registration gate"));
+    assert!(
+        build(&plan, &output, 64, 128)
+            .unwrap_err()
+            .to_string()
+            .contains("registration gate")
+    );
     assert!(!output.exists());
     assert_eq!(fs::read_dir(&fixture.0).unwrap().count(), 2);
     plan.frames[1].registration_p90 = 0.2;
     // A dimension change passes header/filter preflight but fails preparation,
     // after staging begins. It must retain diagnostics, never publish success.
     plan.frames[1].width += 1;
-    assert!(build(&plan, &output, 64, 128)
-        .unwrap_err()
-        .to_string()
-        .contains("dimensions changed"));
+    assert!(
+        build(&plan, &output, 64, 128)
+            .unwrap_err()
+            .to_string()
+            .contains("dimensions changed")
+    );
     assert!(!output.exists());
     let partials: Vec<_> = fs::read_dir(&fixture.0)
         .unwrap()
@@ -621,10 +671,12 @@ fn malformed_noise_and_registration_fail_before_staging() {
         let mut candidate = baseline.clone();
         candidate.frames[1].registration_p50 = p50;
         candidate.frames[1].registration_p90 = p90;
-        assert!(build(&candidate, &output, 64, 128)
-            .unwrap_err()
-            .to_string()
-            .contains("registration gate"));
+        assert!(
+            build(&candidate, &output, 64, 128)
+                .unwrap_err()
+                .to_string()
+                .contains("registration gate")
+        );
         assert!(!output.exists());
     }
     assert_eq!(
@@ -640,25 +692,31 @@ fn duplicate_canonical_source_aliases_cannot_manufacture_exposure_count() {
     let mut candidate = plan(&fixture);
     candidate.frames[1] = candidate.frames[0].clone();
     let output = fixture.0.join("duplicate-output");
-    assert!(build(&candidate, &output, 64, 128)
-        .unwrap_err()
-        .to_string()
-        .contains("duplicate source"));
+    assert!(
+        build(&candidate, &output, 64, 128)
+            .unwrap_err()
+            .to_string()
+            .contains("duplicate source")
+    );
     fs::create_dir(fixture.0.join("aliases")).unwrap();
     candidate.frames[1].path = fixture.0.join("aliases").join("..").join("source-0.fits");
-    assert!(build(&candidate, &output, 64, 128)
-        .unwrap_err()
-        .to_string()
-        .contains("duplicate source"));
+    assert!(
+        build(&candidate, &output, 64, 128)
+            .unwrap_err()
+            .to_string()
+            .contains("duplicate source")
+    );
     assert!(!output.exists());
     assert_eq!(fs::read_dir(&fixture.0).unwrap().count(), 3);
     let copied = fixture.0.join("copied-exposure.fits");
     fs::copy(&candidate.frames[0].path, &copied).unwrap();
     candidate.frames[1].path = copied;
-    assert!(build(&candidate, &output, 64, 128)
-        .unwrap_err()
-        .to_string()
-        .contains("duplicate source content"));
+    assert!(
+        build(&candidate, &output, 64, 128)
+            .unwrap_err()
+            .to_string()
+            .contains("duplicate source content")
+    );
     assert!(!output.exists());
 }
 
@@ -685,10 +743,12 @@ fn tile_steps_preserve_the_same_reference_guide_phase() {
     candidate.grid.scale = scale * 2.;
     assert_eq!(128f32 / candidate.grid.scale, 66.);
     assert_ne!(128f64 / f64::from(candidate.grid.scale), 66.);
-    assert!(validate(&candidate, 128, 128)
-        .unwrap_err()
-        .to_string()
-        .contains("reference guide lattice"));
+    assert!(
+        validate(&candidate, 128, 128)
+            .unwrap_err()
+            .to_string()
+            .contains("reference guide lattice")
+    );
 }
 
 #[test]
@@ -748,7 +808,9 @@ fn fractional_scale_preserves_outputs_across_compatible_tile_sizes() {
             );
         }
         if differing > 0 {
-            failures.push(format!("{name}: {differing} differing pixels; worst {worst:?} (error,index,tile66,tile132)"));
+            failures.push(format!(
+                "{name}: {differing} differing pixels; worst {worst:?} (error,index,tile66,tile132)"
+            ));
         }
     }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
@@ -866,14 +928,26 @@ fn bounded_reader_accepts_real_full_data_plans() {
 
 #[test]
 fn display_stretch_excludes_gaps_and_preserves_linear_copy() {
-    let linear = Plane::from_vec(1002, 1, (0..1002).map(|i| if i < 2 { 0. } else { 0.1 + i as f32 * 0.0001 }).collect());
+    let linear = Plane::from_vec(
+        1002,
+        1,
+        (0..1002)
+            .map(|i| if i < 2 { 0. } else { 0.1 + i as f32 * 0.0001 })
+            .collect(),
+    );
     let original = linear.data.to_vec();
     let mut display = linear.clone();
-    let mut counts = vec![1; 1002]; counts[..2].fill(0);
+    let mut counts = vec![1; 1002];
+    counts[..2].fill(0);
     let range = stretch_mosaic_preview(&mut display, &counts);
     assert!(range[0] > 0.1 && range[1] > range[0]);
     assert_eq!(&display.data[..2], &[0., 0.]);
-    assert!(display.data.iter().all(|v| v.is_finite() && (0. ..=1.).contains(v)));
+    assert!(
+        display
+            .data
+            .iter()
+            .all(|v| v.is_finite() && (0. ..=1.).contains(v))
+    );
     assert_eq!(linear.data.as_ref(), original.as_slice());
     assert!(display.data[500] > 0.5);
     counts.fill(0);
@@ -894,9 +968,27 @@ fn changed_reviewed_plan_is_rejected_before_publishing() {
     changed.grid.origin[0] += 1.;
     fs::write(&path, serde_json::to_vec(&changed).unwrap()).unwrap();
     let output = fixture.0.join("must-not-exist");
-    let args = Args { command: Command::Build { plan: path, output: output.clone(), tile: 64,
-        memory_mb: 128, experimental: true, plan_sha256: Some(digest) } };
-    assert!(run(&args).unwrap_err().to_string().contains("changed after review"));
+    let args = Args {
+        command: Command::Build {
+            plan: path,
+            output: output.clone(),
+            tile: 64,
+            memory_mb: 128,
+            experimental: true,
+            plan_sha256: Some(digest),
+        },
+    };
+    assert!(
+        run(&args)
+            .unwrap_err()
+            .to_string()
+            .contains("changed after review")
+    );
     assert!(!output.exists());
-    assert!(!fs::read_dir(&fixture.0).unwrap().flatten().any(|e| e.file_name().to_string_lossy().contains("partial")));
+    assert!(
+        !fs::read_dir(&fixture.0)
+            .unwrap()
+            .flatten()
+            .any(|e| e.file_name().to_string_lossy().contains("partial"))
+    );
 }

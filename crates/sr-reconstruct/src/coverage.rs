@@ -410,7 +410,11 @@ mod tests {
         let c = analyse_coverage(&frames, &warps, 2.0, 4);
         assert!(c.horizontal_diversity > 0.9, "h {}", c.horizontal_diversity);
         assert!(c.vertical_diversity < 0.1, "v {}", c.vertical_diversity);
-        assert!(c.recommended_scale < 1.2, "recommended {}", c.recommended_scale);
+        assert!(
+            c.recommended_scale < 1.2,
+            "recommended {}",
+            c.recommended_scale
+        );
     }
 
     #[test]
@@ -425,7 +429,11 @@ mod tests {
             })
             .collect();
         let c = analyse_coverage(&frames, &warps, 2.0, 4);
-        assert!(c.recommended_scale < 1.1, "recommended {}", c.recommended_scale);
+        assert!(
+            c.recommended_scale < 1.1,
+            "recommended {}",
+            c.recommended_scale
+        );
         assert!(c.horizontal_diversity < 0.1, "h {}", c.horizontal_diversity);
     }
 

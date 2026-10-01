@@ -217,7 +217,11 @@ pub fn decode(path: &Path) -> Result<RawFrame> {
     for y in 0..ch {
         for x in 0..cw {
             let v = values[y * w + x] * 65535.0;
-            data[y * cw + x] = if v.is_finite() { v.clamp(0.0, 65535.0) as u16 } else { 0 };
+            data[y * cw + x] = if v.is_finite() {
+                v.clamp(0.0, 65535.0) as u16
+            } else {
+                0
+            };
         }
     }
     drop(values);
@@ -226,7 +230,14 @@ pub fn decode(path: &Path) -> Result<RawFrame> {
     fits::build_frame(
         path,
         &image.header,
-        fits::Mosaic { data, width: cw, height: ch, full_width: w, full_height: h, wcs },
+        fits::Mosaic {
+            data,
+            width: cw,
+            height: ch,
+            full_width: w,
+            full_height: h,
+            wcs,
+        },
     )
 }
 
@@ -334,15 +345,16 @@ fn parse_header(xml: &str, file: &str) -> Result<Image> {
                             // A scalar states its value as an attribute.
                             Some(v) => img.properties.push((
                                 id,
-                                Property { value: v.clone(), data: Vec::new() },
+                                Property {
+                                    value: v.clone(),
+                                    data: Vec::new(),
+                                },
                             )),
                             // Everything else carries it as element text: a
                             // string as itself, a vector or matrix encoded.
                             None if !empty => {
-                                property = Some((
-                                    id,
-                                    attrs.get("location").cloned().unwrap_or_default(),
-                                ));
+                                property =
+                                    Some((id, attrs.get("location").cloned().unwrap_or_default()));
                                 text.clear();
                             }
                             None => img.properties.push((id, Property::default())),
@@ -375,20 +387,27 @@ fn parse_header(xml: &str, file: &str) -> Result<Image> {
             Event::End(e) => {
                 let name = local_name(&e);
                 if name == "Property"
-                    && let (Some((id, location)), Some(img)) = (property.take(), image.as_mut()) {
-                        let data = match location.strip_prefix("inline:") {
-                            Some(encoding) => decode_text_block(encoding, &text),
-                            None => Vec::new(),
-                        };
-                        img.properties
-                            .push((id, Property { value: text.trim().to_string(), data }));
-                    }
+                    && let (Some((id, location)), Some(img)) = (property.take(), image.as_mut())
+                {
+                    let data = match location.strip_prefix("inline:") {
+                        Some(encoding) => decode_text_block(encoding, &text),
+                        None => Vec::new(),
+                    };
+                    img.properties.push((
+                        id,
+                        Property {
+                            value: text.trim().to_string(),
+                            data,
+                        },
+                    ));
+                }
                 if in_image_data && (name == "Image" || name == "Data") {
                     in_image_data = false;
                     if let Some(img) = image.as_mut()
-                        && let Location::Inline { encoding } = &img.location {
-                            img.inline = decode_text_block(encoding, &image_text);
-                        }
+                        && let Location::Inline { encoding } = &img.location
+                    {
+                        img.inline = decode_text_block(encoding, &image_text);
+                    }
                 }
                 if name == "Image" && image.is_some() {
                     done = true;
@@ -455,8 +474,10 @@ impl PartialImage {
 
         let bounds = match attrs.get("bounds") {
             Some(b) => {
-                let v: Vec<f64> =
-                    b.split(':').filter_map(|p| p.trim().parse::<f64>().ok()).collect();
+                let v: Vec<f64> = b
+                    .split(':')
+                    .filter_map(|p| p.trim().parse::<f64>().ok())
+                    .collect();
                 if v.len() != 2 || v[1] <= v[0] {
                     return Err(SrError::Input(format!(
                         "{file}: bounds {b:?} do not name a rising range"
@@ -473,7 +494,10 @@ impl PartialImage {
             channels,
             format,
             bounds,
-            colour_space: attrs.get("colorSpace").cloned().unwrap_or_else(|| "Gray".into()),
+            colour_space: attrs
+                .get("colorSpace")
+                .cloned()
+                .unwrap_or_else(|| "Gray".into()),
             image_type: attrs.get("imageType").cloned().unwrap_or_default(),
             // Planar is the default, and what writers normally use.
             planar: !attrs
@@ -500,11 +524,12 @@ impl PartialImage {
                 .properties
                 .iter()
                 .find(|(id, _)| id == "Observation:Time:Start")
-                && !p.value.trim().is_empty() {
-                    self.header
-                        .cards
-                        .push(("DATE-OBS".into(), format!("'{}'", p.value.trim())));
-                }
+            && !p.value.trim().is_empty()
+        {
+            self.header
+                .cards
+                .push(("DATE-OBS".into(), format!("'{}'", p.value.trim())));
+        }
         // The FITS cards first: a file converted from FITS keeps a solve that
         // is already in this reader's terms. The XISF astrometric properties
         // are the fallback, for a solve written only there.
@@ -548,7 +573,9 @@ fn astrometric_solution(properties: &[(String, Property)]) -> Option<Wcs> {
     }
     let m = doubles(find("PCL:AstrometricSolution:LinearTransformationMatrix")?);
     let image = doubles(find("PCL:AstrometricSolution:ReferenceImageCoordinates")?);
-    let sky = doubles(find("PCL:AstrometricSolution:ReferenceCelestialCoordinates")?);
+    let sky = doubles(find(
+        "PCL:AstrometricSolution:ReferenceCelestialCoordinates",
+    )?);
     if m.len() != 4 || image.len() != 2 || sky.len() != 2 {
         return None;
     }
@@ -563,7 +590,9 @@ fn astrometric_solution(properties: &[(String, Property)]) -> Option<Wcs> {
 /// A property's bytes read as little-endian doubles.
 fn doubles(p: &Property) -> Vec<f64> {
     p.data
-        .as_chunks::<8>().0.iter()
+        .as_chunks::<8>()
+        .0
+        .iter()
         .map(|c| f64::from_le_bytes([c[0], c[1], c[2], c[3], c[4], c[5], c[6], c[7]]))
         .collect()
 }
@@ -582,10 +611,14 @@ fn parse_location(s: Option<&str>, file: &str) -> Result<Location> {
         };
     }
     if let Some(encoding) = s.strip_prefix("inline:") {
-        return Ok(Location::Inline { encoding: encoding.trim().to_string() });
+        return Ok(Location::Inline {
+            encoding: encoding.trim().to_string(),
+        });
     }
     if s == "embedded" {
-        return Ok(Location::Inline { encoding: "base64".into() });
+        return Ok(Location::Inline {
+            encoding: "base64".into(),
+        });
     }
     Err(SrError::Input(format!(
         "{file}: the pixel data is at {s:?}; only data stored in the file itself is read, not data \
@@ -602,8 +635,10 @@ fn parse_compression(s: Option<&str>, file: &str) -> Result<Option<Compression>>
         Some(c) => (c, true),
         None => (parts[0], false),
     };
-    let uncompressed =
-        parts.get(1).and_then(|p| p.trim().parse::<usize>().ok()).ok_or_else(|| {
+    let uncompressed = parts
+        .get(1)
+        .and_then(|p| p.trim().parse::<usize>().ok())
+        .ok_or_else(|| {
             SrError::Input(format!(
                 "{file}: compression {s:?} does not give an uncompressed size"
             ))
@@ -647,19 +682,35 @@ fn read_values(path: &Path, image: &Image) -> Result<Vec<f32>> {
         SampleFormat::UInt8 => |c, _| c[0] as f64,
         SampleFormat::UInt16 => |c, b| {
             let v = [c[0], c[1]];
-            (if b { u16::from_be_bytes(v) } else { u16::from_le_bytes(v) }) as f64
+            (if b {
+                u16::from_be_bytes(v)
+            } else {
+                u16::from_le_bytes(v)
+            }) as f64
         },
         SampleFormat::UInt32 => |c, b| {
             let v = [c[0], c[1], c[2], c[3]];
-            (if b { u32::from_be_bytes(v) } else { u32::from_le_bytes(v) }) as f64
+            (if b {
+                u32::from_be_bytes(v)
+            } else {
+                u32::from_le_bytes(v)
+            }) as f64
         },
         SampleFormat::UInt64 => |c, b| {
             let v = [c[0], c[1], c[2], c[3], c[4], c[5], c[6], c[7]];
-            (if b { u64::from_be_bytes(v) } else { u64::from_le_bytes(v) }) as f64
+            (if b {
+                u64::from_be_bytes(v)
+            } else {
+                u64::from_le_bytes(v)
+            }) as f64
         },
         SampleFormat::Float32 => |c, b| {
             let v = [c[0], c[1], c[2], c[3]];
-            (if b { f32::from_be_bytes(v) } else { f32::from_le_bytes(v) }) as f64
+            (if b {
+                f32::from_be_bytes(v)
+            } else {
+                f32::from_le_bytes(v)
+            }) as f64
         },
         SampleFormat::Float64 => |c, b| {
             let v = [c[0], c[1], c[2], c[3], c[4], c[5], c[6], c[7]];
@@ -674,7 +725,11 @@ fn read_values(path: &Path, image: &Image) -> Result<Vec<f32>> {
     let mut out = vec![0f32; want];
     for (o, c) in out.iter_mut().zip(bytes.chunks_exact(width)) {
         let v = (read(c, big) - lo) / span;
-        *o = if v.is_finite() { v.clamp(0.0, 1.0) as f32 } else { 0.0 };
+        *o = if v.is_finite() {
+            v.clamp(0.0, 1.0) as f32
+        } else {
+            0.0
+        };
     }
     Ok(out)
 }
@@ -760,7 +815,9 @@ fn decode_text_block(encoding: &str, text: &str) -> Vec<u8> {
         "hex" => {
             let clean: Vec<u8> = text.bytes().filter(|b| !b.is_ascii_whitespace()).collect();
             clean
-                .as_chunks::<2>().0.iter()
+                .as_chunks::<2>()
+                .0
+                .iter()
                 .filter_map(|c| u8::from_str_radix(std::str::from_utf8(c).ok()?, 16).ok())
                 .collect()
         }
@@ -805,7 +862,9 @@ fn attributes(e: &BytesStart, file: &str) -> Result<Attributes> {
     let mut out = Attributes::new();
     for a in e.attributes() {
         let a = a.map_err(|err| {
-            SrError::Input(format!("{file}: malformed attribute in the XML header: {err}"))
+            SrError::Input(format!(
+                "{file}: malformed attribute in the XML header: {err}"
+            ))
         })?;
         let key = String::from_utf8_lossy(a.key.local_name().as_ref()).to_string();
         let value = a.unescape_value().unwrap_or_default().to_string();
@@ -878,7 +937,9 @@ mod tests {
     /// A ramp with odd low bits, so the white-level detector does not mistake
     /// it for a converter narrower than the file.
     fn ramp(n: usize) -> Vec<u16> {
-        (0..n).map(|i| (i as u16).wrapping_mul(37).wrapping_add(101)).collect()
+        (0..n)
+            .map(|i| (i as u16).wrapping_mul(37).wrapping_add(101))
+            .collect()
     }
 
     fn le16(v: &[u16]) -> Vec<u8> {
@@ -927,19 +988,28 @@ mod tests {
         let values: Vec<f32> = (0..8 * 6).map(|i| i as f32 / 47.0).collect();
         let block: Vec<u8> = values.iter().flat_map(|v| v.to_le_bytes()).collect();
 
-        let unit =
-            synth("geometry=\"8:6:1\" sampleFormat=\"Float32\" bounds=\"0:1\"", "", &block);
+        let unit = synth(
+            "geometry=\"8:6:1\" sampleFormat=\"Float32\" bounds=\"0:1\"",
+            "",
+            &block,
+        );
         let (_d, p) = write(&unit);
         let a = read_planes(&p).unwrap().1;
 
-        let wide =
-            synth("geometry=\"8:6:1\" sampleFormat=\"Float32\" bounds=\"0:2\"", "", &block);
+        let wide = synth(
+            "geometry=\"8:6:1\" sampleFormat=\"Float32\" bounds=\"0:2\"",
+            "",
+            &block,
+        );
         let (_d2, p2) = write(&wide);
         let b = read_planes(&p2).unwrap().1;
 
         for (i, want) in values.iter().enumerate() {
             assert!((a[0].data[i] - want).abs() < 1e-6, "unit bounds at {i}");
-            assert!((b[0].data[i] - want / 2.0).abs() < 1e-6, "wide bounds at {i}");
+            assert!(
+                (b[0].data[i] - want / 2.0).abs() < 1e-6,
+                "wide bounds at {i}"
+            );
         }
     }
 
@@ -971,7 +1041,9 @@ mod tests {
                 "2026-09-23T00:00:00",
             ),
         ] {
-            let properties=format!("{cards}<Property id=\"Observation:Time:Start\" type=\"TimePoint\" value=\"2026-09-22T01:02:03Z\"/>");
+            let properties = format!(
+                "{cards}<Property id=\"Observation:Time:Start\" type=\"TimePoint\" value=\"2026-09-22T01:02:03Z\"/>"
+            );
             let bytes = synth(
                 "geometry=\"8:6:1\" sampleFormat=\"UInt16\"",
                 &properties,
@@ -1036,13 +1108,19 @@ mod tests {
     fn big_endian_samples_are_read_the_other_way_round() {
         let pixels = ramp(8 * 6);
         let block: Vec<u8> = pixels.iter().flat_map(|s| s.to_be_bytes()).collect();
-        let bytes =
-            synth("geometry=\"8:6:1\" sampleFormat=\"UInt16\" byteOrder=\"big\"", "", &block);
+        let bytes = synth(
+            "geometry=\"8:6:1\" sampleFormat=\"UInt16\" byteOrder=\"big\"",
+            "",
+            &block,
+        );
         let (_d, path) = write(&bytes);
         let planes = read_planes(&path).unwrap().1;
         for (i, want) in pixels.iter().enumerate() {
             let got = planes[0].data[i] * 65535.0;
-            assert!((got - *want as f32).abs() <= 1.0, "sample {i}: {got} vs {want}");
+            assert!(
+                (got - *want as f32).abs() <= 1.0,
+                "sample {i}: {got} vs {want}"
+            );
         }
     }
 
@@ -1064,7 +1142,10 @@ mod tests {
         let planes = read_planes(&path).unwrap().1;
         for (i, want) in pixels.iter().enumerate() {
             let got = planes[0].data[i] * 65535.0;
-            assert!((got - *want as f32).abs() <= 1.0, "sample {i}: {got} vs {want}");
+            assert!(
+                (got - *want as f32).abs() <= 1.0,
+                "sample {i}: {got} vs {want}"
+            );
         }
     }
 
@@ -1098,7 +1179,11 @@ mod tests {
             // A length that is not a whole number of items, so the bytes the
             // shuffle leaves in place are exercised too.
             let plain: Vec<u8> = (0..item * 13 + 3).map(|i| (i * 31 % 251) as u8).collect();
-            assert_eq!(unshuffle(&shuffle(&plain, item), item), plain, "item size {item}");
+            assert_eq!(
+                unshuffle(&shuffle(&plain, item), item),
+                plain,
+                "item size {item}"
+            );
         }
     }
 
@@ -1133,19 +1218,38 @@ mod tests {
              length=\"2\" location=\"inline:base64\">IAHc7G9oqEB9aLxZ5U+gQA==</Property>\
             <Property id=\"PCL:AstrometricSolution:ReferenceCelestialCoordinates\" type=\"F64Vector\" \
              length=\"2\" location=\"inline:base64\">mMEXHkFfTECo8INDMRo4QA==</Property>";
-        let bytes =
-            synth("geometry=\"8:6:1\" sampleFormat=\"UInt16\"", props, &le16(&ramp(8 * 6)));
+        let bytes = synth(
+            "geometry=\"8:6:1\" sampleFormat=\"UInt16\"",
+            props,
+            &le16(&ramp(8 * 6)),
+        );
         let (_d, path) = write(&bytes);
         let image = read_header(&path).unwrap();
         let w = image.wcs.expect("the properties carry a solve");
         assert!((w.crval.0 - 56.744174).abs() < 1e-4, "RA {}", w.crval.0);
         assert!((w.crval.1 - 24.102314).abs() < 1e-4, "Dec {}", w.crval.1);
-        assert!((w.crpix.0 - 3123.7186).abs() < 1e-3, "crpix x {}", w.crpix.0);
-        assert!((w.crpix.1 - 2087.4479).abs() < 1e-3, "crpix y {}", w.crpix.1);
-        assert!((w.scale_arcsec() - 4.46158).abs() < 1e-4, "scale {}", w.scale_arcsec());
+        assert!(
+            (w.crpix.0 - 3123.7186).abs() < 1e-3,
+            "crpix x {}",
+            w.crpix.0
+        );
+        assert!(
+            (w.crpix.1 - 2087.4479).abs() < 1e-3,
+            "crpix y {}",
+            w.crpix.1
+        );
+        assert!(
+            (w.scale_arcsec() - 4.46158).abs() < 1e-4,
+            "scale {}",
+            w.scale_arcsec()
+        );
         // The off-diagonal terms dominate, and they are the two that swap if
         // the matrix is read by columns.
-        assert!(w.cd[0][1] > 0.0 && w.cd[1][0] < 0.0, "matrix read by columns: {:?}", w.cd);
+        assert!(
+            w.cd[0][1] > 0.0 && w.cd[1][0] < 0.0,
+            "matrix read by columns: {:?}",
+            w.cd
+        );
     }
 
     #[test]
@@ -1170,25 +1274,34 @@ mod tests {
              length=\"2\" location=\"inline:base64\">IAHc7G9oqEB9aLxZ5U+gQA==</Property>\
             <Property id=\"PCL:AstrometricSolution:ReferenceCelestialCoordinates\" type=\"F64Vector\" \
              length=\"2\" location=\"inline:base64\">mMEXHkFfTECo8INDMRo4QA==</Property>";
-        let bytes =
-            synth("geometry=\"8:6:1\" sampleFormat=\"UInt16\"", cards, &le16(&ramp(8 * 6)));
+        let bytes = synth(
+            "geometry=\"8:6:1\" sampleFormat=\"UInt16\"",
+            cards,
+            &le16(&ramp(8 * 6)),
+        );
         let (_d, path) = write(&bytes);
-        let w = read_header(&path).unwrap().wcs.expect("the cards carry a solve");
+        let w = read_header(&path)
+            .unwrap()
+            .wcs
+            .expect("the cards carry a solve");
         assert_eq!(w.crval, (10.0, 20.0));
         assert_eq!(w.crpix, (4.0, 3.0));
     }
 
     #[test]
     fn a_block_short_of_the_geometry_is_an_error_not_a_black_edge() {
-        let bytes = synth("geometry=\"8:6:1\" sampleFormat=\"UInt16\"", "", &le16(&ramp(20)));
+        let bytes = synth(
+            "geometry=\"8:6:1\" sampleFormat=\"UInt16\"",
+            "",
+            &le16(&ramp(20)),
+        );
         let (_d, path) = write(&bytes);
         let e = read_planes(&path).unwrap_err().to_string();
         assert!(e.contains("short of"), "{e}");
     }
 
     fn base64_encode(bytes: &[u8]) -> String {
-        const A: &[u8; 64] =
-            b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+        const A: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
         let mut out = String::new();
         for c in bytes.chunks(3) {
             let b = [c[0], *c.get(1).unwrap_or(&0), *c.get(2).unwrap_or(&0)];
@@ -1229,11 +1342,17 @@ mod tests {
         let planes = read_planes(&path).unwrap().1;
         for (i, want) in pixels.iter().enumerate() {
             let got = planes[0].data[i] * 65535.0;
-            assert!((got - *want as f32).abs() <= 1.0, "sample {i}: {got} vs {want}");
+            assert!(
+                (got - *want as f32).abs() <= 1.0,
+                "sample {i}: {got} vs {want}"
+            );
         }
         // And neither text ended up in the other.
         let image = read_header(&path).unwrap();
         assert_eq!(image.header.any_text(&["FILTER"]).as_deref(), Some("Ha"));
-        assert!(image.wcs.is_none(), "a processing history is not a plate solve");
+        assert!(
+            image.wcs.is_none(),
+            "a processing history is not a plate solve"
+        );
     }
 }

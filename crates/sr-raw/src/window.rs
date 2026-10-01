@@ -12,7 +12,7 @@ use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
 
-use crate::{fits, ReadOptions, RowOrder};
+use crate::{ReadOptions, RowOrder, fits};
 use sr_core::{Result, SrError};
 
 /// Largest single read `read_rect` issues. Rows of a window are strided by the
@@ -81,9 +81,10 @@ impl FitsWindowReader {
             && !matches!(
                 pattern.trim().to_ascii_uppercase().as_str(),
                 "" | "MONO" | "NONE"
-            ) {
-                return Err(invalid("Bayer and color images are unsupported"));
-            }
+            )
+        {
+            return Err(invalid("Bayer and color images are unsupported"));
+        }
         let width = usize::try_from(integer("NAXIS1")?).map_err(|_| invalid("invalid NAXIS1"))?;
         let height = usize::try_from(integer("NAXIS2")?).map_err(|_| invalid("invalid NAXIS2"))?;
         if width == 0 || height == 0 {
@@ -96,7 +97,7 @@ impl FitsWindowReader {
             _ => {
                 return Err(invalid(format!(
                     "unsupported BITPIX {bitpix}; supported: 16, -32"
-                )))
+                )));
             }
         };
         let scaling = |key: &str, default: f64| -> Result<f64> {
@@ -266,7 +267,13 @@ impl FitsWindowReader {
             let rows = rows_per_run.min(height - first);
             // File rows of this run are contiguous, ascending or (flipped)
             // descending in display order; read from the lowest one.
-            let file_row = |dy: usize| if self.flip { self.height - 1 - (y + dy) } else { y + dy };
+            let file_row = |dy: usize| {
+                if self.flip {
+                    self.height - 1 - (y + dy)
+                } else {
+                    y + dy
+                }
+            };
             let low = file_row(first).min(file_row(first + rows - 1));
             let span = (rows - 1) * file_row_bytes + row_bytes;
             let position = (low as u64)
@@ -393,13 +400,22 @@ mod tests {
             .flat_map(|i| ((i as i32 * 37 % 4000 * 4 - 32768) as i16).to_be_bytes())
             .collect();
         for order in ["'BOTTOM-UP'", "'TOP-DOWN'"] {
-            let source = fixture(16, width, height, &[("BZERO", "32768"), ("ROWORDER", order)], &bytes);
+            let source = fixture(
+                16,
+                width,
+                height,
+                &[("BZERO", "32768"), ("ROWORDER", order)],
+                &bytes,
+            );
             let mut window = FitsWindowReader::open(&source.0, &ReadOptions::default()).unwrap();
             for (x, y, w, h) in [(0, 0, 9, 11), (2, 3, 4, 7), (8, 10, 1, 1), (1, 0, 7, 11)] {
                 let row_at_a_time = window.read_rect_spanning(x, y, w, h, 0).unwrap();
                 for span in [2 * width * 2, 3 * width * 2 + 1, MAX_READ_SPAN_BYTES] {
-                    assert_eq!(window.read_rect_spanning(x, y, w, h, span).unwrap(), row_at_a_time,
-                        "{order} rect {x},{y} {w}x{h} span {span}");
+                    assert_eq!(
+                        window.read_rect_spanning(x, y, w, h, span).unwrap(),
+                        row_at_a_time,
+                        "{order} rect {x},{y} {w}x{h} span {span}"
+                    );
                 }
             }
         }

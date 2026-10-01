@@ -7,10 +7,10 @@
 //! output. Selection lives on the existing guide lattice, so interpolated map
 //! weights blend across approximately two reference pixels at footprint edges.
 
-use sr_core::{config::RobustnessConfig, NoiseModel, Plane, RawFrame, Result, SrError, WarpField};
+use sr_core::{NoiseModel, Plane, RawFrame, Result, SrError, WarpField, config::RobustnessConfig};
 use sr_quality::photometry::PhotometricMatch;
 
-use crate::robustness::{build_maps_with_frame_noise, RobustnessMaps};
+use crate::robustness::{RobustnessMaps, build_maps_with_frame_noise};
 
 /// Build independent rejection consensuses for compatible-PSF cohorts, then
 /// retain the finest cohort with native geometric guide coverage at each
@@ -186,10 +186,10 @@ fn native_guide_covers(frame: &RawFrame, warp: &WarpField, rx: f32, ry: f32) -> 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{merge::reconstruct_mono_tile, KernelField, MergeInputs};
+    use crate::{KernelField, MergeInputs, merge::reconstruct_mono_tile};
     use sr_core::{
-        geometry::RadialChroma, CfaPattern, DefectMask, FrameMetadata, GlobalTransform,
-        NoiseSource, ReconstructionConfig, Rect, SamplePlane,
+        CfaPattern, DefectMask, FrameMetadata, GlobalTransform, NoiseSource, ReconstructionConfig,
+        Rect, SamplePlane, geometry::RadialChroma,
     };
 
     struct Fixture {
@@ -406,20 +406,22 @@ mod tests {
         assert!(gated(&f, &f.hfd, 0.05, &disabled).is_err());
         let mut hfd = f.hfd.clone();
         hfd[0] = 0.;
-        assert!(build_maps_with_psf_cohorts(
-            &f.frames,
-            &f.warps,
-            0,
-            &[false, true, true, true, true, true, true, true],
-            &f.photo,
-            &f.frames[0].noise,
-            0.5,
-            &cfg,
-            &[[0.; 3]; 8],
-            &hfd,
-            0.05
-        )
-        .is_ok());
+        assert!(
+            build_maps_with_psf_cohorts(
+                &f.frames,
+                &f.warps,
+                0,
+                &[false, true, true, true, true, true, true, true],
+                &f.photo,
+                &f.frames[0].noise,
+                0.5,
+                &cfg,
+                &[[0.; 3]; 8],
+                &hfd,
+                0.05
+            )
+            .is_ok()
+        );
     }
 
     #[test]

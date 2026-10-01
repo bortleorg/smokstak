@@ -13,8 +13,8 @@ use std::{
     ops::{Deref, DerefMut},
     path::{Path, PathBuf},
     sync::{
-        atomic::{AtomicU64, Ordering},
         Arc,
+        atomic::{AtomicU64, Ordering},
     },
 };
 
@@ -192,7 +192,9 @@ impl<T> FromIterator<T> for Buffer<T> {
     }
 }
 impl<T> AsRef<[T]> for Buffer<T> {
-    fn as_ref(&self) -> &[T] { self.as_slice() }
+    fn as_ref(&self) -> &[T] {
+        self.as_slice()
+    }
 }
 impl<T: PartialEq> PartialEq<Vec<T>> for Buffer<T> {
     fn eq(&self, other: &Vec<T>) -> bool {

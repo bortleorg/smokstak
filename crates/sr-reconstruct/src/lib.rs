@@ -13,5 +13,5 @@ pub mod robustness;
 pub use coverage::{analyse_coverage, phase_coverage_map};
 pub use kernel::KernelField;
 pub use lucky::LuckySelection;
-pub use merge::{reconstruct, MergeInputs};
+pub use merge::{MergeInputs, reconstruct};
 pub use robustness::RobustnessMaps;

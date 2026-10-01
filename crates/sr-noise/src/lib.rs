@@ -129,7 +129,12 @@ fn fit_lower_envelope(samples: &[Sample], bins: usize, percentile: f32) -> Optio
         let sx: f64 = xs.iter().zip(&w).map(|(x, w)| x * w).sum();
         let sy: f64 = ys.iter().zip(&w).map(|(y, w)| y * w).sum();
         let sxx: f64 = xs.iter().zip(&w).map(|(x, w)| x * x * w).sum();
-        let sxy: f64 = xs.iter().zip(ys.iter()).zip(&w).map(|((x, y), w)| x * y * w).sum();
+        let sxy: f64 = xs
+            .iter()
+            .zip(ys.iter())
+            .zip(&w)
+            .map(|((x, y), w)| x * y * w)
+            .sum();
         let den = sw * sxx - sx * sx;
         if den.abs() < 1e-18 {
             return None;
@@ -140,7 +145,12 @@ fn fit_lower_envelope(samples: &[Sample], bins: usize, percentile: f32) -> Optio
             let pred = alpha * xs[i] + beta;
             let r = ys[i] - pred;
             // Only positive residuals are suspicious: texture inflates variance.
-            w[i] = ws[i] * if r > 0.0 { 1.0 / (1.0 + 4.0 * (r / pred.abs().max(1e-9))) } else { 1.0 };
+            w[i] = ws[i]
+                * if r > 0.0 {
+                    1.0 / (1.0 + 4.0 * (r / pred.abs().max(1e-9)))
+                } else {
+                    1.0
+                };
         }
     }
     let alpha = alpha.max(0.0) as f32;
@@ -210,7 +220,11 @@ pub fn estimate_spatial(frame: &RawFrame, block: usize) -> Option<NoiseModel> {
 /// If the burst has sub-pixel motion the difference also contains a signal
 /// term, so blocks whose spatial gradient is high are discarded: what is left
 /// is dominated by sensor noise.
-pub fn estimate_temporal(frames: &[&RawFrame], block: usize, max_pairs: usize) -> Option<NoiseModel> {
+pub fn estimate_temporal(
+    frames: &[&RawFrame],
+    block: usize,
+    max_pairs: usize,
+) -> Option<NoiseModel> {
     if frames.len() < 2 {
         return None;
     }
@@ -271,7 +285,10 @@ pub fn estimate_temporal(frames: &[&RawFrame], block: usize, max_pairs: usize) -
                         }
                         // var(a - b) = 2 * var(noise) for independent frames.
                         let sigma = math::mad_sigma(&diffs);
-                        local.push(Sample { mean: m, var: 0.5 * sigma * sigma });
+                        local.push(Sample {
+                            mean: m,
+                            var: 0.5 * sigma * sigma,
+                        });
                     }
                     x0 += step;
                 }
@@ -283,8 +300,7 @@ pub fn estimate_temporal(frames: &[&RawFrame], block: usize, max_pairs: usize) -
 
     // Temporal differences are already texture-suppressed, so a mid percentile
     // is appropriate here rather than a low one.
-    fit_lower_envelope(&samples, 24, 0.5)
-        .map(|(a, b)| NoiseModel::new(a, b, NoiseSource::Measured))
+    fit_lower_envelope(&samples, 24, 0.5).map(|(a, b)| NoiseModel::new(a, b, NoiseSource::Measured))
 }
 
 /// Estimate a model for the burst, preferring temporal evidence and falling
@@ -299,9 +315,12 @@ pub fn estimate_burst(frames: &[RawFrame]) -> (NoiseModel, String) {
 pub fn estimate_burst_refs(frames: &[&RawFrame]) -> (NoiseModel, String) {
     let selected = &frames[..frames.len().min(8)];
     if let Some(m) = estimate_temporal(selected, 8, 4)
-        && m.alpha.is_finite() && m.beta.is_finite() && m.alpha >= 0.0 {
-            return (m, "temporal frame differences".to_string());
-        }
+        && m.alpha.is_finite()
+        && m.beta.is_finite()
+        && m.alpha >= 0.0
+    {
+        return (m, "temporal frame differences".to_string());
+    }
     if let Some(m) = estimate_spatial(frames[0], 8) {
         return (m, "single-frame local statistics".to_string());
     }
@@ -405,7 +424,10 @@ mod tests {
         let sigma_true = (alpha * 0.5 + beta).sqrt();
         let sigma_est = m.std_dev(0.5);
         let ratio = sigma_est / sigma_true;
-        assert!(ratio > 0.6 && ratio < 1.6, "sigma ratio {ratio} (est {sigma_est}, true {sigma_true})");
+        assert!(
+            ratio > 0.6 && ratio < 1.6,
+            "sigma ratio {ratio} (est {sigma_est}, true {sigma_true})"
+        );
     }
 
     #[test]
@@ -422,9 +444,9 @@ mod tests {
 
     #[test]
     fn borrowed_population_uses_identical_noise_evidence_and_fallback() {
-        let frames: Vec<_> = (0..10).map(|seed|
-            synth_frame(256, 256, 2.0e-5, 4.0e-6, seed + 1)
-        ).collect();
+        let frames: Vec<_> = (0..10)
+            .map(|seed| synth_frame(256, 256, 2.0e-5, 4.0e-6, seed + 1))
+            .collect();
         let refs: Vec<_> = frames.iter().collect();
         let owned = estimate_burst(&frames);
         let borrowed = estimate_burst_refs(&refs);

@@ -34,7 +34,11 @@ pub enum NoiseSource {
 
 impl NoiseModel {
     pub fn new(alpha: f32, beta: f32, source: NoiseSource) -> Self {
-        Self { alpha, beta, source }
+        Self {
+            alpha,
+            beta,
+            source,
+        }
     }
 
     /// Conservative default when nothing better is known.
@@ -46,7 +50,11 @@ impl NoiseModel {
         let alpha = 1.0 / (white_minus_black.max(1.0) * electrons_per_level.max(1e-3));
         let read_levels = 2.0 * gain.sqrt();
         let beta = (read_levels / white_minus_black.max(1.0)).powi(2);
-        Self { alpha, beta, source: NoiseSource::Nominal }
+        Self {
+            alpha,
+            beta,
+            source: NoiseSource::Nominal,
+        }
     }
 
     #[inline]
@@ -192,11 +200,7 @@ impl RawFrame {
     /// How many channels the reconstruction of this frame has: one or three.
     #[inline]
     pub fn channels(&self) -> usize {
-        if self.is_mono() {
-            1
-        } else {
-            3
-        }
+        if self.is_mono() { 1 } else { 3 }
     }
 
     /// Which output channel a site contributes to.
@@ -238,7 +242,10 @@ impl RawFrame {
     #[inline]
     pub fn usable(&self, x: usize, y: usize) -> bool {
         let i = y * self.width + x;
-        self.usable_value(i, self.samples.value_in_cell(i, samples::Levels::cell(x, y)))
+        self.usable_value(
+            i,
+            self.samples.value_in_cell(i, samples::Levels::cell(x, y)),
+        )
     }
 
     /// Bytes this frame occupies.
@@ -349,7 +356,8 @@ impl RawFrame {
                             let i = y * self.width + x;
                             let v = self.samples.value_in_cell(i, samples::Levels::cell(x, y));
                             if self.usable_value(i, v)
-                                || (keep_clipped && v.is_finite() && !self.defects.get(i)) {
+                                || (keep_clipped && v.is_finite() && !self.defects.get(i))
+                            {
                                 acc += v.clamp(0.0, 1.0);
                                 cnt += 1.0;
                             }
@@ -362,7 +370,13 @@ impl RawFrame {
                     b.data[i] = m;
                 }
             }
-            return GuideImage { width: gw, height: gh, r, g, b };
+            return GuideImage {
+                width: gw,
+                height: gh,
+                r,
+                g,
+                b,
+            };
         }
         for cy in 0..gh {
             for cx in 0..gw {
@@ -376,7 +390,8 @@ impl RawFrame {
                         let c = self.cfa.color_at(x, y).index();
                         let v = self.samples.value_in_cell(i, samples::Levels::cell(x, y));
                         if self.usable_value(i, v)
-                            || (keep_clipped && v.is_finite() && !self.defects.get(i)) {
+                            || (keep_clipped && v.is_finite() && !self.defects.get(i))
+                        {
                             acc[c] += v.clamp(0.0, 1.0);
                             cnt[c] += 1.0;
                         }
@@ -388,7 +403,13 @@ impl RawFrame {
                 b.data[i] = if cnt[2] > 0.0 { acc[2] / cnt[2] } else { 0.0 };
             }
         }
-        GuideImage { width: gw, height: gh, r, g, b }
+        GuideImage {
+            width: gw,
+            height: gh,
+            r,
+            g,
+            b,
+        }
     }
 }
 
@@ -457,23 +478,35 @@ mod tests {
             }
         }
         let mut frame = RawFrame {
-            width: 64, height: 64, cfa: CfaPattern::MONO,
+            width: 64,
+            height: 64,
+            cfa: CfaPattern::MONO,
             samples: SamplePlane::from_normalised(64, 64, values.clone()),
             defects: DefectMask::none(64, 64),
             noise: NoiseModel::nominal(100.0, 65535.0),
             metadata: Default::default(),
         };
         let clean = frame.registration_luma();
-        assert_eq!(clean.data, frame.guide_rgb().luma().data,
-                   "a resolved Gaussian star should retain its geometry");
+        assert_eq!(
+            clean.data,
+            frame.guide_rgb().luma().data,
+            "a resolved Gaussian star should retain its geometry"
+        );
         values[10 * 64 + 10] = 0.9;
         frame.samples = SamplePlane::from_normalised(64, 64, values);
         assert_eq!(frame.registration_luma().data, clean.data);
-        assert_eq!(frame.value(10, 10), 0.9, "science samples must remain original");
+        assert_eq!(
+            frame.value(10, 10),
+            0.9,
+            "science samples must remain original"
+        );
         assert!(frame.structure_guide_rgb().luma()[(5, 5)] > 0.2);
         frame.cfa = CfaPattern::RGGB;
-        assert_eq!(frame.registration_luma().data, frame.guide_rgb().luma().data,
-                   "CFA registration must preserve its existing proxy");
+        assert_eq!(
+            frame.registration_luma().data,
+            frame.guide_rgb().luma().data,
+            "CFA registration must preserve its existing proxy"
+        );
     }
 
     #[test]
@@ -483,16 +516,25 @@ mod tests {
                 let mut values = vec![0.01; 32 * 32];
                 for y in 0..32 {
                     for x in 0..32 {
-                        let r2 = (x as f32-16.0-phase).powi(2)+(y as f32-16.0-phase).powi(2);
-                        values[y*32+x] += 0.3*(-r2/(2.0*sigma*sigma)).exp();
+                        let r2 =
+                            (x as f32 - 16.0 - phase).powi(2) + (y as f32 - 16.0 - phase).powi(2);
+                        values[y * 32 + x] += 0.3 * (-r2 / (2.0 * sigma * sigma)).exp();
                     }
                 }
-                let frame = RawFrame { width:32, height:32, cfa:CfaPattern::MONO,
-                    samples:SamplePlane::from_normalised(32,32,values),
-                    defects:DefectMask::none(32,32), noise:NoiseModel::nominal(100.0,65535.0),
-                    metadata:Default::default() };
-                assert_eq!(frame.registration_luma().data, frame.guide_rgb().luma().data,
-                           "sigma {sigma}, pixel phase {phase}");
+                let frame = RawFrame {
+                    width: 32,
+                    height: 32,
+                    cfa: CfaPattern::MONO,
+                    samples: SamplePlane::from_normalised(32, 32, values),
+                    defects: DefectMask::none(32, 32),
+                    noise: NoiseModel::nominal(100.0, 65535.0),
+                    metadata: Default::default(),
+                };
+                assert_eq!(
+                    frame.registration_luma().data,
+                    frame.guide_rgb().luma().data,
+                    "sigma {sigma}, pixel phase {phase}"
+                );
             }
         }
     }
@@ -501,17 +543,24 @@ mod tests {
     fn a_saturated_guide_stays_bright_for_bayer_and_mono() {
         for cfa in [CfaPattern::RGGB, CfaPattern::MONO] {
             let frame = RawFrame {
-                width: 4, height: 4, cfa,
+                width: 4,
+                height: 4,
+                cfa,
                 samples: SamplePlane::from_normalised(4, 4, vec![1.0; 16]),
                 defects: DefectMask::none(4, 4),
                 noise: NoiseModel::nominal(100.0, 65535.0),
                 metadata: Default::default(),
             };
-            assert!(!frame.usable(0, 0), "clipped data must still be excluded from fits");
+            assert!(
+                !frame.usable(0, 0),
+                "clipped data must still be excluded from fits"
+            );
             let guide = frame.structure_guide_rgb();
             for c in 0..3 {
-                assert!(guide.channel(c).data.iter().all(|v| *v == 1.0),
-                    "saturated channel {c} became dark in the structural guide");
+                assert!(
+                    guide.channel(c).data.iter().all(|v| *v == 1.0),
+                    "saturated channel {c} became dark in the structural guide"
+                );
             }
         }
     }

@@ -18,8 +18,8 @@
 //! storage. The mapping changes ownership and residency, never sample values
 //! or normalisation; the operating system manages its resident pages.
 
-use serde::{Deserialize, Serialize};
 use crate::buffer::Buffer;
+use serde::{Deserialize, Serialize};
 use std::{io, path::Path, sync::Arc};
 
 /// How the samples of one frame are held.
@@ -80,7 +80,11 @@ impl Levels {
         for i in 0..4 {
             inv_range[i] = 1.0 / (white[i] - black[i]).max(1.0);
         }
-        Self { black, white, inv_range }
+        Self {
+            black,
+            white,
+            inv_range,
+        }
     }
 
     /// Identity, for sources that are already normalised.
@@ -117,13 +121,23 @@ pub struct SamplePlane {
 impl SamplePlane {
     pub fn from_u16(width: usize, height: usize, data: Vec<u16>, levels: Levels) -> Self {
         assert_eq!(data.len(), width * height, "sample count mismatch");
-        Self { width, height, data: SampleData::U16(data), levels }
+        Self {
+            width,
+            height,
+            data: SampleData::U16(data),
+            levels,
+        }
     }
 
     /// Build from already-normalised floating-point values.
     pub fn from_normalised(width: usize, height: usize, data: Vec<f32>) -> Self {
         assert_eq!(data.len(), width * height, "sample count mismatch");
-        Self { width, height, data: SampleData::F32(data), levels: Levels::unit() }
+        Self {
+            width,
+            height,
+            data: SampleData::F32(data),
+            levels: Levels::unit(),
+        }
     }
 
     pub fn len(&self) -> usize {
@@ -213,7 +227,11 @@ pub struct DefectMask {
 
 impl DefectMask {
     pub fn none(width: usize, height: usize) -> Self {
-        Self { width, height, bits: None }
+        Self {
+            width,
+            height,
+            bits: None,
+        }
     }
 
     pub fn is_empty(&self) -> bool {
@@ -267,7 +285,10 @@ mod tests {
 
     #[test]
     fn per_cell_black_levels_are_respected() {
-        let levels = Levels::new([100.0, 200.0, 300.0, 400.0], [1100.0, 1200.0, 1300.0, 1400.0]);
+        let levels = Levels::new(
+            [100.0, 200.0, 300.0, 400.0],
+            [1100.0, 1200.0, 1300.0, 1400.0],
+        );
         let p = SamplePlane::from_u16(2, 2, vec![600, 700, 800, 900], levels);
         for (x, y) in [(0, 0), (1, 0), (0, 1), (1, 1)] {
             assert!(
@@ -301,21 +322,35 @@ mod tests {
 
     #[test]
     fn spilling_samples_preserves_normalisation_and_negative_values() {
-        let dir = std::env::temp_dir().join(format!("smokstak-samples-test-{}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("smokstak-samples-test-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
-        let levels = Levels::new([100.0, 200.0, 300.0, 400.0], [1100.0, 1200.0, 1300.0, 1400.0]);
+        let levels = Levels::new(
+            [100.0, 200.0, 300.0, 400.0],
+            [1100.0, 1200.0, 1300.0, 1400.0],
+        );
         let mut integers = SamplePlane::from_u16(2, 2, vec![0, 65535, 301, 499], levels);
         let expected: Vec<_> = (0..4).map(|i| integers.value_at(i).to_bits()).collect();
         integers.spill(&dir).unwrap();
         assert!(matches!(integers.data, SampleData::MappedU16(_)));
         assert_eq!(integers.levels, levels);
-        assert_eq!((0..4).map(|i| integers.value_at(i).to_bits()).collect::<Vec<_>>(), expected);
+        assert_eq!(
+            (0..4)
+                .map(|i| integers.value_at(i).to_bits())
+                .collect::<Vec<_>>(),
+            expected
+        );
         assert_eq!(integers.bytes(), 8);
         let mut floats = SamplePlane::from_normalised(2, 1, vec![-0.02, 0.75]);
         let before: Vec<_> = (0..2).map(|i| floats.value_at(i).to_bits()).collect();
         floats.spill(&dir).unwrap();
         floats.spill(&dir).unwrap();
-        assert_eq!((0..2).map(|i| floats.value_at(i).to_bits()).collect::<Vec<_>>(), before);
+        assert_eq!(
+            (0..2)
+                .map(|i| floats.value_at(i).to_bits())
+                .collect::<Vec<_>>(),
+            before
+        );
         drop(integers);
         drop(floats);
         assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 0);
@@ -359,9 +394,15 @@ mod tests {
         let mut original = DefectMask::none(64, 64);
         original.set(63);
         let mut other = original.clone();
-        assert!(Arc::ptr_eq(original.bits.as_ref().unwrap(), other.bits.as_ref().unwrap()));
+        assert!(Arc::ptr_eq(
+            original.bits.as_ref().unwrap(),
+            other.bits.as_ref().unwrap()
+        ));
         other.set(64);
-        assert!(!Arc::ptr_eq(original.bits.as_ref().unwrap(), other.bits.as_ref().unwrap()));
+        assert!(!Arc::ptr_eq(
+            original.bits.as_ref().unwrap(),
+            other.bits.as_ref().unwrap()
+        ));
         assert!(original.get(63));
         assert!(!original.get(64));
         assert!(other.get(63));

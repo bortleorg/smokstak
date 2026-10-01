@@ -4,7 +4,7 @@
 #[path = "mosaic_tests.rs"]
 mod tests;
 use crate::mosaic_source::PreparedSource;
-use anyhow::{ensure, Context, Result};
+use anyhow::{Context, Result, ensure};
 use clap::{Parser, Subcommand};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -128,26 +128,65 @@ impl RelativeLogGain {
     pub(crate) fn factor_at(&self, x: f64, y: f64) -> f64 {
         let u = (x - self.center[0]) / self.normalization_scale;
         let v = (y - self.center[1]) / self.normalization_scale;
-        let [a,b,c,d,e] = self.coefficients;
-        (a*u+b*v+c*u*u+d*u*v+e*v*v).exp()
+        let [a, b, c, d, e] = self.coefficients;
+        (a * u + b * v + c * u * u + d * u * v + e * v * v).exp()
     }
 
     /// Conservative interval bound, including polynomial extrema inside a box.
     pub(crate) fn log_bounds(&self, bounds: [f64; 4]) -> Result<[f64; 2]> {
-        ensure!(self.center.iter().chain(self.coefficients.iter()).all(|v|v.is_finite())
-            && self.normalization_scale.is_finite() && self.normalization_scale > 0., "Invalid relative stellar-response model");
-        ensure!(bounds.iter().all(|v|v.is_finite()) && bounds[0]<=bounds[2] && bounds[1]<=bounds[3], "Invalid stellar-response footprint");
-        let u=[(bounds[0]-self.center[0])/self.normalization_scale,(bounds[2]-self.center[0])/self.normalization_scale];
-        let v=[(bounds[1]-self.center[1])/self.normalization_scale,(bounds[3]-self.center[1])/self.normalization_scale];
-        let square=|r:[f64;2]| [if r[0]<=0. && r[1]>=0. {0.} else {r[0].powi(2).min(r[1].powi(2))}, r[0].powi(2).max(r[1].powi(2))];
-        let products=[u[0]*v[0],u[0]*v[1],u[1]*v[0],u[1]*v[1]];
-        let uv=[products.iter().copied().fold(f64::INFINITY,f64::min),products.iter().copied().fold(f64::NEG_INFINITY,f64::max)];
-        let mut result=[0.;2];
-        for (coefficient,range) in self.coefficients.into_iter().zip([u,v,square(u),uv,square(v)]) {
-            let a=coefficient*range[0]; let b=coefficient*range[1];
-            result[0]+=a.min(b); result[1]+=a.max(b);
+        ensure!(
+            self.center
+                .iter()
+                .chain(self.coefficients.iter())
+                .all(|v| v.is_finite())
+                && self.normalization_scale.is_finite()
+                && self.normalization_scale > 0.,
+            "Invalid relative stellar-response model"
+        );
+        ensure!(
+            bounds.iter().all(|v| v.is_finite())
+                && bounds[0] <= bounds[2]
+                && bounds[1] <= bounds[3],
+            "Invalid stellar-response footprint"
+        );
+        let u = [
+            (bounds[0] - self.center[0]) / self.normalization_scale,
+            (bounds[2] - self.center[0]) / self.normalization_scale,
+        ];
+        let v = [
+            (bounds[1] - self.center[1]) / self.normalization_scale,
+            (bounds[3] - self.center[1]) / self.normalization_scale,
+        ];
+        let square = |r: [f64; 2]| {
+            [
+                if r[0] <= 0. && r[1] >= 0. {
+                    0.
+                } else {
+                    r[0].powi(2).min(r[1].powi(2))
+                },
+                r[0].powi(2).max(r[1].powi(2)),
+            ]
+        };
+        let products = [u[0] * v[0], u[0] * v[1], u[1] * v[0], u[1] * v[1]];
+        let uv = [
+            products.iter().copied().fold(f64::INFINITY, f64::min),
+            products.iter().copied().fold(f64::NEG_INFINITY, f64::max),
+        ];
+        let mut result = [0.; 2];
+        for (coefficient, range) in
+            self.coefficients
+                .into_iter()
+                .zip([u, v, square(u), uv, square(v)])
+        {
+            let a = coefficient * range[0];
+            let b = coefficient * range[1];
+            result[0] += a.min(b);
+            result[1] += a.max(b);
         }
-        ensure!(result.iter().all(|v|v.is_finite()), "Relative stellar-response model overflows");
+        ensure!(
+            result.iter().all(|v| v.is_finite()),
+            "Relative stellar-response model overflows"
+        );
         Ok(result)
     }
 }
@@ -190,7 +229,11 @@ pub struct FrameSpec {
 impl FrameSpec {
     /// Scalar gain times the relative stellar response, in common coordinates.
     pub(crate) fn matched_gain(&self, x: f64, y: f64) -> f64 {
-        f64::from(self.gain)*self.relative_log_gain.as_ref().map_or(1.,|g|g.factor_at(x,y))
+        f64::from(self.gain)
+            * self
+                .relative_log_gain
+                .as_ref()
+                .map_or(1., |g| g.factor_at(x, y))
     }
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -205,30 +248,62 @@ pub struct Plan {
 }
 
 fn plan_memory_bytes(plan: &Plan) -> Result<usize> {
-    ensure!((2..=512).contains(&plan.frames.len()), "mosaic requires 2..512 frames");
-    ensure!(plan.notes.len() <= MAX_PLAN_NOTES, "mosaic plan has too many notes");
+    ensure!(
+        (2..=512).contains(&plan.frames.len()),
+        "mosaic requires 2..512 frames"
+    );
+    ensure!(
+        plan.notes.len() <= MAX_PLAN_NOTES,
+        "mosaic plan has too many notes"
+    );
     let mut allocated = std::mem::size_of::<Plan>()
-        .checked_add(plan.frames.capacity().checked_mul(std::mem::size_of::<FrameSpec>()).context("plan allocation overflow")?)
-        .and_then(|n| n.checked_add(plan.notes.capacity().checked_mul(std::mem::size_of::<String>())?))
+        .checked_add(
+            plan.frames
+                .capacity()
+                .checked_mul(std::mem::size_of::<FrameSpec>())
+                .context("plan allocation overflow")?,
+        )
+        .and_then(|n| {
+            n.checked_add(
+                plan.notes
+                    .capacity()
+                    .checked_mul(std::mem::size_of::<String>())?,
+            )
+        })
         .context("plan allocation overflow")?;
     let mut metadata = 0usize;
     let mut include = |len: usize, capacity: usize| -> Result<()> {
-        ensure!(len <= MAX_PLAN_STRING_BYTES, "mosaic plan metadata string exceeds 64 KiB");
-        metadata = metadata.checked_add(len).context("plan metadata overflow")?;
-        allocated = allocated.checked_add(capacity).context("plan allocation overflow")?;
+        ensure!(
+            len <= MAX_PLAN_STRING_BYTES,
+            "mosaic plan metadata string exceeds 64 KiB"
+        );
+        metadata = metadata
+            .checked_add(len)
+            .context("plan metadata overflow")?;
+        allocated = allocated
+            .checked_add(capacity)
+            .context("plan allocation overflow")?;
         Ok(())
     };
     include(plan.filter.len(), plan.filter.capacity())?;
     include(plan.calibration.len(), plan.calibration.capacity())?;
-    for note in &plan.notes { include(note.len(), note.capacity())?; }
+    for note in &plan.notes {
+        include(note.len(), note.capacity())?;
+    }
     for frame in &plan.frames {
         include(frame.path.as_os_str().len(), frame.path.capacity())?;
         include(frame.sha256.len(), frame.sha256.capacity())?;
         include(frame.label.len(), frame.label.capacity())?;
         include(frame.group.len(), frame.group.capacity())?;
     }
-    ensure!(metadata <= MAX_PLAN_METADATA_BYTES, "mosaic plan metadata exceeds 1 MiB");
-    ensure!(allocated <= MAX_PLAN_BYTES, "decoded mosaic plan allocation exceeds 2 MiB");
+    ensure!(
+        metadata <= MAX_PLAN_METADATA_BYTES,
+        "mosaic plan metadata exceeds 1 MiB"
+    );
+    ensure!(
+        allocated <= MAX_PLAN_BYTES,
+        "decoded mosaic plan allocation exceeds 2 MiB"
+    );
     Ok(allocated)
 }
 
@@ -239,12 +314,20 @@ fn read_plan(path: &Path) -> Result<Plan> {
 
 fn read_plan_fingerprinted(path: &Path) -> Result<(Plan, String)> {
     let input = fs::File::open(path).with_context(|| format!("opening plan {}", path.display()))?;
-    ensure!(input.metadata()?.len() <= MAX_PLAN_BYTES as u64, "encoded mosaic plan exceeds 2 MiB");
+    ensure!(
+        input.metadata()?.len() <= MAX_PLAN_BYTES as u64,
+        "encoded mosaic plan exceeds 2 MiB"
+    );
     let mut bytes = Vec::new();
     // The extra byte detects growth between the metadata check and the read;
     // Take also bounds special streams and concurrent producers independently.
-    input.take(MAX_PLAN_BYTES as u64 + 1).read_to_end(&mut bytes)?;
-    ensure!(bytes.len() <= MAX_PLAN_BYTES, "encoded mosaic plan exceeds 2 MiB");
+    input
+        .take(MAX_PLAN_BYTES as u64 + 1)
+        .read_to_end(&mut bytes)?;
+    ensure!(
+        bytes.len() <= MAX_PLAN_BYTES,
+        "encoded mosaic plan exceeds 2 MiB"
+    );
     let plan: Plan = serde_json::from_slice(&bytes)?;
     plan_memory_bytes(&plan)?;
     Ok((plan, format!("{:x}", Sha256::digest(&bytes))))
@@ -289,12 +372,18 @@ fn validate_geometry(plan: &Plan, tile: usize, memory_mb: usize) -> Result<()> {
     for f in &plan.frames {
         f.projection.validate()?;
         let maximum_gain = if let Some(model) = &f.relative_log_gain {
-            let bounds=crate::mosaic_prepare_photometry::bounds(&f.projection,f.width,f.height)?;
-            let [lo,hi]=model.log_bounds(bounds)?;
-            ensure!(lo >= -MAX_RELATIVE_RESPONSE.ln() && hi <= MAX_RELATIVE_RESPONSE.ln(),
-                "Relative stellar-response correction exceeds {RESPONSE_RANGE_TEXT} over source footprint: {}",f.path.display());
-            f.gain*hi.exp() as f32
-        } else { f.gain };
+            let bounds =
+                crate::mosaic_prepare_photometry::bounds(&f.projection, f.width, f.height)?;
+            let [lo, hi] = model.log_bounds(bounds)?;
+            ensure!(
+                lo >= -MAX_RELATIVE_RESPONSE.ln() && hi <= MAX_RELATIVE_RESPONSE.ln(),
+                "Relative stellar-response correction exceeds {RESPONSE_RANGE_TEXT} over source footprint: {}",
+                f.path.display()
+            );
+            f.gain * hi.exp() as f32
+        } else {
+            f.gain
+        };
         ensure!(
             f.width > 0
                 && f.height > 0
@@ -315,15 +404,20 @@ fn validate_geometry(plan: &Plan, tile: usize, memory_mb: usize) -> Result<()> {
         // floor. Integer sources use normalized [0,1] values; include a supplied
         // higher sky estimate and its photometric gain in the finite-range gate.
         ensure!(
-            f.noise.alpha.is_finite() && f.noise.alpha >= 0.
-                && f.noise.beta.is_finite() && f.noise.beta >= 0.
+            f.noise.alpha.is_finite()
+                && f.noise.alpha >= 0.
+                && f.noise.beta.is_finite()
+                && f.noise.beta >= 0.
                 && [0., 1., f.sky.max(0.)].iter().all(|&level| {
                     let variance = f.noise.alpha * level + f.noise.beta;
                     let matched_variance = variance * maximum_gain * maximum_gain;
-                    variance.is_finite() && variance > 0.
-                        && matched_variance.is_finite() && matched_variance > 0.
+                    variance.is_finite()
+                        && variance > 0.
+                        && matched_variance.is_finite()
+                        && matched_variance > 0.
                 }),
-            "invalid frame noise model: {}", f.path.display()
+            "invalid frame noise model: {}",
+            f.path.display()
         );
         ensure!(
             f.validation_stars >= 30
@@ -342,7 +436,11 @@ fn validate_geometry(plan: &Plan, tile: usize, memory_mb: usize) -> Result<()> {
 
 /// Review the same schema and geometry gates without reading entire sources.
 /// The build still verifies source sizes, hashes and filters before publication.
-pub(crate) fn read_review_plan_fingerprinted(path: &Path, tile: usize, memory_mb: usize) -> Result<(Plan, String)> {
+pub(crate) fn read_review_plan_fingerprinted(
+    path: &Path,
+    tile: usize,
+    memory_mb: usize,
+) -> Result<(Plan, String)> {
     let (plan, digest) = read_plan_fingerprinted(path)?;
     validate_geometry(&plan, tile, memory_mb)?;
     Ok((plan, digest))
@@ -359,16 +457,26 @@ fn validate(plan: &Plan, tile: usize, memory_mb: usize) -> Result<()> {
         let key = canonical.to_string_lossy().to_lowercase();
         #[cfg(not(windows))]
         let key = canonical;
-        ensure!(source_paths.insert(key), "duplicate source file in mosaic plan: {}", f.path.display());
+        ensure!(
+            source_paths.insert(key),
+            "duplicate source file in mosaic plan: {}",
+            f.path.display()
+        );
         ensure!(
             fs::metadata(&f.path)?.len() == f.bytes,
             "source size changed: {}",
             f.path.display()
         );
-        ensure!(f.sha256.len() == 64 && source_hash(&f.path)? == f.sha256,
-            "source fingerprint differs from plan: {}", f.path.display());
-        ensure!(source_fingerprints.insert(&f.sha256),
-            "duplicate source content in mosaic plan: {}", f.path.display());
+        ensure!(
+            f.sha256.len() == 64 && source_hash(&f.path)? == f.sha256,
+            "source fingerprint differs from plan: {}",
+            f.path.display()
+        );
+        ensure!(
+            source_fingerprints.insert(&f.sha256),
+            "duplicate source content in mosaic plan: {}",
+            f.path.display()
+        );
         ensure!(
             sr_raw::peek_filter(&f.path).as_deref() == Some(plan.filter.as_str()),
             "filter differs from plan: {}",
@@ -384,7 +492,9 @@ fn source_hash(path: &Path) -> Result<String> {
     let mut hash = Sha256::new();
     loop {
         let n = source.read(&mut buffer)?;
-        if n == 0 { break; }
+        if n == 0 {
+            break;
+        }
         hash.update(&buffer[..n]);
     }
     Ok(format!("{:x}", hash.finalize()))
@@ -392,8 +502,19 @@ fn source_hash(path: &Path) -> Result<String> {
 
 pub fn run(args: &Args) -> Result<()> {
     match &args.command {
-        Command::Prepare { input, output, memory_mb, cache_dir, stage_dir } =>
-            crate::mosaic_prepare::run(input, output, *memory_mb, cache_dir.as_deref(), stage_dir.as_deref()),
+        Command::Prepare {
+            input,
+            output,
+            memory_mb,
+            cache_dir,
+            stage_dir,
+        } => crate::mosaic_prepare::run(
+            input,
+            output,
+            *memory_mb,
+            cache_dir.as_deref(),
+            stage_dir.as_deref(),
+        ),
         Command::Build {
             plan,
             output,
@@ -402,10 +523,17 @@ pub fn run(args: &Args) -> Result<()> {
             experimental,
             plan_sha256,
         } => {
-            ensure!(*experimental,"mosaic integration is experimental; pass --experimental to produce a labeled evaluation output");
+            ensure!(
+                *experimental,
+                "mosaic integration is experimental; pass --experimental to produce a labeled evaluation output"
+            );
             let (plan, digest) = read_plan_fingerprinted(plan)?;
-            ensure!(plan_sha256.as_ref().is_none_or(|expected| expected == &digest),
-                "Prepared plan changed after review; review it again before building");
+            ensure!(
+                plan_sha256
+                    .as_ref()
+                    .is_none_or(|expected| expected == &digest),
+                "Prepared plan changed after review; review it again before building"
+            );
             build(&plan, output, *tile, *memory_mb)
         }
     }
@@ -423,20 +551,40 @@ fn empty_frame(width: usize, height: usize, noise: NoiseModel) -> RawFrame {
     }
 }
 
-fn tile_photometry(f: &FrameSpec, origin: (f32, f32), size: (usize, usize)) -> Result<PhotometricMatch> {
-    let mut photo = PhotometricMatch { gain: [f.gain; 3], ..PhotometricMatch::IDENTITY };
+fn tile_photometry(
+    f: &FrameSpec,
+    origin: (f32, f32),
+    size: (usize, usize),
+) -> Result<PhotometricMatch> {
+    let mut photo = PhotometricMatch {
+        gain: [f.gain; 3],
+        ..PhotometricMatch::IDENTITY
+    };
     let [sx, sy] = f.background_plane;
-    let center = (origin.0 + size.0 as f32 * 0.5, origin.1 + size.1 as f32 * 0.5);
-    if let Some(model)=&f.relative_log_gain {
-        let u=(f64::from(center.0)-model.center[0])/model.normalization_scale;
-        let v=(f64::from(center.1)-model.center[1])/model.normalization_scale;
-        let du=size.0 as f64/(2.*model.normalization_scale);
-        let dv=size.1 as f64/(2.*model.normalization_scale);
-        let [a,b,c,d,e]=model.coefficients;
-        let coefficients=[a*u+b*v+c*u*u+d*u*v+e*v*v,
-            du*(a+2.*c*u+d*v),dv*(b+d*u+2.*e*v),c*du*du,d*du*dv,e*dv*dv].map(|v|v as f32);
-        ensure!(coefficients.iter().all(|v|v.is_finite()), "Relative stellar-response tile conversion overflows");
-        photo.log_gain=Some([coefficients;3]);
+    let center = (
+        origin.0 + size.0 as f32 * 0.5,
+        origin.1 + size.1 as f32 * 0.5,
+    );
+    if let Some(model) = &f.relative_log_gain {
+        let u = (f64::from(center.0) - model.center[0]) / model.normalization_scale;
+        let v = (f64::from(center.1) - model.center[1]) / model.normalization_scale;
+        let du = size.0 as f64 / (2. * model.normalization_scale);
+        let dv = size.1 as f64 / (2. * model.normalization_scale);
+        let [a, b, c, d, e] = model.coefficients;
+        let coefficients = [
+            a * u + b * v + c * u * u + d * u * v + e * v * v,
+            du * (a + 2. * c * u + d * v),
+            dv * (b + d * u + 2. * e * v),
+            c * du * du,
+            d * du * dv,
+            e * dv * dv,
+        ]
+        .map(|v| v as f32);
+        ensure!(
+            coefficients.iter().all(|v| v.is_finite()),
+            "Relative stellar-response tile conversion overflows"
+        );
+        photo.log_gain = Some([coefficients; 3]);
     }
     photo.offset = [f.offset + sx * center.0 + sy * center.1; 3];
     let last = (sr_quality::photometry::FIELD - 1) as f32;
@@ -466,8 +614,14 @@ fn tile_photometry(f: &FrameSpec, origin: (f32, f32), size: (usize, usize)) -> R
             }
         }
     }
-    ensure!(photo.offset.iter().chain(photo.field.iter().flatten().flatten()).all(|v| v.is_finite()),
-        "background correction overflows on the requested output grid");
+    ensure!(
+        photo
+            .offset
+            .iter()
+            .chain(photo.field.iter().flatten().flatten())
+            .all(|v| v.is_finite()),
+        "background correction overflows on the requested output grid"
+    );
     Ok(photo)
 }
 
@@ -496,7 +650,12 @@ pub fn build(plan: &Plan, output: &Path, tile: usize, memory_mb: usize) -> Resul
     ));
     fs::create_dir(&staging)?;
     let result = (|| -> Result<()> {
-        let mut record = BufWriter::new(fs::OpenOptions::new().write(true).create_new(true).open(staging.join("plan.json"))?);
+        let mut record = BufWriter::new(
+            fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(staging.join("plan.json"))?,
+        );
         serde_json::to_writer_pretty(&mut record, plan)?;
         std::io::Write::flush(&mut record)?;
         drop(record);
@@ -520,7 +679,8 @@ pub fn build(plan: &Plan, output: &Path, tile: usize, memory_mb: usize) -> Resul
 /// Lets tests prove output does not depend on the source band cache. Any test
 /// may observe it set: by that same claim, no output can change.
 #[cfg(test)]
-pub(crate) static READ_DIRECTLY: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+pub(crate) static READ_DIRECTLY: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
 fn test_reads_directly() -> bool {
     #[cfg(test)]
     {
@@ -538,25 +698,38 @@ fn build_staged(plan: &Plan, out: &Path, tile: usize, memory_mb: usize) -> Resul
     let psf_cohorts = global_psf_cohort_representatives(
         &plan.frames.iter().map(|f| f.psf_hfd).collect::<Vec<_>>(),
     );
-    let budget = memory_mb.checked_mul(1024 * 1024).context("memory budget overflow")?;
+    let budget = memory_mb
+        .checked_mul(1024 * 1024)
+        .context("memory budget overflow")?;
     let preview_factor = g.width.max(g.height).div_ceil(1600).max(1);
     let pw = g.width.div_ceil(preview_factor);
     let ph = g.height.div_ceil(preview_factor);
-    let total = g.width.div_ceil(tile).checked_mul(g.height.div_ceil(tile)).context("tile count overflow")?;
+    let total = g
+        .width
+        .div_ceil(tile)
+        .checked_mul(g.height.div_ceil(tile))
+        .context("tile count overflow")?;
     let plan_bytes = plan_memory_bytes(plan)?;
     // Persistent arrays, output bookkeeping, plan and bounded miscellaneous
     // buffers are reserved before opening sources or allocating any mesh.
-    let mut resident = pw.checked_mul(ph).and_then(|n| n.checked_mul(16))
+    let mut resident = pw
+        .checked_mul(ph)
+        .and_then(|n| n.checked_mul(16))
         .and_then(|n| n.checked_add(total.checked_mul(3)?))
         .and_then(|n| n.checked_add(plan_bytes))
         .and_then(|n| n.checked_add(8 * 1024 * 1024))
         .context("resident working set overflow")?;
-    ensure!(resident < budget, "persistent mosaic buffers exceed memory budget");
+    ensure!(
+        resident < budget,
+        "persistent mosaic buffers exceed memory budget"
+    );
     let mut sources = Vec::with_capacity(plan.frames.len());
     for f in &plan.frames {
         let nodes = ((budget - resident) / 12).min(1_000_000);
         let source = PreparedSource::open_with_node_budget(&f.path, &f.projection, f.noise, nodes)?;
-        resident = resident.checked_add(source.mesh_bytes()).context("mesh bytes overflow")?;
+        resident = resident
+            .checked_add(source.mesh_bytes())
+            .context("mesh bytes overflow")?;
         ensure!(resident < budget, "source meshes exceed memory budget");
         sources.push(source);
     }
@@ -632,7 +805,9 @@ fn build_staged(plan: &Plan, out: &Path, tile: usize, memory_mb: usize) -> Resul
             let active_count = rectangles.iter().flatten().count();
             let estimate = native_pixels
                 .checked_mul(64)
-                .and_then(|n| n.checked_add(rw.checked_mul(rh)?.checked_mul(8 * active_count + 128)?))
+                .and_then(|n| {
+                    n.checked_add(rw.checked_mul(rh)?.checked_mul(8 * active_count + 128)?)
+                })
                 .and_then(|n| n.checked_add(w.checked_mul(h)?.checked_mul(256)?))
                 .and_then(|n| n.checked_add(resident))
                 // Encoded read buffer of the one source window being read.
@@ -649,7 +824,9 @@ fn build_staged(plan: &Plan, out: &Path, tile: usize, memory_mb: usize) -> Resul
             // more bands than that reads its windows directly rather than
             // evicting bands it is about to need again.
             band_cache.set_capacity((budget - estimate) / 2);
-            let band_bytes: usize = rectangles.iter().zip(&sources)
+            let band_bytes: usize = rectangles
+                .iter()
+                .zip(&sources)
                 .filter_map(|(r, s)| r.map(|r| s.band_bytes(r)))
                 .sum();
             let cached = band_bytes <= (budget - estimate) / 2 && !test_reads_directly();
@@ -677,8 +854,10 @@ fn build_staged(plan: &Plan, out: &Path, tile: usize, memory_mb: usize) -> Resul
                     p.center[1] -= rect.y as f64;
                     p.output_center[0] -= origin.0 as f64;
                     p.output_center[1] -= origin.1 as f64;
-                    let old = sources[i].warp.map(rect.x as f32 + rect.width as f32 * 0.5,
-                        rect.y as f32 + rect.height as f32 * 0.5);
+                    let old = sources[i].warp.map(
+                        rect.x as f32 + rect.width as f32 * 0.5,
+                        rect.y as f32 + rect.height as f32 * 0.5,
+                    );
                     let exact = p
                         .map(rect.width as f64 * 0.5, rect.height as f64 * 0.5)
                         .context("invalid crop projection")?;
@@ -696,27 +875,48 @@ fn build_staged(plan: &Plan, out: &Path, tile: usize, memory_mb: usize) -> Resul
                     if let Some(local) = &warp.local {
                         crop_mesh_bytes += local.u.capacity() * 8 + local.conf.capacity() * 4;
                     }
-                    ensure!(estimate + crop_mesh_bytes <= budget, "crop meshes exceed memory budget");
-                    band_cache.set_capacity((budget - estimate - crop_mesh_bytes).min((budget - estimate) / 2));
-                    peak_estimated = peak_estimated.max(estimate + crop_mesh_bytes + band_cache.bytes());
+                    ensure!(
+                        estimate + crop_mesh_bytes <= budget,
+                        "crop meshes exceed memory budget"
+                    );
+                    band_cache.set_capacity(
+                        (budget - estimate - crop_mesh_bytes).min((budget - estimate) / 2),
+                    );
+                    peak_estimated =
+                        peak_estimated.max(estimate + crop_mesh_bytes + band_cache.bytes());
                     warps.push(warp);
                     frames.push(crop.frame);
                     let [xx, _, yy] = plan.frames[i].background_quadratic;
                     let cells = (sr_quality::photometry::FIELD - 1) as f64;
                     let interpolation_bound = (f64::from(xx).abs() * (rw as f64 / cells).powi(2)
-                        + f64::from(yy).abs() * (rh as f64 / cells).powi(2)) / 4.;
-                    let minimum_gain = if let Some(model)=&plan.frames[i].relative_log_gain {
-                        model.log_bounds([f64::from(origin.0),f64::from(origin.1),f64::from(origin.0)+rw as f64,f64::from(origin.1)+rh as f64])?[0].exp() as f32 * plan.frames[i].gain
-                    } else {plan.frames[i].gain};
-                    let corrected_sigma = plan.frames[i].noise.variance(plan.frames[i].sky).sqrt()
-                        * minimum_gain;
-                    ensure!(interpolation_bound <= f64::from(corrected_sigma) * 0.01,
-                        "quadratic background interpolation exceeds 1% of source noise; choose a smaller tile");
+                        + f64::from(yy).abs() * (rh as f64 / cells).powi(2))
+                        / 4.;
+                    let minimum_gain = if let Some(model) = &plan.frames[i].relative_log_gain {
+                        model.log_bounds([
+                            f64::from(origin.0),
+                            f64::from(origin.1),
+                            f64::from(origin.0) + rw as f64,
+                            f64::from(origin.1) + rh as f64,
+                        ])?[0]
+                            .exp() as f32
+                            * plan.frames[i].gain
+                    } else {
+                        plan.frames[i].gain
+                    };
+                    let corrected_sigma =
+                        plan.frames[i].noise.variance(plan.frames[i].sky).sqrt() * minimum_gain;
+                    ensure!(
+                        interpolation_bound <= f64::from(corrected_sigma) * 0.01,
+                        "quadratic background interpolation exceeds 1% of source noise; choose a smaller tile"
+                    );
                     photo.push(tile_photometry(&plan.frames[i], origin, (rw, rh))?);
                     // Guide cell coordinates represent native centers 2*g+0.5;
                     // its photometry API normalizes 2*g, so include that shift.
-                    rejection_photo.push(tile_photometry(&plan.frames[i],
-                        (origin.0 + 0.5, origin.1 + 0.5), (rw, rh))?);
+                    rejection_photo.push(tile_photometry(
+                        &plan.frames[i],
+                        (origin.0 + 0.5, origin.1 + 0.5),
+                        (rw, rh),
+                    )?);
                     weights.push(plan.frames[i].weight);
                     psf.push(psf_cohorts[i]);
                     sky.push([plan.frames[i].sky; 3]);
@@ -761,10 +961,13 @@ fn build_staged(plan: &Plan, out: &Path, tile: usize, memory_mb: usize) -> Resul
                 )?;
                 if result.stats.min_effective_frames > 0. {
                     let low = result.stats.min_effective_frames;
-                    minimum_effective_frames = Some(minimum_effective_frames.map_or(low, |v| v.min(low)));
+                    minimum_effective_frames =
+                        Some(minimum_effective_frames.map_or(low, |v| v.min(low)));
                     let mean = result.stats.mean_effective_frames;
-                    tile_mean_effective_range = Some(tile_mean_effective_range
-                        .map_or([mean, mean], |v| [v[0].min(mean), v[1].max(mean)]));
+                    tile_mean_effective_range = Some(
+                        tile_mean_effective_range
+                            .map_or([mean, mean], |v| [v[0].min(mean), v[1].max(mean)]),
+                    );
                 }
                 (result.values, result.weight, result.count)
             } else {
@@ -806,11 +1009,7 @@ fn build_staged(plan: &Plan, out: &Path, tile: usize, memory_mb: usize) -> Resul
             .collect(),
     );
     let mut preview_planes = [preview, Plane::new(0, 0), Plane::new(0, 0)];
-    sr_output::scientific::write_fits(
-        &out.join("preview-linear.fits"),
-        &preview_planes,
-        1,
-    )?;
+    sr_output::scientific::write_fits(&out.join("preview-linear.fits"), &preview_planes, 1)?;
     // Display only, after writing the linear preview. Original output tiles
     // have already been finalized; stretching cannot change scientific pixels.
     let display_range = stretch_mosaic_preview(&mut preview_planes[0], &preview_count);
@@ -844,10 +1043,16 @@ fn build_staged(plan: &Plan, out: &Path, tile: usize, memory_mb: usize) -> Resul
 }
 
 fn stretch_mosaic_preview(preview: &mut Plane<f32>, counts: &[u32]) -> [f32; 2] {
-    let mut values: Vec<_> = preview.data.iter().zip(counts)
-        .filter_map(|(&v, &n)| (n > 0 && v.is_finite()).then_some(v)).collect();
+    let mut values: Vec<_> = preview
+        .data
+        .iter()
+        .zip(counts)
+        .filter_map(|(&v, &n)| (n > 0 && v.is_finite()).then_some(v))
+        .collect();
     values.sort_by(f32::total_cmp);
-    let range = if values.is_empty() { [0., 1.] } else {
+    let range = if values.is_empty() {
+        [0., 1.]
+    } else {
         let black = values[((values.len() - 1) as f64 * 0.005) as usize];
         let white = values[((values.len() - 1) as f64 * 0.998) as usize];
         [black, white.max(black + 1e-9)]
@@ -855,9 +1060,12 @@ fn stretch_mosaic_preview(preview: &mut Plane<f32>, counts: &[u32]) -> [f32; 2] 
     for (v, &n) in preview.data.iter_mut().zip(counts) {
         *v = if n > 0 && v.is_finite() {
             let normalized = ((*v as f64 - range[0] as f64)
-                / (range[1] as f64 - range[0] as f64).max(1e-12)).clamp(0., 1.);
+                / (range[1] as f64 - range[0] as f64).max(1e-12))
+            .clamp(0., 1.);
             ((20. * normalized).asinh() / 20f64.asinh()) as f32
-        } else { 0. };
+        } else {
+            0.
+        };
     }
     range
 }

@@ -196,9 +196,10 @@ impl Accumulator {
             .collect();
         local.reverse();
         if let Some(noise) = noise.filter(|_| self.n >= 4)
-            && local.last().is_none_or(|p| p.0 != self.n) {
-                local.push((self.n, noise));
-            }
+            && local.last().is_none_or(|p| p.0 != self.n)
+        {
+            local.push((self.n, noise));
+        }
         let ideal_noise = noise.map(|_| self.first_noise * (2.0 / self.n as f64).sqrt());
         Depth {
             frame_count: self.n,
@@ -400,7 +401,14 @@ mod tests {
                 patch.median,
                 sr_core::math::median(&values[patch.id * PIXELS..(patch.id + 1) * PIXELS])
             );
-            for (k, encoded) in patch.pixels.as_bytes().as_chunks::<4>().0.iter().enumerate() {
+            for (k, encoded) in patch
+                .pixels
+                .as_bytes()
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .enumerate()
+            {
                 let q = u16::from_str_radix(std::str::from_utf8(encoded).unwrap(), 16).unwrap();
                 let reconstructed = patch.low + q as f32 / 65535.0 * (patch.high - patch.low);
                 let original = values[patch.id * PIXELS + k];
@@ -438,11 +446,7 @@ mod tests {
                         let x = (i % TILE) as f32;
                         let y = ((i / TILE) % TILE) as f32;
                         let shift = if alternating_phase {
-                            if n % 2 == 0 {
-                                0.3
-                            } else {
-                                -0.3
-                            }
+                            if n % 2 == 0 { 0.3 } else { -0.3 }
                         } else {
                             (n as f32 * 1.73).sin() * 0.3
                         };
@@ -523,9 +527,11 @@ mod tests {
         let proj = projections(Some(&f), 100, 360000.0, 0);
         assert_eq!(proj[1].additional_frames, Some(24));
         assert_eq!(proj[1].additional_hours, Some(24.0));
-        assert!(projections(Some(&f), 100, 0.0, 1)[0]
-            .additional_hours
-            .is_none());
+        assert!(
+            projections(Some(&f), 100, 0.0, 1)[0]
+                .additional_hours
+                .is_none()
+        );
     }
     #[test]
     fn stratification_is_unique_bounded_and_deterministic() {

@@ -124,7 +124,9 @@ pub struct KernelConfig {
     pub chroma_variance: f32,
 }
 
-fn default_mono_kernel_variance() -> Option<f32> { Some(0.125) }
+fn default_mono_kernel_variance() -> Option<f32> {
+    Some(0.125)
+}
 
 impl Default for KernelConfig {
     fn default() -> Self {

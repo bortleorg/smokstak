@@ -120,7 +120,10 @@ pub fn dependency_versions() -> BTreeMap<String, String> {
     m.insert("rustfft".into(), "6".into());
     m.insert("tiff".into(), "0.11".into());
     m.insert("rayon".into(), "1".into());
-    m.insert("rustc".into(), option_env!("SRSTACK_RUSTC").unwrap_or("unknown").into());
+    m.insert(
+        "rustc".into(),
+        option_env!("SRSTACK_RUSTC").unwrap_or("unknown").into(),
+    );
     m
 }
 
@@ -249,7 +252,12 @@ pub fn write_phase_histogram_csv(path: &Path, cov: &SamplingCoverage) -> Result<
     let mut s = String::from("phase_x_bin,phase_y_bin,samples\n");
     for by in 0..cov.bins {
         for bx in 0..cov.bins {
-            s.push_str(&format!("{},{},{}\n", bx, by, cov.phase_histogram[by * cov.bins + bx]));
+            s.push_str(&format!(
+                "{},{},{}\n",
+                bx,
+                by,
+                cov.phase_histogram[by * cov.bins + bx]
+            ));
         }
     }
     std::fs::write(path, s).with_context(|| format!("writing {}", path.display()))?;
@@ -257,7 +265,10 @@ pub fn write_phase_histogram_csv(path: &Path, cov: &SamplingCoverage) -> Result<
 }
 
 /// Write the standard diagnostic raster bundle for a reconstruction.
-pub fn write_product_diagnostics(dir: &Path, product: &ReconstructionProduct) -> Result<Vec<PathBuf>> {
+pub fn write_product_diagnostics(
+    dir: &Path,
+    product: &ReconstructionProduct,
+) -> Result<Vec<PathBuf>> {
     std::fs::create_dir_all(dir)?;
     let mut written = Vec::new();
 
@@ -276,11 +287,18 @@ pub fn write_product_diagnostics(dir: &Path, product: &ReconstructionProduct) ->
     if product.channels == 1 {
         put("coverage.tif", &product.count[0], None)?;
     } else {
-        for (c, name) in ["r-coverage.tif", "g-coverage.tif", "b-coverage.tif"].iter().enumerate() {
+        for (c, name) in ["r-coverage.tif", "g-coverage.tif", "b-coverage.tif"]
+            .iter()
+            .enumerate()
+        {
             put(name, &product.count[c], None)?;
         }
     }
-    put("weight-map.tif", &product.weight[product.channels.min(2) - 1], None)?;
+    put(
+        "weight-map.tif",
+        &product.weight[product.channels.min(2) - 1],
+        None,
+    )?;
     put("effective-frame-count.tif", &product.effective_frames, None)?;
     put("rejection-count.tif", &product.rejected, None)?;
     Ok(written)
@@ -303,7 +321,9 @@ pub fn summarise(product: &ReconstructionProduct, coverage: Option<&SamplingCove
     } else {
         0.0
     };
-    out.push_str(&format!("Rejected:          {pct:.3}% of examined samples\n"));
+    out.push_str(&format!(
+        "Rejected:          {pct:.3}% of examined samples\n"
+    ));
     out.push_str(&format!(
         "Effective frames:  mean {:.1}, minimum {:.1} (per {} px cell)\n",
         s.mean_effective_frames, s.min_effective_frames, product.effective_frames_cell
@@ -358,9 +378,21 @@ mod tests {
             channels: 3,
             width: w,
             height: h,
-            rgb: [Plane::filled(w, h, 0.5), Plane::filled(w, h, 0.5), Plane::filled(w, h, 0.5)],
-            weight: [Plane::filled(w, h, 1.0), Plane::filled(w, h, 1.0), Plane::filled(w, h, 1.0)],
-            count: [Plane::filled(w, h, 4.0), Plane::filled(w, h, 8.0), Plane::filled(w, h, 4.0)],
+            rgb: [
+                Plane::filled(w, h, 0.5),
+                Plane::filled(w, h, 0.5),
+                Plane::filled(w, h, 0.5),
+            ],
+            weight: [
+                Plane::filled(w, h, 1.0),
+                Plane::filled(w, h, 1.0),
+                Plane::filled(w, h, 1.0),
+            ],
+            count: [
+                Plane::filled(w, h, 4.0),
+                Plane::filled(w, h, 8.0),
+                Plane::filled(w, h, 4.0),
+            ],
             effective_frames: Plane::filled(w / 8, h / 8, 12.0),
             effective_frames_cell: 8,
             rejected: Plane::<f32>::new(w, h),
@@ -442,7 +474,10 @@ mod tests {
         assert!(s.contains("12 of 12288") && s.contains("0.0977%"), "{s}");
         p.channels = 1;
         let mono = summarise(&p, None);
-        assert!(mono.contains("12 of 4096") && mono.contains("0.2930%"), "{mono}");
+        assert!(
+            mono.contains("12 of 4096") && mono.contains("0.2930%"),
+            "{mono}"
+        );
         let clean = dummy_product(64, 64);
         assert!(summarise(&clean, None).contains("none"));
     }
@@ -458,14 +493,22 @@ mod tests {
             host: HostInfo::default(),
             dependencies: dependency_versions(),
             input: "burst".into(),
-            sources: vec![SourceFile { index: 0, path: "a.NEF".into(), hash: "abc".into() }],
+            sources: vec![SourceFile {
+                index: 0,
+                path: "a.NEF".into(),
+                hash: "abc".into(),
+            }],
             reference_index: 0,
             reference_file: "a.NEF".into(),
             reference_reason: "only frame".into(),
             photometric_reference_index: Some(0),
             config: ReconstructionConfig::default(),
             seed: 7,
-            noise: NoiseRecord { alpha: 1.0, beta: 2.0, source: "measured".into() },
+            noise: NoiseRecord {
+                alpha: 1.0,
+                beta: 2.0,
+                source: "measured".into(),
+            },
             color: ColorRecord {
                 wb: [2.0, 1.0, 1.5],
                 cam_to_srgb: [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
@@ -488,7 +531,10 @@ mod tests {
         assert_eq!(back.reference_file, "a.NEF");
         assert_eq!(back.photometric_reference_index, Some(0));
         let mut legacy = serde_json::to_value(&m).unwrap();
-        legacy.as_object_mut().unwrap().remove("photometric_reference_index");
+        legacy
+            .as_object_mut()
+            .unwrap()
+            .remove("photometric_reference_index");
         let legacy: RunManifest = serde_json::from_value(legacy).unwrap();
         assert_eq!(legacy.photometric_reference_index, None);
         assert_eq!(back.config.scale, m.config.scale);

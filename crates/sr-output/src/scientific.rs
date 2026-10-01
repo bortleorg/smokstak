@@ -1,5 +1,5 @@
 //! Uncompressed floating-point astronomy masters. Samples are planar and unclamped.
-use anyhow::{ensure, Context, Result};
+use anyhow::{Context, Result, ensure};
 use sr_core::plane::Plane;
 use std::{
     fs::File,
@@ -238,7 +238,10 @@ pub fn write_xisf(path: &Path, rgb: &[Plane<f32>; 3], channels: usize) -> Result
         .checked_mul(h)
         .and_then(|n| n.checked_mul(channels * 4))
         .context("image size overflow")?;
-    let xml=format!("<?xml version=\"1.0\" encoding=\"UTF-8\"?><xisf version=\"1.0\" xmlns=\"http://www.pixinsight.com/xisf\"><Image geometry=\"{w}:{h}:{channels}\" sampleFormat=\"Float32\" colorSpace=\"{}\" pixelStorage=\"Planar\" byteOrder=\"little\" bounds=\"0:1\" location=\"attachment:4096:{bytes}\"/></xisf>",if channels==1 {"Gray"} else {"RGB"});
+    let xml = format!(
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?><xisf version=\"1.0\" xmlns=\"http://www.pixinsight.com/xisf\"><Image geometry=\"{w}:{h}:{channels}\" sampleFormat=\"Float32\" colorSpace=\"{}\" pixelStorage=\"Planar\" byteOrder=\"little\" bounds=\"0:1\" location=\"attachment:4096:{bytes}\"/></xisf>",
+        if channels == 1 { "Gray" } else { "RGB" }
+    );
     ensure!(
         xml.len() + 16 <= 4096,
         "XISF header exceeds attachment offset"
@@ -299,11 +302,13 @@ mod tests {
             assert!(output.write_tile(x, y, w, h, &samples).is_err());
         }
         output.write_tile(2, 2, 1, 1, &[8.]).unwrap();
-        assert!(output
-            .write_tile(2, 2, 1, 1, &[80.])
-            .unwrap_err()
-            .to_string()
-            .contains("already written"));
+        assert!(
+            output
+                .write_tile(2, 2, 1, 1, &[80.])
+                .unwrap_err()
+                .to_string()
+                .contains("already written")
+        );
         output.write_tile(0, 2, 2, 1, &[6., 7.]).unwrap();
         output.write_tile(2, 0, 1, 2, &[2., 5.]).unwrap();
         output.write_tile(0, 0, 2, 2, &[0., 1., 3., 4.]).unwrap();
@@ -326,11 +331,13 @@ mod tests {
         let mut stream = std::io::Cursor::new(Vec::new());
         let mut output = MonoFitsTileWriter::new(&mut stream, 3, 3, 2).unwrap();
         output.write_tile(0, 0, 2, 2, &[0.; 4]).unwrap();
-        assert!(output
-            .finish()
-            .unwrap_err()
-            .to_string()
-            .contains("missing 3 tiles"));
+        assert!(
+            output
+                .finish()
+                .unwrap_err()
+                .to_string()
+                .contains("missing 3 tiles")
+        );
         let mut stream = std::io::Cursor::new(Vec::new());
         assert!(MonoFitsTileWriter::new(&mut stream, 4097, 4096, 1).is_err());
         assert!(stream.into_inner().is_empty());
@@ -465,7 +472,9 @@ mod tests {
                 .flat_map(|p| p.data.iter().copied())
                 .collect();
             let decoded: Vec<_> = bytes[2880..2880 + expected.len() * 4]
-                .as_chunks::<4>().0.iter()
+                .as_chunks::<4>()
+                .0
+                .iter()
                 .map(|b| f32::from_be_bytes(*b))
                 .collect();
             let fits_expected: Vec<_> = rgb[..channels]
@@ -481,7 +490,9 @@ mod tests {
             write_xisf(&xisf, &rgb, channels).unwrap();
             let payload = std::fs::read(&xisf).unwrap();
             let decoded: Vec<_> = payload[4096..]
-                .as_chunks::<4>().0.iter()
+                .as_chunks::<4>()
+                .0
+                .iter()
                 .map(|b| f32::from_le_bytes(*b))
                 .collect();
             assert_eq!(decoded, expected, "export must not clip scientific values");

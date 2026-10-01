@@ -59,9 +59,13 @@ impl Curvature {
     }
 
     fn variance_of(&self, a: &[f64; 6], b: &[f64; 6]) -> f64 {
-        (0..6).map(|i| (0..6)
-            .map(|j| a[i] * b[j] * self.noise[PRODUCT[i][j]] as f64)
-            .sum::<f64>()).sum()
+        (0..6)
+            .map(|i| {
+                (0..6)
+                    .map(|j| a[i] * b[j] * self.noise[PRODUCT[i][j]] as f64)
+                    .sum::<f64>()
+            })
+            .sum()
     }
 
     /// Diagnostic only: variances and covariance before the amplification gate.
@@ -69,8 +73,11 @@ impl Curvature {
     pub fn variance_probe(&self) -> Option<[f64; 3]> {
         let quad = response(&self.normal, 6)?;
         let linear = response(&self.normal, 3)?;
-        Some([self.variance_of(&linear, &linear), self.variance_of(&quad, &quad),
-            self.variance_of(&linear, &quad)])
+        Some([
+            self.variance_of(&linear, &linear),
+            self.variance_of(&quad, &quad),
+            self.variance_of(&linear, &quad),
+        ])
     }
 
     /// First failing guard; numerical operations and thresholds match correction.
@@ -90,9 +97,13 @@ impl Curvature {
             return Err("variance");
         }
         let cap = if vq > 4. * vp {
-            if !bounded_blend { return Err("variance"); }
+            if !bounded_blend {
+                return Err("variance");
+            }
             variance_blend_cap(vp, vq, self.variance_of(&linear, &quad)).ok_or("variance")?
-        } else { 1. };
+        } else {
+            1.
+        };
         let diff = std::array::from_fn(|i| quad[i] - linear[i]);
         let vd = self.variance_of(&diff, &diff).max(0.);
         let delta = diff
@@ -102,17 +113,23 @@ impl Curvature {
             .sum::<f64>();
         // Three-sigma positive-part shrinkage. Smoothly returns to the plane
         // where the measured curvature correction is indistinguishable from noise.
-        let blend = (1. - 9. * vd / (delta * delta).max(1e-30)).clamp(0., 1.).min(cap);
-        (delta.is_finite() && blend.is_finite()).then_some((delta as f32, blend as f32)).ok_or("nonfinite")
+        let blend = (1. - 9. * vd / (delta * delta).max(1e-30))
+            .clamp(0., 1.)
+            .min(cap);
+        (delta.is_finite() && blend.is_finite())
+            .then_some((delta as f32, blend as f32))
+            .ok_or("nonfinite")
     }
 }
 
 /// Largest convex interpolation coefficient satisfying the existing 4x ceiling.
 fn variance_blend_cap(vp: f64, vq: f64, covariance: f64) -> Option<f64> {
-    let a = vq + vp - 2.*covariance;
-    let b = 2.*(covariance-vp);
-    if !covariance.is_finite() || a <= 0. { return None; }
-    let cap = 6.*vp / ((b*b+12.*a*vp).sqrt()+b);
+    let a = vq + vp - 2. * covariance;
+    let b = 2. * (covariance - vp);
+    if !covariance.is_finite() || a <= 0. {
+        return None;
+    }
+    let cap = 6. * vp / ((b * b + 12. * a * vp).sqrt() + b);
     (cap.is_finite() && cap > 0.).then_some(cap.min(1.))
 }
 
@@ -162,13 +179,13 @@ mod tests {
     #[test]
     fn bounded_mixture_retains_variance_ceiling_including_shared_smaller_blends() {
         for ratio in [4.001_f64, 4.5, 10., 100.] {
-            for correlation in [-0.9,0.,0.9] {
-                let covariance=correlation*ratio.sqrt();
-                let cap=variance_blend_cap(1.,ratio,covariance).unwrap();
-                for fraction in [0.,0.1,0.5,1.] {
-                    let t=cap*fraction;
-                    let v=(1.-t).powi(2)+t*t*ratio+2.*t*(1.-t)*covariance;
-                    assert!(v <= 4.+1e-12, "{ratio} {correlation} {t} {v}");
+            for correlation in [-0.9, 0., 0.9] {
+                let covariance = correlation * ratio.sqrt();
+                let cap = variance_blend_cap(1., ratio, covariance).unwrap();
+                for fraction in [0., 0.1, 0.5, 1.] {
+                    let t = cap * fraction;
+                    let v = (1. - t).powi(2) + t * t * ratio + 2. * t * (1. - t) * covariance;
+                    assert!(v <= 4. + 1e-12, "{ratio} {correlation} {t} {v}");
                 }
             }
         }
@@ -191,7 +208,7 @@ mod tests {
                 }
             }
             let (delta, blend) = m.correction().unwrap();
-            let result = sum / weight + blend*delta;
+            let result = sum / weight + blend * delta;
             assert!((result - 0.5).abs() < 1e-4, "{result}");
         }
     }
@@ -204,8 +221,14 @@ mod tests {
                 m.add(1., i as f32 / 30., 0., 0.5, 1e-5);
             }
             assert!(m.correction().is_none());
-            assert_eq!(m.checked_correction().unwrap_err(),
-                if count == 5 { "effective_samples" } else { "quadratic_condition" });
+            assert_eq!(
+                m.checked_correction().unwrap_err(),
+                if count == 5 {
+                    "effective_samples"
+                } else {
+                    "quadratic_condition"
+                }
+            );
         }
     }
 }
