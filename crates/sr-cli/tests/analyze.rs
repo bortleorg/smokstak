@@ -16,6 +16,18 @@ impl Scratch {
             std::process::id()
         ));
         fs::create_dir(&p).unwrap();
+        // The test runs one analysis by a path relative to the working
+        // directory and one by the absolute path, and expects the same report.
+        // On macOS the temporary directory is reached through a symlink
+        // (/var -> /private/var) and the working directory comes back
+        // resolved, so the two spellings would differ. Windows is left alone:
+        // canonicalising there produces a \\?\ path the working directory
+        // never has.
+        let p = if cfg!(unix) {
+            fs::canonicalize(&p).unwrap()
+        } else {
+            p
+        };
         Self(p)
     }
 }

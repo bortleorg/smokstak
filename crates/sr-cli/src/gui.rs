@@ -3086,7 +3086,16 @@ mod tests {
 
     #[test]
     fn the_chooser_is_the_one_this_platform_has() {
-        let c = folder_chooser().expect("this platform has a chooser, or says so");
+        let c = match folder_chooser() {
+            Ok(c) => c,
+            // A Linux desktop may have neither helper installed — a headless
+            // CI runner never does — and then it has to say so.
+            Err(e) if cfg!(all(unix, not(target_os = "macos"))) => {
+                assert!(e.to_string().contains("zenity"), "{e}");
+                return;
+            }
+            Err(e) => panic!("this platform has a chooser: {e}"),
+        };
         let exe = c.get_program().to_string_lossy().into_owned();
         let args: Vec<String> = c
             .get_args()
