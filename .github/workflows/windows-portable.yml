@@ -29,16 +29,14 @@ jobs:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
-      - name: Install stable Rust
+      # The toolchain is pinned in rust-toolchain.toml; tests and lints run
+      # in ci.yml on every platform, so this workflow only builds and packages.
+      - name: Install Rust
         run: |
-          rustup toolchain install stable --profile minimal --component clippy
+          rustup toolchain install
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          rustup target add x86_64-pc-windows-msvc --toolchain stable
+          rustup target add x86_64-pc-windows-msvc
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Test workspace
-        run: cargo test --locked --workspace --target x86_64-pc-windows-msvc
-      - name: Lint workspace
-        run: cargo clippy --locked --workspace --all-targets --target x86_64-pc-windows-msvc -- -D warnings
       - name: Build portable executable
         run: cargo build --locked --release -p sr-cli --target x86_64-pc-windows-msvc
       - name: Package
