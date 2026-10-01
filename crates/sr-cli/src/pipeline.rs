@@ -2605,6 +2605,22 @@ struct FinishedProduct {
     gain: f32,
     background: Option<sr_reconstruct::background::BackgroundModel>,
     restoration: Option<sr_reconstruct::restore::RestorationReport>,
+    /// The master's own plate solution, from the reference frame's.
+    wcs: Option<sr_core::wcs::Wcs>,
+}
+
+/// The reference frame's plate solution carried onto the output grid: the
+/// output samples the sensor `scale` times more finely and starts at the
+/// region of interest's corner.
+fn master_wcs(reference: &RawFrame, cfg: &ReconstructionConfig) -> Option<sr_core::wcs::Wcs> {
+    let origin = cfg
+        .roi
+        .map_or((0.0, 0.0), |(x, y, _, _)| (x as f64, y as f64));
+    reference
+        .metadata
+        .wcs
+        .filter(|w| w.is_plausible())
+        .map(|w| w.resampled(cfg.scale as f64, origin))
 }
 
 fn finish_product(
@@ -2661,6 +2677,7 @@ fn finish_product(
         gain,
         background,
         restoration,
+        wcs: master_wcs(&burst.frames[reference], cfg),
     }
 }
 
@@ -2680,6 +2697,7 @@ fn write_accumulator(
     product: &ReconstructionProduct,
     reference: &RawFrame,
     frames: usize,
+    wcs: Option<sr_core::wcs::Wcs>,
 ) -> Result<()> {
     std::fs::create_dir_all(dir)?;
     for c in 0..product.channels {
@@ -2700,6 +2718,8 @@ fn write_accumulator(
         // means anything if they agree, so `combine` checks.
         "reference_file": reference.metadata.file_name,
         "reference_sha256_prefix": reference.metadata.sha256_prefix,
+        // The grid's plate solution, so the combined master can carry it.
+        "wcs": wcs,
     });
     std::fs::write(
         dir.join("accumulator.json"),
@@ -2827,6 +2847,7 @@ fn write_stack_outputs(
         product.channels,
         out.fits,
         out.xisf,
+        finished.wcs.as_ref(),
     )? {
         println!("Wrote {} (32-bit float master)", p.display());
         output_files.push(p.display().to_string());
@@ -3164,7 +3185,13 @@ fn stack_group(
 
     if let Some(dir) = out.accumulate {
         let contributing = inputs.weights.iter().filter(|w| **w > 0.0).count();
-        write_accumulator(dir, &product, &burst.frames[reference], contributing)?;
+        write_accumulator(
+            dir,
+            &product,
+            &burst.frames[reference],
+            contributing,
+            master_wcs(&burst.frames[reference], cfg),
+        )?;
     }
 
     let finished = finish_product(
@@ -3971,7 +3998,7 @@ Per-channel stretch (display transform, before combining):"
     if let Some(p) = preview {
         write_preview_of(p, &rgb, 3, preview_size, stretch_channels)?;
     }
-    for p in sr_output::write_scientific_copies(output, &rgb, 3, fits, xisf)? {
+    for p in sr_output::write_scientific_copies(output, &rgb, 3, fits, xisf, None)? {
         println!("Wrote {} (32-bit float master)", p.display());
     }
     if float_tiff {
@@ -4045,6 +4072,7 @@ pub fn combine(
     let mut channels = 0usize;
     let mut frames = 0u64;
     let mut grid: Option<(usize, usize, String)> = None;
+    let mut wcs: Option<sr_core::wcs::Wcs> = None;
 
     for dir in dirs {
         let text = std::fs::read_to_string(dir.join("accumulator.json"))
@@ -4058,6 +4086,9 @@ pub fn combine(
             .unwrap_or("")
             .to_string();
         frames += meta["frames"].as_u64().unwrap_or(0);
+        if wcs.is_none() {
+            wcs = serde_json::from_value(meta["wcs"].clone()).ok().flatten();
+        }
 
         match &grid {
             None => {
@@ -4134,7 +4165,7 @@ pub fn combine(
     if let Some(p) = preview {
         write_preview(p, &rgb, channels, preview_size)?;
     }
-    for p in sr_output::write_scientific_copies(output, &rgb, channels, fits, xisf)? {
+    for p in sr_output::write_scientific_copies(output, &rgb, channels, fits, xisf, wcs.as_ref())? {
         println!("Wrote {} (32-bit float master)", p.display());
     }
     if float_tiff {

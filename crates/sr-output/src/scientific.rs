@@ -1,6 +1,7 @@
 //! Uncompressed floating-point astronomy masters. Samples are planar and unclamped.
 use anyhow::{Context, Result, ensure};
 use sr_core::plane::Plane;
+use sr_core::wcs::Wcs;
 use std::{
     fs::File,
     io::{BufWriter, Seek, SeekFrom, Write},
@@ -24,18 +25,27 @@ fn dimensions(rgb: &[Plane<f32>; 3], channels: usize) -> Result<(usize, usize)> 
     Ok((w, h))
 }
 
-/// IEEE Float32 FITS, bottom-up rows, planar RGB, big-endian samples.
-pub fn write_fits(path: &Path, rgb: &[Plane<f32>; 3], channels: usize) -> Result<()> {
+/// IEEE Float32 FITS, planar RGB, big-endian samples.
+///
+/// Rows are stored top first, in the order the input frames were read, and
+/// labelled `ROWORDER = 'TOP-DOWN'`. A reader that ignores the keyword sees
+/// the master the same way up as the frames it came from; one that honours it
+/// agrees. `wcs` is the master's own plate solution, when the reference frame
+/// had one.
+pub fn write_fits(
+    path: &Path,
+    rgb: &[Plane<f32>; 3],
+    channels: usize,
+    wcs: Option<&Wcs>,
+) -> Result<()> {
     let (w, h) = dimensions(rgb, channels)?;
-    let header = fits_header(w, h, channels);
+    let header = fits_header(w, h, channels, wcs);
     let mut f =
         BufWriter::new(File::create(path).with_context(|| format!("creating {}", path.display()))?);
     f.write_all(&header)?;
     for p in &rgb[..channels] {
-        for row in p.data.chunks_exact(w).rev() {
-            for &v in row {
-                f.write_all(&v.to_be_bytes())?;
-            }
+        for &v in &p.data {
+            f.write_all(&v.to_be_bytes())?;
         }
     }
     let bytes = w * h * channels * 4;
@@ -44,7 +54,7 @@ pub fn write_fits(path: &Path, rgb: &[Plane<f32>; 3], channels: usize) -> Result
     Ok(())
 }
 
-fn fits_header(w: usize, h: usize, channels: usize) -> Vec<u8> {
+fn fits_header(w: usize, h: usize, channels: usize, wcs: Option<&Wcs>) -> Vec<u8> {
     let mut cards = vec![
         format!("{:<8}= {:>20}", "SIMPLE", "T"),
         format!("{:<8}= {:>20}", "BITPIX", -32),
@@ -55,8 +65,15 @@ fn fits_header(w: usize, h: usize, channels: usize) -> Vec<u8> {
     if channels == 3 {
         cards.push(format!("{:<8}= {:>20}", "NAXIS3", 3));
     }
+    if let Some(wcs) = wcs {
+        cards.extend(
+            wcs.fits_cards()
+                .into_iter()
+                .map(|(k, v)| format!("{k:<8}= {v:>20}")),
+        );
+    }
     cards.extend([
-        "ROWORDER= 'BOTTOM-UP'".into(),
+        "ROWORDER= 'TOP-DOWN'".into(),
         format!("COLORSPC= '{}'", if channels == 1 { "Gray" } else { "RGB" }),
         "IMAGETYP= 'MASTER'".into(),
         "HISTORY Written by smokstak; floating-point samples without display transfer".into(),
@@ -96,7 +113,7 @@ impl<W: Write + Seek> MonoFitsTileWriter<W> {
             .checked_mul(u64::try_from(height)?)
             .and_then(|n| n.checked_mul(4))
             .context("FITS payload size overflow")?;
-        let header = fits_header(width, height, 1);
+        let header = fits_header(width, height, 1, None);
         let header_len = header.len() as u64;
         let payload_end = header_len
             .checked_add(payload)
@@ -170,7 +187,7 @@ impl<W: Write + Seek> MonoFitsTileWriter<W> {
             for &value in &data[dy * width..(dy + 1) * width] {
                 self.row.extend_from_slice(&value.to_be_bytes());
             }
-            let offset = ((self.height - 1 - y - dy) as u64)
+            let offset = ((y + dy) as u64)
                 .checked_mul(self.width as u64)
                 .and_then(|n| n.checked_add(x as u64))
                 .and_then(|n| n.checked_mul(4))
@@ -232,14 +249,29 @@ where
 }
 
 /// XISF 1.0 with one uncompressed Float32 image and an aligned data attachment.
-pub fn write_xisf(path: &Path, rgb: &[Plane<f32>; 3], channels: usize) -> Result<()> {
+/// The plate solution, when there is one, travels as FITS keywords, which is
+/// where XISF readers look for it.
+pub fn write_xisf(
+    path: &Path,
+    rgb: &[Plane<f32>; 3],
+    channels: usize,
+    wcs: Option<&Wcs>,
+) -> Result<()> {
     let (w, h) = dimensions(rgb, channels)?;
     let bytes = w
         .checked_mul(h)
         .and_then(|n| n.checked_mul(channels * 4))
         .context("image size overflow")?;
+    let keywords: String = wcs
+        .map(|w| {
+            w.fits_cards()
+                .into_iter()
+                .map(|(k, v)| format!("<FITSKeyword name=\"{k}\" value=\"{v}\" comment=\"\"/>"))
+                .collect()
+        })
+        .unwrap_or_default();
     let xml = format!(
-        "<?xml version=\"1.0\" encoding=\"UTF-8\"?><xisf version=\"1.0\" xmlns=\"http://www.pixinsight.com/xisf\"><Image geometry=\"{w}:{h}:{channels}\" sampleFormat=\"Float32\" colorSpace=\"{}\" pixelStorage=\"Planar\" byteOrder=\"little\" bounds=\"0:1\" location=\"attachment:4096:{bytes}\"/></xisf>",
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?><xisf version=\"1.0\" xmlns=\"http://www.pixinsight.com/xisf\"><Image geometry=\"{w}:{h}:{channels}\" sampleFormat=\"Float32\" colorSpace=\"{}\" pixelStorage=\"Planar\" byteOrder=\"little\" bounds=\"0:1\" location=\"attachment:4096:{bytes}\">{keywords}</Image></xisf>",
         if channels == 1 { "Gray" } else { "RGB" }
     );
     ensure!(
@@ -269,16 +301,17 @@ pub fn write_scientific_copies(
     channels: usize,
     fits: bool,
     xisf: bool,
+    wcs: Option<&Wcs>,
 ) -> Result<Vec<PathBuf>> {
     let mut paths = Vec::new();
     if fits {
         let p = output.with_extension("fits");
-        write_fits(&p, rgb, channels)?;
+        write_fits(&p, rgb, channels, wcs)?;
         paths.push(p);
     }
     if xisf {
         let p = output.with_extension("xisf");
-        write_xisf(&p, rgb, channels)?;
+        write_xisf(&p, rgb, channels, wcs)?;
         paths.push(p);
     }
     Ok(paths)
@@ -359,7 +392,7 @@ mod tests {
         ];
         let path =
             std::env::temp_dir().join(format!("smokstak-tiled-fits-{}.fits", std::process::id()));
-        write_fits(&path, &planes, 1).unwrap();
+        write_fits(&path, &planes, 1, None).unwrap();
         let expected = std::fs::read(&path).unwrap();
         std::fs::remove_file(&path).unwrap();
         for tile in [1, 3, 7, 19, 64] {
@@ -374,6 +407,32 @@ mod tests {
             .unwrap();
             assert_eq!(out.into_inner(), expected, "tile {tile}");
         }
+    }
+
+    #[test]
+    fn a_master_carries_its_plate_solution() {
+        let wcs = Wcs {
+            crpix: (1234.5, 987.0),
+            crval: (56.75, 24.1167),
+            cd: [[-2.0e-4, 1.0e-6], [1.0e-6, 2.0e-4]],
+            sip: None,
+        };
+        let planes = [
+            Plane::from_vec(4, 3, vec![0.5; 12]),
+            Plane::new(0, 0),
+            Plane::new(0, 0),
+        ];
+        let path = std::env::temp_dir().join(format!("smokstak-wcs-{}.fits", std::process::id()));
+        write_fits(&path, &planes, 1, Some(&wcs)).unwrap();
+        let (header, _) = sr_raw::fits::read_header(&path).unwrap();
+        std::fs::remove_file(&path).unwrap();
+        assert_eq!(header.text("ROWORDER").as_deref(), Some("TOP-DOWN"));
+        assert!(header.text("CTYPE1").unwrap().contains("TAN"));
+        // FITS counts from one; the solution type from zero.
+        assert!((header.number("CRPIX1").unwrap() - 1235.5).abs() < 1e-9);
+        assert!((header.number("CRPIX2").unwrap() - 988.0).abs() < 1e-9);
+        assert!((header.number("CRVAL1").unwrap() - 56.75).abs() < 1e-12);
+        assert!((header.number("CD2_2").unwrap() - 2.0e-4).abs() < 1e-18);
     }
 
     #[test]
@@ -447,7 +506,12 @@ mod tests {
         })
         .unwrap_err();
         assert!(err.to_string().contains("large offset"));
-        assert_eq!(probe.large_write, Some(2880 + 16999u64 * 65536 * 4));
+        // Rows are stored top first, so the first write past 4 GiB is the
+        // bottom row of the tile band that straddles it.
+        assert_eq!(
+            probe.large_write,
+            Some(2880 + (16383u64 * 65536 + 64816) * 4)
+        );
     }
 
     #[test]
@@ -463,10 +527,10 @@ mod tests {
             let base = std::env::temp_dir()
                 .join(format!("smokstak-export-{}-{channels}", std::process::id()));
             let fit = base.with_extension("fits");
-            write_fits(&fit, &rgb, channels).unwrap();
+            write_fits(&fit, &rgb, channels, None).unwrap();
             let bytes = std::fs::read(&fit).unwrap();
             assert_eq!(bytes.len() % 2880, 0);
-            assert!(String::from_utf8_lossy(&bytes[..2880]).contains("BOTTOM-UP"));
+            assert!(String::from_utf8_lossy(&bytes[..2880]).contains("TOP-DOWN"));
             let expected: Vec<_> = rgb[..channels]
                 .iter()
                 .flat_map(|p| p.data.iter().copied())
@@ -477,17 +541,14 @@ mod tests {
                 .iter()
                 .map(|b| f32::from_be_bytes(*b))
                 .collect();
-            let fits_expected: Vec<_> = rgb[..channels]
-                .iter()
-                .flat_map(|p| p.data.as_chunks::<16>().0.iter().rev().flatten().copied())
-                .collect();
-            assert_eq!(decoded, fits_expected);
+            // Stored top row first, the order the planes hold them.
+            assert_eq!(decoded, expected);
             let (header, offset) = sr_raw::fits::read_header(&fit).unwrap();
             assert_eq!(offset, 2880);
             assert_eq!(header.int("BITPIX"), Some(-32));
             assert_eq!(header.int("NAXIS"), Some(if channels == 1 { 2 } else { 3 }));
             let xisf = base.with_extension("xisf");
-            write_xisf(&xisf, &rgb, channels).unwrap();
+            write_xisf(&xisf, &rgb, channels, None).unwrap();
             let payload = std::fs::read(&xisf).unwrap();
             let decoded: Vec<_> = payload[4096..]
                 .as_chunks::<4>()

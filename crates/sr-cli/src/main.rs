@@ -179,8 +179,10 @@ struct InputArgs {
 
     /// Whether a FITS array starts at the bottom or the top of the image.
     ///
-    /// `auto` believes the file's ROWORDER keyword and falls back to the FITS
-    /// standard's bottom-up when it is absent. Override this only if the output
+    /// `auto` believes the file's ROWORDER keyword and, when it is absent,
+    /// takes the array in the order it is stored, which is what capture
+    /// programs overwhelmingly write. Masters are written in that same order
+    /// and say so with ROWORDER = 'TOP-DOWN'. Override this only if the output
     /// comes out mirrored top to bottom; the mosaic pattern is checked against
     /// the pixels either way, so getting it wrong does not affect colour.
     #[arg(long, default_value = "auto")]

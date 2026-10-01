@@ -22,9 +22,9 @@ def verify(base):
         if card[8:10]=='= ':header[card[:8].strip()]=card[10:].strip()
     assert end is not None and len(data)%2880==0
     assert header['SIMPLE']=='T' and header['BITPIX']=='-32'
-    assert header['ROWORDER']=="'BOTTOM-UP'"
+    assert header['ROWORDER']=="'TOP-DOWN'"
     w,h=int(header['NAXIS1']),int(header['NAXIS2']);c=int(header.get('NAXIS3','1'));n=w*h*c
-    a=np.frombuffer(data,dtype='>f4',count=n,offset=end).reshape(c,h,w)[:,::-1,:]
+    a=np.frombuffer(data,dtype='>f4',count=n,offset=end).reshape(c,h,w)
     a=a[0] if c==1 else a.transpose(1,2,0)
     assert np.array_equal(a,expected,equal_nan=True),f'{base}: FITS differs'
     data=base.with_suffix('.xisf').read_bytes();assert data[:8]==b'XISF0100'

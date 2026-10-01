@@ -454,12 +454,8 @@ fn read_output(path: &Path, width: usize, height: usize) -> Vec<f32> {
         .iter()
         .map(|b| f32::from_be_bytes(*b))
         .collect();
+    // Masters are stored top row first.
     values
-        .chunks_exact(width)
-        .rev()
-        .flatten()
-        .copied()
-        .collect()
 }
 
 #[test]

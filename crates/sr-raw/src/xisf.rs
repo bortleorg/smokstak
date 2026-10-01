@@ -583,6 +583,7 @@ fn astrometric_solution(properties: &[(String, Property)]) -> Option<Wcs> {
         crpix: (image[0] - 0.5, image[1] - 0.5),
         crval: (sky[0], sky[1]),
         cd: [[m[0], m[1]], [m[2], m[3]]],
+        sip: None,
     };
     w.is_plausible().then_some(w)
 }

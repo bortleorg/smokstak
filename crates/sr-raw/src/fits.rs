@@ -177,8 +177,39 @@ pub(crate) fn plate_solve(hdr: &Header) -> Option<Wcs> {
             }
         }
     };
-    let w = Wcs { crpix, crval, cd };
+    let w = Wcs {
+        crpix,
+        crval,
+        cd,
+        sip: sip_terms(hdr, &ctype1, &ctype2),
+    };
     w.is_plausible().then_some(w)
+}
+
+/// Forward SIP distortion, when the projection says SIP and both polynomials
+/// are present at an order this keeps. Anything else is no distortion rather
+/// than an error: the linear solution stands on its own.
+fn sip_terms(hdr: &Header, ctype1: &str, ctype2: &str) -> Option<sr_core::wcs::Sip> {
+    if !ctype1.ends_with("-SIP") || !ctype2.ends_with("-SIP") {
+        return None;
+    }
+    let order = hdr.int("A_ORDER")?;
+    if order < 1 || order as usize > sr_core::wcs::Sip::MAX_ORDER || hdr.int("B_ORDER")? != order {
+        return None;
+    }
+    let order = order as usize;
+    let mut sip = sr_core::wcs::Sip {
+        order,
+        a: [[0.0; 6]; 6],
+        b: [[0.0; 6]; 6],
+    };
+    for p in 0..=order {
+        for q in 0..=order - p {
+            sip.a[p][q] = hdr.number(&format!("A_{p}_{q}")).unwrap_or(0.0);
+            sip.b[p][q] = hdr.number(&format!("B_{p}_{q}")).unwrap_or(0.0);
+        }
+    }
+    Some(sip)
 }
 
 /// Split one card into keyword and value text, discarding the comment.
@@ -401,7 +432,9 @@ pub fn decode(path: &Path, row_order: RowOrder) -> Result<RawFrame> {
     }
     drop(raw);
 
-    let wcs = plate_solve(&hdr);
+    // The solve describes the array as stored; a flipped array needs it
+    // flipped too, or the seed and the master's solution point at the mirror.
+    let wcs = plate_solve(&hdr).map(|w| if flip { w.flipped_vertically(h) } else { w });
     build_frame(
         path,
         &hdr,

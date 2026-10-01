@@ -30,9 +30,10 @@ use serde::{Deserialize, Serialize};
 
 /// A gnomonic (TAN) plate solution, which is what every capture program writes.
 ///
-/// SIP distortion coefficients are deliberately ignored. They correct the last
-/// fraction of a pixel at the frame corners, and what this is for is landing
-/// within the correlator's capture range.
+/// Registration uses only the linear part. SIP distortion terms move the
+/// frame corners by several pixels on a fast wide field, which does not
+/// matter for landing within the correlator's capture range, so nothing here
+/// evaluates them; they are kept so a master's solution can carry them.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Wcs {
     /// Reference pixel, zero-based, in sensor coordinates.
@@ -41,6 +42,35 @@ pub struct Wcs {
     pub crval: (f64, f64),
     /// Degrees per pixel, as `[[CD1_1, CD1_2], [CD2_1, CD2_2]]`.
     pub cd: [[f64; 2]; 2],
+    /// Forward SIP distortion, when the solve had one.
+    #[serde(default)]
+    pub sip: Option<Sip>,
+}
+
+/// Forward SIP polynomials: `a[p][q]` is `A_p_q`, the coefficient of
+/// `u^p v^q`, with `(u, v)` the pixel offset from the reference pixel. Orders
+/// up to five, which covers what solvers write.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Sip {
+    pub order: usize,
+    pub a: [[f64; 6]; 6],
+    pub b: [[f64; 6]; 6],
+}
+
+impl Sip {
+    pub const MAX_ORDER: usize = 5;
+
+    /// Every coefficient through `f(p, q, value, is_a)`.
+    fn map(&self, f: impl Fn(usize, usize, f64, bool) -> f64) -> Sip {
+        let mut out = *self;
+        for p in 0..6 {
+            for q in 0..6 {
+                out.a[p][q] = f(p, q, self.a[p][q], true);
+                out.b[p][q] = f(p, q, self.b[p][q], false);
+            }
+        }
+        out
+    }
 }
 
 impl Wcs {
@@ -99,6 +129,96 @@ impl Wcs {
     /// meridian flip shows up: 180 degrees apart.
     pub fn orientation_deg(&self) -> f64 {
         self.cd[0][1].atan2(self.cd[0][0]).to_degrees()
+    }
+
+    /// The same solution for an image stored with its rows the other way up.
+    ///
+    /// `height` is the full stored height. Row `y` of the flipped image is
+    /// row `height - 1 - y` of the original, so the reference pixel moves, the
+    /// matrix's y column changes sign, and so do the distortion terms that
+    /// depend on an odd power of the y offset (and, for B, all of them).
+    pub fn flipped_vertically(&self, height: usize) -> Wcs {
+        let odd = |q: usize| if q % 2 == 1 { -1.0 } else { 1.0 };
+        Wcs {
+            crpix: (self.crpix.0, height as f64 - 1.0 - self.crpix.1),
+            crval: self.crval,
+            cd: [
+                [self.cd[0][0], -self.cd[0][1]],
+                [self.cd[1][0], -self.cd[1][1]],
+            ],
+            sip: self
+                .sip
+                .map(|s| s.map(|_, q, c, is_a| if is_a { c * odd(q) } else { -c * odd(q) })),
+        }
+    }
+
+    /// The solution of an output grid laid over this one.
+    ///
+    /// The output samples the sensor `scale` times more finely, and its pixel
+    /// (0, 0) starts at sensor pixel `origin`, the corner of a region of
+    /// interest or (0, 0). Pixel centres follow the reconstruction's own
+    /// convention: output `o` sits at sensor `(o + origin * scale + 0.5) /
+    /// scale - 0.5`. Offsets from the reference pixel grow by `scale`, so a
+    /// term of total degree `n` scales by `scale^(1 - n)`.
+    pub fn resampled(&self, scale: f64, origin: (f64, f64)) -> Wcs {
+        let to_out = |r: f64, o: f64| (r + 0.5) * scale - 0.5 - o * scale;
+        Wcs {
+            crpix: (
+                to_out(self.crpix.0, origin.0),
+                to_out(self.crpix.1, origin.1),
+            ),
+            crval: self.crval,
+            cd: [
+                [self.cd[0][0] / scale, self.cd[0][1] / scale],
+                [self.cd[1][0] / scale, self.cd[1][1] / scale],
+            ],
+            sip: self
+                .sip
+                .map(|s| s.map(|p, q, c, _| c * scale.powi(1 - (p + q) as i32))),
+        }
+    }
+
+    /// FITS header cards for this solution: keyword and value text, without
+    /// the 80-column padding.
+    pub fn fits_cards(&self) -> Vec<(String, String)> {
+        let num = |v: f64| format!("{v:.12E}");
+        let (c1, c2) = if self.sip.is_some() {
+            ("'RA---TAN-SIP'", "'DEC--TAN-SIP'")
+        } else {
+            ("'RA---TAN'", "'DEC--TAN'")
+        };
+        let mut cards: Vec<(String, String)> = [
+            ("CTYPE1", c1.to_string()),
+            ("CTYPE2", c2.to_string()),
+            ("CUNIT1", "'deg     '".into()),
+            ("CUNIT2", "'deg     '".into()),
+            ("EQUINOX", "2000.0".into()),
+            // FITS counts pixels from one.
+            ("CRPIX1", num(self.crpix.0 + 1.0)),
+            ("CRPIX2", num(self.crpix.1 + 1.0)),
+            ("CRVAL1", num(self.crval.0)),
+            ("CRVAL2", num(self.crval.1)),
+            ("CD1_1", num(self.cd[0][0])),
+            ("CD1_2", num(self.cd[0][1])),
+            ("CD2_1", num(self.cd[1][0])),
+            ("CD2_2", num(self.cd[1][1])),
+        ]
+        .into_iter()
+        .map(|(k, v)| (k.to_string(), v))
+        .collect();
+        if let Some(s) = &self.sip {
+            for (name, coef) in [("A", &s.a), ("B", &s.b)] {
+                cards.push((format!("{name}_ORDER"), s.order.to_string()));
+                for (p, row) in coef.iter().enumerate().take(s.order + 1) {
+                    for (q, &c) in row.iter().enumerate().take(s.order + 1 - p) {
+                        if c != 0.0 {
+                            cards.push((format!("{name}_{p}_{q}"), num(c)));
+                        }
+                    }
+                }
+            }
+        }
+        cards
     }
 
     /// Whether this solution is usable at all.
@@ -225,6 +345,7 @@ mod tests {
             crpix: (3943.4, 1069.4),
             crval: (300.0823, 34.7828),
             cd: [[-2.03473e-5, 1.24206e-3], [-1.23976e-3, -1.79194e-5]],
+            sip: None,
         }
     }
 
@@ -344,5 +465,59 @@ mod tests {
         let mut w = ngc6871();
         w.crval.1 = 91.0;
         assert!(!w.is_plausible());
+    }
+
+    #[test]
+    fn a_flipped_solution_names_the_same_sky_at_the_mirrored_pixel() {
+        let w = ngc6871();
+        let f = w.flipped_vertically(4176);
+        for (x, y) in [(0.0, 0.0), (1234.5, 987.25), (6247.0, 4175.0)] {
+            let a = w.pixel_to_sky(x, y);
+            let b = f.pixel_to_sky(x, 4175.0 - y);
+            assert!((a.0 - b.0).abs() < 1e-9 && (a.1 - b.1).abs() < 1e-9);
+        }
+    }
+
+    #[test]
+    fn a_resampled_solution_follows_the_output_grid() {
+        let w = ngc6871();
+        // 2x, starting at sensor (100, 40): output o sits at sensor
+        // (o + origin * 2 + 0.5) / 2 - 0.5.
+        let r = w.resampled(2.0, (100.0, 40.0));
+        for (ox, oy) in [(0.0, 0.0), (17.0, 3.0), (999.0, 512.0)] {
+            let sx = (ox + 200.0 + 0.5) / 2.0 - 0.5;
+            let sy = (oy + 80.0 + 0.5) / 2.0 - 0.5;
+            let a = w.pixel_to_sky(sx, sy);
+            let b = r.pixel_to_sky(ox, oy);
+            assert!((a.0 - b.0).abs() < 1e-9 && (a.1 - b.1).abs() < 1e-9);
+        }
+        assert!((r.scale_arcsec() * 2.0 - w.scale_arcsec()).abs() < 1e-9);
+    }
+
+    #[test]
+    fn distortion_survives_a_double_flip_and_a_unit_resample() {
+        let mut w = ngc6871();
+        let mut sip = Sip {
+            order: 2,
+            a: [[0.0; 6]; 6],
+            b: [[0.0; 6]; 6],
+        };
+        sip.a[2][0] = 1.5e-6;
+        sip.a[1][1] = -2.0e-6;
+        sip.b[0][2] = 3.0e-6;
+        sip.b[1][1] = 4.0e-7;
+        w.sip = Some(sip);
+        assert_eq!(w.flipped_vertically(4176).flipped_vertically(4176), w);
+        assert_eq!(w.resampled(1.0, (0.0, 0.0)), w);
+        let f = w.flipped_vertically(4176).sip.unwrap();
+        // u^1 v^1 is odd in v: A flips; B's v^2 term is even in v, and B
+        // itself is a y correction, so it flips.
+        assert_eq!(f.a[1][1], 2.0e-6);
+        assert_eq!(f.b[0][2], -3.0e-6);
+        let r = w.resampled(2.0, (0.0, 0.0)).sip.unwrap();
+        assert!((r.a[2][0] - 0.75e-6).abs() < 1e-18);
+        let cards = w.fits_cards();
+        assert!(cards.iter().any(|(k, v)| k == "CTYPE1" && v.contains("TAN-SIP")));
+        assert!(cards.iter().any(|(k, _)| k == "A_2_0"));
     }
 }

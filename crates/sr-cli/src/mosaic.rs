@@ -1009,7 +1009,7 @@ fn build_staged(plan: &Plan, out: &Path, tile: usize, memory_mb: usize) -> Resul
             .collect(),
     );
     let mut preview_planes = [preview, Plane::new(0, 0), Plane::new(0, 0)];
-    sr_output::scientific::write_fits(&out.join("preview-linear.fits"), &preview_planes, 1)?;
+    sr_output::scientific::write_fits(&out.join("preview-linear.fits"), &preview_planes, 1, None)?;
     // Display only, after writing the linear preview. Original output tiles
     // have already been finalized; stretching cannot change scientific pixels.
     let display_range = stretch_mosaic_preview(&mut preview_planes[0], &preview_count);
