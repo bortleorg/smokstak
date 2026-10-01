@@ -39,6 +39,14 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Build portable executable
         run: cargo build --locked --release -p sr-cli --target x86_64-pc-windows-msvc
+      # Generated from Cargo.lock on every build, against about.toml's list of
+      # accepted licences, so it cannot drift from what is actually linked.
+      - name: Third-party notices
+        run: |
+          cargo install --locked cargo-about --version 0.9.2 --features cli
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo about generate --locked --manifest-path crates/sr-cli/Cargo.toml about.hbs -o THIRD_PARTY_NOTICES.txt
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Package
         run: |
           $package = 'dist/smokstak-windows-x64'

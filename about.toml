@@ -1,0 +1,21 @@
+# cargo-about configuration: the licences smokstak.exe may ship under, and
+# the target it is built for. The Windows portable workflow generates
+# THIRD_PARTY_NOTICES.txt from this on every build, so it cannot go stale.
+#
+# LGPL-2.1 is here for rawler, the camera RAW decoder, which is statically
+# linked. Its terms are met by smokstak being open source, but adding a
+# further copyleft licence is a decision, not a formality.
+accepted = [
+    "MIT",
+    "Apache-2.0",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "Zlib",
+    "Unlicense",
+    "0BSD",
+    "Unicode-3.0",
+    "LGPL-2.1",
+]
+targets = ["x86_64-pc-windows-msvc"]
+ignore-build-dependencies = false
+ignore-dev-dependencies = true
