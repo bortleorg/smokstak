@@ -1,0 +1,65 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/sr-core",
+    "crates/sr-raw",
+    "crates/sr-noise",
+    "crates/sr-quality",
+    "crates/sr-register",
+    "crates/sr-warp",
+    "crates/sr-reconstruct",
+    "crates/sr-color",
+    "crates/sr-composite",
+    "crates/sr-output",
+    "crates/sr-diagnostics",
+    "crates/sr-synth",
+    "crates/sr-cli",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85"
+license = "MIT OR Apache-2.0"
+
+[workspace.dependencies]
+sr-core = { path = "crates/sr-core" }
+sr-raw = { path = "crates/sr-raw" }
+sr-noise = { path = "crates/sr-noise" }
+sr-quality = { path = "crates/sr-quality" }
+sr-register = { path = "crates/sr-register" }
+sr-warp = { path = "crates/sr-warp" }
+sr-reconstruct = { path = "crates/sr-reconstruct" }
+sr-color = { path = "crates/sr-color" }
+sr-composite = { path = "crates/sr-composite" }
+sr-output = { path = "crates/sr-output" }
+sr-diagnostics = { path = "crates/sr-diagnostics" }
+sr-synth = { path = "crates/sr-synth" }
+
+anyhow = "1"
+thiserror = "2"
+rayon = "1.10"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+rustfft = "6"
+rawler = "0.8"
+tiff = "0.11"
+png = "0.17"
+clap = { version = "4", features = ["derive"] }
+log = "0.4"
+env_logger = "0.11"
+sha2 = "0.10"
+quick-xml = "0.37"
+flate2 = "1"
+lz4_flex = { version = "0.11", default-features = false, features = ["std"] }
+rand = "0.8"
+rand_pcg = "0.3"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 4
+debug = 1
+
+[profile.release.package."*"]
+opt-level = 3

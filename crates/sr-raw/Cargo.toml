@@ -1,0 +1,18 @@
+[package]
+name = "sr-raw"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+sr-core = { workspace = true }
+rawler = { workspace = true }
+rayon = { workspace = true }
+serde = { workspace = true }
+log = { workspace = true }
+sha2 = { workspace = true }
+quick-xml = { workspace = true }
+flate2 = { workspace = true }
+lz4_flex = { workspace = true }
+thiserror = { workspace = true }

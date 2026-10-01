@@ -1,0 +1,13 @@
+[package]
+name = "sr-register"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+sr-core = { workspace = true }
+rustfft = { workspace = true }
+rayon = { workspace = true }
+serde = { workspace = true }
+log = { workspace = true }

@@ -1,0 +1,32 @@
+[package]
+name = "sr-cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+sr-core = { workspace = true }
+sr-raw = { workspace = true }
+sr-noise = { workspace = true }
+sr-quality = { workspace = true }
+sr-register = { workspace = true }
+sr-warp = { workspace = true }
+sr-reconstruct = { workspace = true }
+sr-color = { workspace = true }
+sr-composite = { workspace = true }
+sha2 = { workspace = true }
+sr-output = { workspace = true }
+sr-diagnostics = { workspace = true }
+sr-synth = { workspace = true }
+clap = { workspace = true }
+anyhow = { workspace = true }
+rayon = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+log = { workspace = true }
+env_logger = { workspace = true }
+
+[[bin]]
+name = "smokstak"
+path = "src/main.rs"

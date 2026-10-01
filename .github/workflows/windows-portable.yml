@@ -1,0 +1,66 @@
+name: Windows portable
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-portable-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 45
+    env:
+      CARGO_TERM_COLOR: always
+      # Portable CRT, with baseline x64 instructions (no target-cpu=native).
+      RUSTFLAGS: '-C target-feature=+crt-static'
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Install stable Rust
+        run: |
+          rustup toolchain install stable --profile minimal --component clippy
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          rustup target add x86_64-pc-windows-msvc --toolchain stable
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Test workspace
+        run: cargo test --locked --workspace --target x86_64-pc-windows-msvc
+      - name: Lint workspace
+        run: cargo clippy --locked --workspace --all-targets --target x86_64-pc-windows-msvc -- -D warnings
+      - name: Build portable executable
+        run: cargo build --locked --release -p sr-cli --target x86_64-pc-windows-msvc
+      - name: Package
+        run: |
+          $package = 'dist/smokstak-windows-x64'
+          New-Item -ItemType Directory -Path $package -Force | Out-Null
+          Copy-Item target/x86_64-pc-windows-msvc/release/smokstak.exe $package
+          Copy-Item packaging/windows/Start-smokstak.cmd, packaging/windows/README.txt $package
+          Copy-Item THIRD_PARTY_NOTICES.txt $package
+          @("Source: https://github.com/$env:GITHUB_REPOSITORY", "Commit: $env:GITHUB_SHA", "Run: $env:GITHUB_SERVER_URL/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID", "Compiler: $(rustc --version)", 'Target: x86_64-pc-windows-msvc; static CRT; CPU backend') | Set-Content "$package/BUILD.txt"
+      - name: Test packaged web app
+        run: ./packaging/windows/smoke-test.ps1 -Executable ./dist/smokstak-windows-x64/smokstak.exe
+      - name: Archive and checksum
+        run: |
+          Compress-Archive -Path dist/smokstak-windows-x64 -DestinationPath dist/smokstak-windows-x64.zip
+          $hash = (Get-FileHash dist/smokstak-windows-x64.zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  smokstak-windows-x64.zip" | Set-Content dist/smokstak-windows-x64.zip.sha256
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: smokstak-windows-x64-${{ github.sha }}
+          path: |
+            dist/smokstak-windows-x64.zip
+            dist/smokstak-windows-x64.zip.sha256
+          if-no-files-found: error
+          retention-days: 30

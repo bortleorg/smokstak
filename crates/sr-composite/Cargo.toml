@@ -1,0 +1,12 @@
+[package]
+name = "sr-composite"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+sr-core = { workspace = true }
+sr-register = { workspace = true }
+serde = { workspace = true }
+log = { workspace = true }

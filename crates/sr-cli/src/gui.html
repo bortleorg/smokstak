@@ -1,0 +1,2094 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>smokstak</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #0e1013;
+    --panel: #171a1f;
+    --line: #262b33;
+    --ink: #e6e8ec;
+    --dim: #9aa3af;
+    --accent: #7cc0ff;
+    --good: #7ddba4;
+    --warn: #ffcc7a;
+    --bad: #ff8f8f;
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 15px/1.55 -apple-system, "Segoe UI", Roboto, system-ui, sans-serif;
+  }
+  main { max-width: 860px; margin: 0 auto; padding: 32px 20px 80px; }
+  h1 { font-size: 21px; font-weight: 600; margin: 0 0 2px; letter-spacing: -0.01em; }
+  .sub { color: var(--dim); margin: 0 0 28px; font-size: 14px; }
+  section { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 20px; margin-bottom: 16px; }
+  section[hidden] { display: none; }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--dim); margin: 0 0 14px; font-weight: 600; }
+
+  #drop {
+    border: 1.5px dashed var(--line); border-radius: 8px; padding: 26px 18px;
+    text-align: center; color: var(--dim); transition: border-color .12s, background .12s;
+  }
+  #drop.over { border-color: var(--accent); background: #7cc0ff14; color: var(--ink); }
+  #drop b { color: var(--ink); font-weight: 600; }
+
+  label { display: block; font-size: 13px; color: var(--dim); margin: 14px 0 5px; }
+  input[type=text], input[type=number], textarea, select {
+    width: 100%; background: #0d0f13; color: var(--ink);
+    border: 1px solid var(--line); border-radius: 6px; padding: 9px 11px;
+    font: inherit; font-size: 14px;
+  }
+  textarea { min-height: 86px; resize: vertical; font-family: ui-monospace, Consolas, monospace; font-size: 12.5px; }
+  input:focus, textarea:focus, select:focus { outline: none; border-color: var(--accent); }
+
+  button {
+    background: var(--accent); color: #06121e; border: 0; border-radius: 6px;
+    padding: 10px 18px; font: inherit; font-weight: 600; cursor: pointer;
+  }
+  button:hover { filter: brightness(1.08); }
+  button:disabled { opacity: .45; cursor: default; filter: none; }
+  button.ghost { background: transparent; color: var(--ink); border: 1px solid var(--line); font-weight: 500; }
+  .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 16px; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 18px; }
+  @media (max-width: 620px) { .grid { grid-template-columns: 1fr; } }
+
+  .facts { display: grid; grid-template-columns: auto 1fr; gap: 4px 18px; font-size: 14px; }
+  .facts dt { color: var(--dim); }
+  .facts dd { margin: 0; }
+
+  .choice { display: flex; gap: 9px; align-items: flex-start; margin: 10px 0; cursor: pointer; }
+  .choice input { margin: 3px 0 0; accent-color: var(--accent); flex: none; }
+  .choice span { font-size: 13.5px; color: var(--dim); }
+  .choice b { display: block; color: var(--ink); font-weight: 500; font-size: 14px; }
+
+  ol.stages { list-style: none; padding: 0; margin: 0; }
+  ol.stages li { display: flex; gap: 11px; align-items: center; padding: 5px 0; color: var(--dim); font-size: 14px; }
+  ol.stages .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--line); flex: none; }
+  ol.stages li.done { color: var(--ink); }
+  ol.stages li.done .dot { background: var(--good); }
+  ol.stages li.now { color: var(--ink); }
+  ol.stages li.now .dot { background: var(--accent); animation: pulse 1.1s ease-in-out infinite; }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .3; } }
+
+  pre.log {
+    background: #0a0c0f; border: 1px solid var(--line); border-radius: 6px;
+    padding: 11px 13px; max-height: 220px; overflow: auto; margin: 14px 0 0;
+    font-family: ui-monospace, Consolas, monospace; font-size: 11.5px; line-height: 1.5;
+    color: var(--dim); white-space: pre-wrap; word-break: break-word;
+  }
+  .err { color: var(--bad); font-size: 14px; margin-top: 12px; white-space: pre-wrap; }
+  .note { color: var(--dim); font-size: 13px; margin-top: 10px; }
+  .files { list-style: none; padding: 0; margin: 12px 0 0; }
+  .files li { display: flex; gap: 10px; align-items: center; padding: 6px 0; border-top: 1px solid var(--line); font-size: 13.5px; }
+  .files code { font-family: ui-monospace, Consolas, monospace; font-size: 12.5px; word-break: break-all; flex: 1; }
+  .elapsed { color: var(--dim); font-size: 13px; margin-left: auto; }
+
+  /* What the report said about the set, where it will be read. */
+  .notes { margin: 14px 0 0; }
+  .notes div {
+    display: flex; gap: 9px; padding: 8px 11px; border-radius: 6px; font-size: 13.5px;
+    margin-top: 7px; border: 1px solid var(--line); background: #0d0f13;
+  }
+  .notes .tag { font-weight: 600; flex: none; }
+  .notes .warning .tag { color: var(--warn); }
+  .notes .fatal { border-color: #4a2a2a; }
+  .notes .fatal .tag { color: var(--bad); }
+
+  /* The pictures a run produced, which is the point of having run it. */
+  .shots { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; margin: 4px 0 0; }
+  .shot { border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: #0a0c0f; }
+  .shot img { display: block; width: 100%; height: auto; cursor: zoom-in; background: #000; }
+  .shot .cap {
+    display: flex; gap: 8px; align-items: center; justify-content: space-between;
+    padding: 7px 10px; font-size: 12.5px; color: var(--dim);
+  }
+  .shot .cap b { color: var(--ink); font-weight: 600; font-size: 13px; }
+  .shot.wide { grid-column: 1 / -1; }
+  .shot.wide img { max-height: 62vh; object-fit: contain; }
+
+  /* Full size, over the page. */
+  #lightbox {
+    position: fixed; inset: 0; background: #000000e8; display: flex;
+    align-items: center; justify-content: center; z-index: 50; cursor: zoom-out; padding: 20px;
+  }
+  #lightbox img { max-width: 100%; max-height: 100%; object-fit: contain; }
+  #lightbox[hidden] { display: none; }
+
+  /* Everything tried so far, so that trying again does not lose the last one. */
+  .past { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px; }
+  .past button {
+    display: block; width: 100%; padding: 0; text-align: left; background: #0a0c0f;
+    border: 1px solid var(--line); border-radius: 8px; overflow: hidden;
+    color: var(--ink); font: inherit; font-weight: 400; cursor: pointer;
+  }
+  .past button:hover { border-color: var(--accent); filter: none; }
+  .past button[aria-current="true"] { border-color: var(--accent); }
+  .past img { display: block; width: 100%; aspect-ratio: 3 / 2; object-fit: cover; background: #000; }
+  .past .meta { padding: 7px 9px; }
+  .past .meta b { display: block; font-size: 12.5px; font-weight: 600; line-height: 1.35; }
+  .past .meta span { font-size: 11.5px; color: var(--dim); }
+  .past .none { aspect-ratio: 3 / 2; display: flex; align-items: center; justify-content: center;
+                color: var(--dim); font-size: 12px; }
+
+  /* How the run went, without reading the log it went into. */
+  #findings { margin-top: 18px; }
+  #findings h3 {
+    font-size: 12px; text-transform: uppercase; letter-spacing: .07em;
+    color: var(--dim); margin: 16px 0 6px; font-weight: 600;
+  }
+  #findings dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 16px; margin: 0; font-size: 13.5px; }
+  #findings dt { color: var(--dim); }
+  #findings dd { margin: 0; }
+
+  /* Every frame measured, for leaving some out. */
+  .table-wrap { overflow: auto; max-height: 360px; margin-top: 10px; border: 1px solid var(--line); border-radius: 6px; }
+  table.frames { border-collapse: collapse; width: 100%; font-size: 12.5px; }
+  table.frames th {
+    position: sticky; top: 0; background: var(--panel); color: var(--dim);
+    font-weight: 600; text-align: left; padding: 6px 8px; white-space: nowrap;
+  }
+  table.frames td { padding: 5px 8px; border-top: 1px solid var(--line); white-space: nowrap; }
+  table.frames td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  table.frames td.why { white-space: normal; color: var(--warn); min-width: 220px; }
+  table.frames tr.out td { color: var(--dim); }
+  table.frames tr.out td.file { text-decoration: line-through; }
+  table.frames input { accent-color: var(--accent); margin: 0; }
+
+  /* The catalog, asked instead of a folder. */
+  #catalog { margin-top: 22px; border-top: 1px solid var(--line); padding-top: 18px; }
+  #catalog h2.cat-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 6px; }
+  #catalog h2 .note { margin: 0 0 0 auto; text-transform: none; letter-spacing: 0; font-weight: 400; }
+  #catalog details { margin-top: 16px; }
+  #catalog summary { cursor: pointer; color: var(--dim); font-size: 13px; }
+  #catalog code { font-family: ui-monospace, Consolas, monospace; font-size: 12.5px; word-break: break-all; }
+  #cat-more { min-height: 42px; }
+  #cat-params-list { max-height: 260px; overflow: auto; margin-top: 8px; font-size: 13px; }
+  .soft { opacity: .6; }
+  button.small { padding: 3px 9px; font-size: 12px; }
+  .marks { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0 4px; }
+  .mark { display: flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: #0d0f13; }
+  .mark:hover { border-color: var(--accent); }
+  .mark button {
+    background: transparent; color: var(--ink); border: 0; border-radius: 0; padding: 6px 11px;
+    font-size: 13.5px; font-weight: 500; text-align: left;
+  }
+  .mark button span { display: block; font-size: 11.5px; color: var(--dim); font-weight: 400; }
+  .mark button.x { color: var(--dim); padding: 6px 10px; border-left: 1px solid var(--line); }
+  .mark button.x:hover { color: var(--bad); }
+  .thumbs { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 8px; margin-top: 12px; }
+  .thumbs img {
+    display: block; width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 6px;
+    border: 1px solid var(--line); background: #000; cursor: zoom-in;
+  }
+  #mosaic-map { width: 100%; height: 330px; background: #0a0c0f; border: 1px solid var(--line); border-radius: 6px; }
+  #mosaic-map polygon { cursor: pointer; vector-effect: non-scaling-stroke; }
+  #mosaic-frame-info { overflow-wrap: anywhere; }
+  #mosaic-notes { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 190px; overflow: auto; }
+  #mosaic-progress { width: 100%; accent-color: var(--accent); }
+  #mosaic-controls button { flex-shrink: 0; white-space: nowrap; }
+  #mosaic-controls input { min-width: 0; }
+  .workflow-choices { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  .workflow-choices button { text-align: left; white-space: normal; }
+  .workflow-choices button span { display: block; font-size: 12px; font-weight: 400; margin-top: 7px; line-height: 1.5; }
+  .workflow-choices button[aria-pressed="true"] { border-color: #8dbbff; background: #24364b; }
+  .optional { margin: 20px 0; padding: 14px; border: 1px solid var(--line); border-radius: 8px; }
+  summary { cursor: pointer; }
+  #mosaic-controls h2, #project-controls h2 { margin-top: 26px; }
+  @media (max-width: 600px) { .workflow-choices { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<main>
+  <h1>smokstak</h1>
+  <p class="sub">Choose a workflow, review your inputs, then build an image.</p>
+  <section id="workflow-picker" aria-label="Choose a workflow">
+    <h2>What would you like to do?</h2>
+    <div class="workflow-choices">
+      <button class="ghost" data-workflow="stack" aria-pressed="true">Stack frames<span>Start with a folder or list of exposures.</span></button>
+      <button class="ghost" data-workflow="mosaic" aria-pressed="false">Mosaic / mixed scopes<span>Mono Hα · find panels and align automatically.</span></button>
+      <button class="ghost" data-workflow="project" aria-pressed="false">Saved mono project<span>Calibrated data · create or update a project.</span></button>
+    </div>
+    <p class="note" id="workflow-guide">1. Choose frames → 2. Review → 3. Save and stack. Optional settings can stay at their defaults.</p>
+  </section>
+  <div id="workflow-setup">
+
+  <section id="mosaic-controls" hidden>
+    <details id="mosaic-details" open><summary style="cursor:pointer;font-size:20px;font-weight:600">Mosaics &amp; mixed scopes <span class="note">· experimental mono Hα</span></summary>
+      <p class="note">Choose your exposures and a new result folder. Smokstak finds the panels, aligns stars across scopes and matches shared sky. You review the layout before building. Original frames remain untouched.</p>
+      <h2>1 &nbsp;Choose frames and where to save</h2>
+      <label for="mosaic-input">Exposure folder or text-list path</label>
+      <div style="display:flex;gap:8px"><input id="mosaic-input" type="text" spellcheck="false" placeholder="A folder containing your panels, or a frame list"><button id="mosaic-browse-input" class="ghost">Folder…</button></div>
+      <p class="note">Includes subfolders. First pass: 2–512 uncompressed 16-bit mono Hα FITS exposures. Panels need overlapping stars; filenames and panel numbers are not required.</p>
+      <details class="optional"><summary>Other ways to choose frames</summary>
+        <label for="mosaic-input-text">Paste a list of absolute frame paths</label><textarea id="mosaic-input-text" spellcheck="false" placeholder="One path per line"></textarea>
+        <div class="row"><button id="mosaic-input-pick" class="ghost">Choose a frame list…</button><button id="mosaic-use-loaded" class="ghost">Use frames loaded in Stack frames</button></div>
+        <input id="mosaic-input-file" type="file" accept=".txt,text/plain" hidden>
+      </details>
+      <p class="note" id="mosaic-input-note" role="status">Select frames using any one of the methods above.</p>
+      <label for="mosaic-output">New result folder · required</label>
+      <div style="display:flex;gap:8px"><input id="mosaic-output" type="text" spellcheck="false" placeholder="Choose a new folder name"><button id="mosaic-output-parent" class="ghost">Choose parent…</button></div>
+      <p class="note">The preparation and reusable star cache are saved beside the result folder. Existing results are never overwritten.</p>
+      <label class="choice"><input type="checkbox" id="mosaic-stage">
+        <span><b>Copy frames to this computer first</b>Faster when frames are on a network drive. Needs free space for all of them, in a folder beside the result.</span></label>
+      <div class="row"><button id="mosaic-prepare">Find panels and prepare mosaic</button></div>
+      <p class="note">Automatic preparation checks every selected frame. If overlaps or alignment are unreliable, it stops and explains the problem.</p>
+      <details id="mosaic-import" class="optional"><summary>Optional: reuse a prepared plan</summary>
+      <label for="mosaic-plan">Prepared plan (.json)</label>
+      <div style="display:flex;gap:8px"><input id="mosaic-plan" type="text" spellcheck="false" placeholder="Path to a prepared mosaic or mixed-scope plan"><button id="mosaic-pick" class="ghost">Choose plan…</button></div>
+      <p class="note">Skip preparation when you already have a checked plan. Changing the frame selection requires preparing again.</p>
+      <button id="mosaic-import-review" class="ghost">Review imported plan</button></details>
+      <details class="optional"><summary>Optional: memory and tile settings</summary>
+      <div class="grid">
+        <div><label for="mosaic-tile">Tile size (output pixels)</label><input id="mosaic-tile" type="number" min="64" max="1024" step="2" value="256"></div>
+        <div><label for="mosaic-memory">Working-buffer budget (MiB)</label><input id="mosaic-memory" type="number" min="64" max="65536" step="64" value="2048"></div>
+      </div>
+      <p class="note">Smaller tiles reduce memory use. The budget limits estimated image buffers, not total operating-system memory. Output scale is fixed by the plan.</p>
+      </details><h2>2 &nbsp;Review the detected layout</h2><p class="note">The layout appears when preparation finishes. Check the canvas and source count; inspecting individual frames is optional.</p>
+      <button id="mosaic-review" class="ghost" hidden>Review plan</button>
+      <div id="mosaic-review-panel" hidden>
+        <dl id="mosaic-facts" class="facts"></dl>
+        <label for="mosaic-group">Inspect panel / rig group</label><select id="mosaic-group"></select>
+        <p class="note">Group filters change this review only. Every exposure in the plan is still included in the build. Unlabelled plans list their sources individually.</p>
+        <svg id="mosaic-map" role="img" aria-label="Projected source footprints and output canvas"></svg>
+        <p class="note">Dashed outline: output canvas. Click a footprint or choose a source to see its registration measurements. Coordinates are relative; this is not an absolute sky map.</p>
+        <label for="mosaic-frame">Source exposure</label><select id="mosaic-frame"></select>
+        <div id="mosaic-frame-info"></div>
+        <details><summary>Preparation notes</summary><p id="mosaic-notes" class="note"></p></details>
+        <p class="note">Review checks geometry and source availability. The build verifies source fingerprints and filters again. Different-resolution data retain the finest available group; broader data contribute outside it. Raw gradients and incomplete faint-track rejection can remain.</p>
+      </div>
+      <h2>3 &nbsp;Build your mosaic</h2>
+
+      <p id="mosaic-next" class="note" role="status">Choose your frames and result folder, then click Find panels and prepare mosaic.</p>
+      <div class="row"><button id="mosaic-build" disabled>Build experimental mosaic</button></div>
+      <div id="mosaic-error" class="err" hidden></div>
+    </details>
+  </section>
+
+  <section id="project-controls" hidden>
+    <details open><summary style="cursor:pointer;font-size:20px;font-weight:600">Saved mono projects · add data and review decisions</summary>
+      <p class="note">For calibrated monochrome FITS/XISF. Keep one reference grid, preserve earlier builds, and rebuild all selected exposures together when you add data or change a review decision. For OSC datasets, choose Stack frames above.</p>
+      <h2>1 &nbsp;Choose a project folder</h2><label for="project-directory">Project folder · required</label>
+      <div style="display:flex;gap:8px"><input id="project-directory" type="text" spellcheck="false" placeholder="D:\projects\NGC7000"><button id="browse-project" class="ghost">Folder…</button></div>
+      <h2>2 &nbsp;Choose an action and fill in its fields</h2><div class="grid"><div><label for="project-action">Action</label><select id="project-action">
+        <option value="status">Show project / latest result</option><option value="create">Create and build</option>
+        <option value="build">Rebuild selected frames</option><option value="add">Add frames and rebuild</option>
+        <option value="exclude">Exclude reviewed frames and rebuild</option><option value="include">Restore reviewed frames and rebuild</option>
+        <option value="relink">Relocate originals and rebuild</option></select></div>
+        <div><label for="project-workers">Workers · optional</label><input id="project-workers" type="number" min="1" max="256" value="2"></div></div>
+      <div id="project-input-wrap" hidden><label for="project-input">Input frames: folder or text-list path</label><input id="project-input" type="text" spellcheck="false"><p class="note">Required unless you have already loaded frames in Stack frames. Frame exclusions in that workflow do not change saved project membership.</p></div>
+      <div id="project-reference-wrap" hidden><label for="project-reference">Original frame to pin the output grid · required</label><input id="project-reference" type="text" spellcheck="false"><p class="note">New projects use the production 1× recipe and disk-backed storage. Later builds retain the saved recipe; settings in Stack frames do not change it.</p></div>
+      <div id="project-list-wrap" hidden><label for="project-list">Saved review list: original paths or content IDs · required</label><input id="project-list" type="text" spellcheck="false"></div>
+      <div id="project-reason-wrap" hidden><label for="project-reason">Reason for excluding these frames · required</label><input id="project-reason" type="text" placeholder="Inspected: foreground obstruction"></div>
+      <p class="note">Review changes are versioned and reversible. Existing masters remain intact if a rebuild fails. Automatic masks and weighting are still applied to selected frames.</p>
+      <h2>3 &nbsp;Run the selected action</h2>
+      <button id="project-go">Show project / latest result</button><div id="project-error" class="err" hidden></div>
+    </details>
+  </section>
+
+  <div id="stack-flow">
+  <!-- 1. what to stack -->
+  <section id="s-input">
+    <h2>1 &nbsp;Choose your frames</h2><p class="note">Use one input method below, then click Read the frames to continue. Nothing is stacked yet.</p>
+    <div id="drop">
+      <b>Drop a list of frames here</b><br>
+      or paste one below, or type a path to a list or a folder
+      <div style="margin-top:12px"><button class="ghost" id="pick">Choose a file…</button></div>
+      <input type="file" id="file" accept=".txt,text/plain" hidden>
+    </div>
+
+    <label for="path">Path to a list, a folder, or one frame</label>
+    <div style="display:flex;gap:8px">
+      <input type="text" id="path" placeholder="G:\data\M45\approved_lights.txt" spellcheck="false">
+      <button class="ghost" id="browse" style="flex:none">Browse…</button>
+    </div>
+
+    <label for="text">…or the list itself</label>
+    <textarea id="text" placeholder="One path per line. Lines starting with # are ignored." spellcheck="false"></textarea>
+
+    <div class="row">
+      <button id="inspect">Read the frames</button>
+      <span class="note" id="input-note"></span>
+    </div>
+    <div class="err" id="input-err" hidden></div>
+
+    <!-- Or the catalog: a question rather than a folder, asked again whenever
+         there is more to find. -->
+    <details id="catalog"><summary>Optional: find frames in a catalog instead</summary>
+      <h2 class="cat-head">…or ask the catalog <span class="note" id="cat-conn"></span></h2>
+      <p class="note" style="margin-top:0">Frames chosen by what the catalog knows about them — the target,
+        the filter, the night, how sharp the stars were — rather than by the folder they landed in. A
+        bookmark keeps the question and not the answer, so asking it again finds every frame indexed since.</p>
+
+      <div class="marks" id="cat-marks" hidden></div>
+      <details id="cat-saved" hidden>
+        <summary>Queries saved in the catalog</summary>
+        <div class="marks" id="cat-saved-list"></div>
+      </details>
+
+      <p class="note" id="cat-saved-note" hidden>Asking <b id="cat-saved-what"></b>, a query saved in the
+        catalog, which makes its own selection.
+        <button class="ghost small" id="cat-own">Write one instead</button></p>
+      <div id="cat-fields">
+        <div class="grid">
+          <div>
+            <label for="cat-object">Target <span class="soft">— the OBJECT header contains</span></label>
+            <input type="text" id="cat-object" list="cat-objects" spellcheck="false">
+          </div>
+          <div>
+            <label for="cat-filter">Filter <span class="soft">— several with commas</span></label>
+            <input type="text" id="cat-filter" list="cat-filters" spellcheck="false">
+          </div>
+          <div>
+            <label for="cat-from">Taken from <span class="soft">(UTC)</span></label>
+            <input type="text" id="cat-from" placeholder="2026-09-01" spellcheck="false">
+          </div>
+          <div>
+            <label for="cat-to">Taken until <span class="soft">— a date includes that day</span></label>
+            <input type="text" id="cat-to" placeholder="2026-09-10" spellcheck="false">
+          </div>
+        </div>
+        <label for="cat-where">Where <span class="soft">— the catalog's own selection language</span></label>
+        <input type="text" id="cat-where" spellcheck="false"
+               placeholder="hfr < median(hfr) + 2*mad(hfr) && eccentricity < 0.6">
+        <div class="grid">
+          <div>
+            <label for="cat-type">Frame type</label>
+            <select id="cat-type"><option value="Light Frame">Light Frame</option><option value="">Any type</option></select>
+          </div>
+          <div>
+            <label for="cat-more">Anything else <span class="soft">— name=value a line, as GET /frames takes it</span></label>
+            <textarea id="cat-more" spellcheck="false" placeholder="camera=ZWO ASI6200MM Pro&#10;quality_min=50"></textarea>
+          </div>
+        </div>
+        <datalist id="cat-objects"></datalist>
+        <datalist id="cat-filters"></datalist>
+        <details id="cat-params" hidden>
+          <summary>Parameters this catalog takes</summary>
+          <dl class="facts" id="cat-params-list"></dl>
+        </details>
+      </div>
+      <label class="choice"><input type="checkbox" id="cat-norejected" checked>
+        <span><b>Leave out frames rejected in the catalog</b></span></label>
+      <div id="cat-screen" hidden>
+        <label style="margin-top:14px">The catalog's screening <span class="soft">— a frame it has not
+          judged yet is kept</span></label>
+        <label class="choice"><input type="checkbox" id="cat-screen-anomaly" data-screen="anomaly" checked>
+          <span><b>Leave out frames that stand out from their session</b>A passing cloud, a thin veil, dew or
+          stray light: fewer stars, softer stars or dimmer ones than the frames around it.</span></label>
+        <label class="choice"><input type="checkbox" id="cat-screen-trailed" data-screen="trailed" checked>
+          <span><b>Leave out trailed frames</b>Tracking or wind, judged from the shapes of the stars.</span></label>
+        <label class="choice"><input type="checkbox" id="cat-screen-occluded" data-screen="occluded" checked>
+          <span><b>Leave out partly blocked frames</b>A tree line, the dome or a bank of cloud across part of
+          the field.</span></label>
+        <label class="choice"><input type="checkbox" id="cat-screen-satellite" data-screen="satellite">
+          <span><b>Leave out frames with a satellite trail</b>Off by default: a trail is what the stack's outlier
+          rejection is for, and the rest of the frame is good data.</span></label>
+      </div>
+
+      <div class="row">
+        <button class="ghost" id="cat-look">Find the frames</button>
+        <button id="cat-use">Stack them</button>
+        <button class="ghost" id="cat-mark">Bookmark this query</button>
+      </div>
+      <div class="err" id="cat-err" hidden></div>
+      <div id="cat-result" hidden>
+        <dl class="facts" id="cat-facts" style="margin-top:14px"></dl>
+        <div class="notes" id="cat-notes"></div>
+        <div class="thumbs" id="cat-thumbs"></div>
+      </div>
+
+      <details id="cat-settings">
+        <summary>Connection and paths</summary>
+        <label for="cat-base">API address</label>
+        <input type="text" id="cat-base" spellcheck="false" placeholder="https://catalog.example/api/v1">
+        <div class="grid">
+          <div>
+            <label for="cat-user">User</label>
+            <input type="text" id="cat-user" spellcheck="false" autocomplete="off">
+          </div>
+          <div>
+            <label for="cat-pass">Password</label>
+            <input type="password" id="cat-pass" autocomplete="new-password">
+          </div>
+        </div>
+        <label for="cat-key">API key <span class="soft">— sent as X-API-Key, for a server that asks for one</span></label>
+        <input type="password" id="cat-key" autocomplete="new-password">
+        <label for="cat-rewrites">Path rewrites <span class="soft">— "from =&gt; to", one a line, the first that matches wins</span></label>
+        <textarea id="cat-rewrites" spellcheck="false" placeholder="/mnt/astro/ =&gt; Z:\&#10;Z:\ =&gt; \\nas\astro\"></textarea>
+        <p class="note">The catalog names each frame by the path its own server sees, and by the path it has been
+          told a stacking machine sees. Whichever of those is a file here is used; a rewrite is for when neither
+          is. Kept, with the password, in <code id="cat-file"></code>.</p>
+        <div class="row"><button id="cat-save">Save and connect</button></div>
+        <div class="err" id="cat-set-err" hidden></div>
+      </details>
+    </details>
+  </section>
+
+  <!-- 2. what was found, and what to do -->
+  <section id="s-options" hidden>
+    <h2>2 &nbsp;Review your frames</h2>
+    <dl class="facts" id="facts"></dl>
+    <p class="note" id="read-note" hidden></p>
+    <div class="notes" id="size-note" hidden></div>
+    <div class="notes" id="notes"></div>
+    <details style="margin-top:14px">
+      <summary style="cursor:pointer;color:var(--dim);font-size:13px">The full report</summary>
+      <pre class="log" id="report" style="max-height:260px"></pre>
+    </details>
+
+    <details id="cull" class="optional"><summary>Optional: measure and exclude frames</summary>
+      <p class="note" style="margin-top:0">The stack already weights every frame by how sharp it is,
+        so a soft frame costs little. A frame that is wrong rather than soft — stars trailed by wind
+        or a snag, a sky thinned by cloud — is worth leaving out, and finding one means measuring
+        every frame once. That takes about as long as decoding them, and the settings below can be
+        chosen while it runs.</p>
+      <div class="row" style="margin-top:10px">
+        <button class="ghost" id="cull-go">Measure every frame</button>
+        <button class="ghost" id="cull-stop" hidden>Stop</button>
+        <span class="note" id="cull-status" style="margin:0;flex:1;min-width:200px"></span>
+      </div>
+      <div class="err" id="cull-err" hidden></div>
+      <div id="cull-result" hidden>
+        <div class="row" style="margin-top:12px">
+          <button class="ghost" id="cull-flagged">Leave out what looks wrong</button>
+          <button class="ghost" id="cull-none">Use every frame</button>
+          <label class="choice" style="margin:0"><input type="checkbox" id="cull-all">
+            <span>Show every frame, not only the ones named</span></label>
+        </div>
+        <div class="table-wrap"><table class="frames" id="cull-table"></table></div>
+        <p class="note" id="cull-note"></p>
+      </div>
+    </details>
+
+    <h2 style="margin-top:26px">3 &nbsp;Choose where to save and stack</h2><p class="note">The current defaults are ready to use. Adjust the optional settings only if needed.</p>
+    <label for="output">Save the result as · required <span style="opacity:.6">— not among the frames unless you say so</span></label>
+    <div style="display:flex;gap:8px">
+      <input type="text" id="output" spellcheck="false">
+      <button class="ghost" id="browse-out" style="flex:none">Folder…</button>
+    </div>
+
+    <details class="optional"><summary>Optional: scale, performance and output settings</summary>
+    <div class="grid">
+      <div>
+        <label for="scale">Output scale</label>
+        <select id="scale">
+          <option value="1">1x — one output pixel per photosite</option>
+          <option value="1.5">1.5x</option>
+          <option value="2">2x — only if the frames were dithered</option>
+        </select>
+      </div>
+      <div>
+        <label for="threads">Threads <span style="opacity:.6">(0 = every core)</span></label>
+        <input type="number" id="threads" value="2" min="0" max="256">
+      </div>
+      <div>
+        <label for="max_frames">Frames to use <span style="opacity:.6">(0 = all of them)</span></label>
+        <input type="number" id="max_frames" value="0" min="0" max="100000">
+      </div>
+      <div>
+        <label for="select">Which frames, if not all</label>
+        <select id="select">
+          <option value="spread">Spread across the burst — keeps the dither</option>
+          <option value="sharpest">The sharpest</option>
+          <option value="first">The first, in filename order</option>
+        </select>
+      </div>
+    </div>
+    <p class="note" id="trial-note" hidden></p>
+    <label for="scratch_dir">Scratch folder <span style="opacity:.6">— blank uses a folder beside the output</span></label>
+    <input id="scratch_dir" type="text" spellcheck="false" placeholder="Fast local disk with enough free space">
+    <p class="note">All selected frames are considered together. Decoded images and working maps use private disk-backed storage, which needs substantial free disk space; operating-system paging still affects RAM usage. No independent batch rejection.</p>
+    <label class="choice"><input type="checkbox" id="diagnostics" checked><span><b>Save frame review and diagnostics</b>Inspect decisions, common-area crops and obstruction masks after the run. Each run gets a new review folder.</span></label>
+
+    <label style="margin-top:20px">Texture</label>
+    <label class="choice">
+      <input type="radio" name="texture" value="deep" checked>
+      <span><b>Deepest</b>The flat parts of the sky are smoothed harder, which reaches about two percent further down and reads as very clean.</span>
+    </label>
+    <label class="choice">
+      <input type="radio" name="texture" value="crisp">
+      <span><b>Crisper</b>Less smoothing: tighter stars and visible grain, at about two percent of depth. Closer to what other stackers give you.</span>
+    </label>
+
+    <label style="margin-top:20px">Also</label>
+    <label class="choice"><input type="checkbox" id="float_tiff" checked>
+      <span><b>Write the linear file too</b>A 32-bit copy with no stretch, for measuring or for processing elsewhere.</span></label>
+    <label class="choice"><input type="checkbox" id="fits">
+      <span><b>FITS master</b>32-bit floating-point, unstretched, for further processing.</span></label>
+    <label class="choice"><input type="checkbox" id="xisf">
+      <span><b>XISF master</b>32-bit floating-point, unstretched, for XISF-aware software.</span></label>
+    <label class="choice"><input type="checkbox" id="preview" checked>
+      <span><b>Write a preview PNG</b>Small, for a quick look.</span></label>
+    <label class="choice"><input type="checkbox" id="flatten_background">
+      <span><b>Flatten the background of the linear file</b>Removes fitted vignetting and a sky gradient. Off by default because a model cannot tell those from real large-scale structure in the subject. The saved picture is flattened either way.</span></label>
+    <label class="choice"><input type="checkbox" id="sky_field" checked>
+      <span><b>Match changing sky gradients</b>Matches illumination differences between aligned exposures before combining them. Helps when sky brightness changes during the night.</span></label>
+    </details>
+    <label class="choice" id="split-wrap" hidden><input type="checkbox" id="split_by_filter">
+      <span><b>One image per filter</b>This set holds more than one; they are separate measurements and cannot be merged into one image.</span></label>
+
+    <div class="row">
+      <button id="start">Stack it</button>
+      <button class="ghost" id="start-mosaic">Make a mosaic from these frames</button>
+      <button class="ghost" id="back">Back</button>
+    </div>
+    <details style="margin-top:22px"><summary style="cursor:pointer;font-weight:600">Optional: noise and integration analysis · mono</summary>
+      <p class="note">Measure how random noise changes as frames accumulate, inspect trends and export questionable-frame lists. This analyzes the loaded input set minus your survey exclusions. It does not measure a finished master or automatically discard frames. The analysis uses all remaining frames, regardless of the trial stack limit.</p>
+      <label for="analysis-directory">Analysis output folder</label><input id="analysis-directory" type="text" spellcheck="false">
+      <p class="note">Each analysis creates a new report folder. Compact measurement caches are reused. Large datasets can take considerable time.</p>
+      <button id="analyze-go" class="ghost">Analyze noise and integration</button><div id="analysis-error" class="err" hidden></div>
+    </details>
+    <div class="err" id="start-err" hidden></div>
+  </section>
+
+  </div>
+  </div>
+  <!-- 3. progress -->
+  <section id="s-run" hidden>
+    <h2>Working<span class="elapsed" id="elapsed"></span></h2>
+    <p class="note" id="step-note" style="margin:0 0 12px" hidden></p>
+    <ol class="stages" id="stages"></ol>
+    <pre class="log" id="log"></pre>
+    <div class="row"><button class="ghost" id="cancel">Stop</button></div>
+  </section>
+
+  <!-- 4. done -->
+  <section id="s-done" hidden>
+    <h2 id="done-head">Finished</h2>
+    <div id="done-msg" class="note"></div>
+    <div class="shots" id="shots"></div>
+    <div id="findings"></div>
+    <div id="run-reports" class="row"></div>
+    <p id="report-error" class="err" hidden></p>
+    <details id="completed-log"><summary>Run log and project status</summary><pre id="completed-log-text" class="log"></pre></details>
+
+    <!-- Three grey masters are not the picture anyone came for. -->
+    <div id="combine" hidden style="margin-top:22px;border-top:1px solid var(--line);padding-top:18px">
+      <h2 style="margin-bottom:6px" id="combine-head">One colour image</h2>
+      <p class="note" style="margin-top:0" id="combine-why"></p>
+      <div class="shots" id="colour-shots" style="margin-bottom:18px"></div>
+      <p class="note" id="palette-status" style="margin-top:0" hidden></p>
+      <div class="past" id="palette-shots" style="margin-bottom:14px"></div>
+      <div class="grid">
+        <div>
+          <label for="palette">Palette</label>
+          <select id="palette"></select>
+        </div>
+        <div>
+          <label for="combine-out">Save it as</label>
+          <input type="text" id="combine-out" spellcheck="false">
+          <label class="choice"><input type="checkbox" id="combine-fits"><span>Also save a 32-bit FITS master</span></label>
+          <label class="choice"><input type="checkbox" id="combine-xisf"><span>Also save a 32-bit XISF master</span></label>
+          <p class="note">Masters retain the selected palette and channel-stretch setting, before the TIFF display transfer.</p>
+        </div>
+      </div>
+      <label class="choice" style="margin-top:14px"><input type="checkbox" id="stretch_channels" checked>
+        <span><b>Stretch each channel on its own histogram</b>In linear light hydrogen swamps the other two and the result is green. This is a display transform, not a measurement, and the coefficients are reported.</span></label>
+      <div class="row"><button id="combine-go">Combine them</button></div>
+      <div class="err" id="combine-err" hidden></div>
+    </div>
+
+    <details style="margin-top:18px">
+      <summary style="cursor:pointer;color:var(--dim);font-size:13px">Every file the run wrote</summary>
+      <ul class="files" id="files"></ul>
+    </details>
+    <div class="row">
+      <button id="again">Start another run</button>
+    </div>
+  </section>
+
+  <!-- 5. what else has been tried -->
+  <section id="s-past" hidden>
+    <h2 style="display:flex;align-items:center;gap:10px">Earlier runs
+      <button class="ghost" id="forget" style="margin-left:auto;padding:4px 10px;font-size:12px;text-transform:none;letter-spacing:0">Forget them</button></h2>
+    <p class="note" style="margin-top:0">Kept on this computer between sessions. Click one to look at it again.</p>
+    <div class="past" id="past"></div>
+  </section>
+</main>
+<div id="lightbox" hidden><img id="lightbox-img" alt=""></div>
+
+<script>
+const $ = id => document.getElementById(id);
+const post = async (url, body) => (await fetch(url, {
+  method: 'POST', headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify(body || {})
+})).json();
+
+let selectedWorkflow = 'stack';
+function chooseWorkflow(mode) {
+  selectedWorkflow = mode;
+  for (const button of document.querySelectorAll('[data-workflow]')) button.setAttribute('aria-pressed', button.dataset.workflow === mode);
+  $('stack-flow').hidden = mode !== 'stack';
+  $('mosaic-controls').hidden = mode !== 'mosaic';
+  $('project-controls').hidden = mode !== 'project';
+  $('mosaic-details').open = true;
+  $('project-controls').querySelector('details').open = true;
+  $('workflow-guide').textContent = mode === 'mosaic'
+    ? '1. Choose frames and output → 2. Review the automatic layout → 3. Build. Advanced settings are optional.'
+    : mode === 'project' ? '1. Choose a project folder → 2. Choose an action → 3. Run it. Additional fields appear when needed.'
+    : '1. Choose frames → 2. Review → 3. Save and stack. Optional settings can stay at their defaults.';
+}
+function showWorkspaceResult(kind) {
+  chooseWorkflow(['mosaic','mosaic_prepare'].includes(kind) ? 'mosaic' : kind === 'project' ? 'project' : 'stack');
+  $('workflow-setup').hidden = true;
+  $('workflow-picker').hidden = true;
+}
+for (const button of document.querySelectorAll('[data-workflow]')) button.addEventListener('click', () => chooseWorkflow(button.dataset.workflow));
+let found = null;
+let poller = null;
+/* A run long enough to walk away from says so in the tab, and goes on saying
+   it until whoever walked away comes back. The title is set where the state
+   changes rather than on a timer: a background tab's timers are throttled to
+   about once a minute, which is exactly the case this is for. */
+let unread = false;
+const title = t => { document.title = t ? `${t} — smokstak` : 'smokstak'; };
+
+/* ---- 1. input ------------------------------------------------------- */
+
+const drop = $('drop');
+['dragenter','dragover'].forEach(e => drop.addEventListener(e, ev => {
+  ev.preventDefault(); drop.classList.add('over');
+}));
+['dragleave','drop'].forEach(e => drop.addEventListener(e, ev => {
+  ev.preventDefault(); drop.classList.remove('over');
+}));
+drop.addEventListener('drop', ev => {
+  const f = ev.dataTransfer.files[0];
+  if (f) readFile(f, ev.dataTransfer.files.length);
+});
+$('pick').addEventListener('click', () => $('file').click());
+$('file').addEventListener('change', ev => {
+  if (ev.target.files[0]) readFile(ev.target.files[0], ev.target.files.length);
+});
+
+// A list, as opposed to a frame. Reading a frame as text fills the box with
+// the bytes of a FITS header, which then fails much later and for a reason
+// that has nothing to do with what happened.
+const LIST = /\.(txt|lst|list)$/i;
+
+function readFile(f, count) {
+  if (!LIST.test(f.name)) {
+    $('text').value = '';
+    showErr($('input-err'),
+      `${f.name} looks like a frame, not a list of them` +
+      (count > 1 ? ` (and ${count} files were dropped)` : '') +
+      '. A browser hands a page a file\'s contents and never its folder, so ' +
+      'frames cannot be dropped here — type or paste the path to the folder ' +
+      'they are in, in the box below.');
+    return;
+  }
+  showErr($('input-err'), '');
+  const r = new FileReader();
+  r.onload = () => {
+    $('text').value = r.result;
+    $('text').dataset.name = f.name;
+    $('path').value = '';
+    note(`Read ${f.name} — ${countFrames(r.result)} frames listed.`);
+  };
+  r.readAsText(f);
+}
+
+// Paste anywhere on the page fills the list.
+document.addEventListener('paste', ev => {
+  // Not into the path box, and not into the catalog's fields, which take
+  // pastes of their own.
+  if (document.activeElement === $('path') || $('catalog').contains(document.activeElement)) return;
+  const t = ev.clipboardData.getData('text');
+  if (t && t.includes('\n')) {
+    $('text').value = t;
+    $('text').dataset.name = 'pasted.txt';
+    note(`Pasted — ${countFrames(t)} frames listed.`);
+  }
+});
+
+const countFrames = t => t.split('\n').map(s => s.trim())
+  .filter(s => s && !s.startsWith('#')).length;
+const note = m => { $('input-note').textContent = m; };
+const showErr = (el, m) => { el.textContent = m; el.hidden = !m; };
+
+$('inspect').addEventListener('click', async () => {
+  showErr($('input-err'), '');
+  $('inspect').disabled = true;
+  $('inspect').textContent = 'Reading…';
+  try {
+    const r = await post('/inspect', {
+      path: $('path').value,
+      text: $('text').value,
+      name: $('text').dataset.name || 'list.txt'
+    });
+    if (!r.ok) { showErr($('input-err'), r.error); return; }
+    found = r;
+    fillOptions(r);
+    $('s-input').hidden = true;
+    $('s-options').hidden = false;
+  } catch (e) {
+    showErr($('input-err'), String(e));
+  } finally {
+    $('inspect').disabled = false;
+    $('inspect').textContent = 'Read the frames';
+  }
+});
+
+function fillOptions(r) {
+  // Counts from a sample are counts of the sample. "ZWO ASI6200MM Pro (12/12)"
+  // above a set of 634 says the wrong thing twice over, so when only part was
+  // read the tallies go and the values stay.
+  // The report marks its own lines for a reader with no other cue. This page
+  // has one — the notes below — so the marker is noise here.
+  const plain = v => String(v || '').replace(/\s*<--\s*(FATAL|warning|note)\s*$/i, '');
+  const seen = v => plain(r.sampled ? String(v || '').replace(/\s*\((\d+\/\d+|\d+)\)/g, '') : v);
+  const facts = [
+    ['Frames', r.frames ? `${r.frames}` : '—'],
+    ['Camera', seen(r.camera)], ['Size', seen(r.dimensions)],
+    ['Exposure', seen(r.exposure)], ['Filter', seen(r.filter)], ['Mosaic', seen(r.cfa)],
+  ].filter(([, v]) => v);
+  $('facts').innerHTML = facts
+    .map(([k, v]) => `<dt>${k}</dt><dd>${esc(v)}</dd>`).join('');
+  // What the report already said, out where it will be read rather than folded
+  // away: a set that will refuse to stack should say so before the button.
+  $('notes').innerHTML = (r.notes || []).map(n =>
+    `<div class="${n.level}"><span class="tag">${n.level === 'fatal' ? 'Fatal' : 'Warning'}</span>
+     <span>${esc(seen(forThePage(n.text)))}</span></div>`).join('');
+  $('report').textContent = r.report;
+  // Wherever results were last put, if anywhere. The suggestion from the
+  // server is a guess about somebody else's folders; a place already chosen
+  // once is not a guess.
+  const kept = remembered('outdir');
+  $('output').value = kept && r.name ? join(kept, r.name) : r.output;
+  // Several filters in one set cannot become one image.
+  $('split-wrap').hidden = !r.multi_filter;
+  $('split_by_filter').checked = !!r.multi_filter;
+  $('max_frames').max = Math.max(r.frames || 0, 1);
+
+  // Never silently cap a large dataset or make independent rejection batches.
+  $('max_frames').value = 0;
+  $('max_frames').disabled = false;
+  $('size-note').hidden = !r.needed;
+  if (r.needed) $('size-note').innerHTML = `<div class="warning"><span class="tag">Storage</span><span>Decoded frames, guides and pyramids are estimated at <b>${bytes(r.needed)}</b>, before other working buffers. Choose a scratch disk with ample free space. The complete selected population is evaluated together.</span></div>`;
+  $('analysis-directory').value = dirOf($('output').value);
+  $('read-note').hidden = !r.sampled;
+  if (r.sampled) {
+    $('read-note').textContent =
+      `Read ${r.read_count} of ${r.frames} frames, spread across the set — enough to say what ` +
+      `is in it. Sharpness and the noise model come from those; the rest is the whole set.`;
+  }
+  trialNote();
+  resetCull();
+  // Frames that stopped the report were left out of it, and stay out of the
+  // stack unless they are measured and put back.
+  excluded = new Set(r.unreadable || []);
+  if (excluded.size) {
+    $('cull-status').textContent = `${excluded.size} that could not be read `
+      + `${excluded.size === 1 ? 'is' : 'are'} left out already. Measuring every frame says `
+      + 'whether any others should be.';
+  }
+  resumeCull(r.input);
+}
+
+/* Paths are the platform's, and the page has no business deciding which
+   platform that is: whichever separator the path already uses is the one it
+   keeps. */
+const sep = p => (p.includes('\\') ? '\\' : '/');
+const dirOf = p => p.slice(0, Math.max(p.lastIndexOf('\\'), p.lastIndexOf('/')));
+const join = (dir, name) => dir.replace(/[\\/]+$/, '') + sep(dir) + name;
+
+const remembered = k => { try { return localStorage.getItem('smokstak.' + k) || ''; } catch { return ''; } };
+const remember = (k, v) => { try { localStorage.setItem('smokstak.' + k, v); } catch {} };
+
+const bytes = n => {
+  const u = ['B', 'KiB', 'MiB', 'GiB', 'TiB'];
+  let i = 0;
+  while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
+  return `${n < 10 ? n.toFixed(1) : n.toFixed(0)} ${u[i]}`;
+};
+
+// Quotes too: file names go into attributes, and a name is whatever it is.
+const esc = s => String(s).replace(/[<>&"']/g, c =>
+  ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;', "'": '&#39;' }[c]));
+
+/* The reports are written for someone at a command line, and end by naming a
+   flag. On this page the flag is a checkbox and its name means nothing, so the
+   advice is replaced by a pointer to the control that carries it. */
+function forThePage(text) {
+  return text
+    .replace(/\.?\s*Stack each apart onto one shared grid with --split-by-filter,\s*or take a single one with --filter\.?/i,
+             '. The choice below, One image per filter, is already set to keep them apart.')
+    .replace(/\s*Select one with --filter\.?/i, '');
+}
+
+/* A trial run is the cheapest way to judge the settings, so say what one costs. */
+function trialNote() {
+  const n = parseInt($('max_frames').value || '0', 10);
+  const all = found && found.frames ? found.frames : 0;
+  const on = n > 0 && n < all;
+  $('select').disabled = !on;
+  $('trial-note').hidden = !on;
+  if (on) {
+    $('trial-note').textContent =
+      `A trial of ${n} of ${all} frames. Roughly ${(n / all * 100).toFixed(0)}% of the work, `
+      + `and about √(${all}/${n}) ≈ ${Math.sqrt(all / n).toFixed(1)}× the noise of the full set — `
+      + 'enough to judge the settings, not the result.';
+  }
+}
+['input', 'change'].forEach(e => {
+  $('max_frames').addEventListener(e, trialNote);
+});
+
+
+/* The page forgets nothing between runs it does not have to. */
+const REMEMBER = ['scale', 'threads', 'select', 'float_tiff', 'fits', 'xisf', 'preview',
+                  'flatten_background', 'sky_field', 'scratch_dir', 'diagnostics', 'stretch_channels', 'cat-norejected',
+                  'cat-screen-anomaly', 'cat-screen-trailed', 'cat-screen-occluded', 'cat-screen-satellite'];
+function saveSettings() {
+  const s = {};
+  REMEMBER.forEach(id => {
+    const el = $(id);
+    if (el) s[id] = el.type === 'checkbox' ? el.checked : el.value;
+  });
+  const t = document.querySelector('input[name=texture]:checked');
+  if (t) s.texture = t.value;
+  try { localStorage.setItem('smokstak', JSON.stringify(s)); } catch {}
+}
+function loadSettings() {
+  let s;
+  try { s = JSON.parse(localStorage.getItem('smokstak') || '{}'); } catch { return; }
+  REMEMBER.forEach(id => {
+    const el = $(id);
+    if (el && s[id] !== undefined) {
+      if (el.type === 'checkbox') el.checked = s[id]; else el.value = s[id];
+    }
+  });
+  if (s.texture) {
+    const t = document.querySelector(`input[name=texture][value="${s.texture}"]`);
+    if (t) t.checked = true;
+  }
+}
+loadSettings();
+document.addEventListener('change', saveSettings);
+
+/* Enter in the path box means the button next to it. */
+$('path').addEventListener('keydown', ev => {
+  if (ev.key === 'Enter') { ev.preventDefault(); $('inspect').click(); }
+});
+
+/* The desktop's own folder chooser, opened by the server, which is on the same
+   machine. A browser's chooser cannot say where a folder is; this can. */
+async function chooseFolder(btn, label) {
+  btn.disabled = true;
+  const was = btn.textContent;
+  btn.textContent = 'Choosing…';
+  try {
+    const r = await post('/pick');
+    if (!r.ok) { showErr($(label), r.error); return ''; }
+    return r.path || '';                // empty means the dialog was cancelled
+  } finally {
+    btn.disabled = false;
+    btn.textContent = was;
+  }
+}
+
+$('browse').addEventListener('click', async () => {
+  const p = await chooseFolder($('browse'), 'input-err');
+  if (!p) return;
+  $('path').value = p;
+  $('text').value = '';
+  showErr($('input-err'), '');
+  $('inspect').click();
+});
+
+/* Where results go, chosen once and then remembered, so the page stops
+   guessing at somebody else's folders after the first time. */
+$('browse-out').addEventListener('click', async () => {
+  const dir = await chooseFolder($('browse-out'), 'start-err');
+  if (!dir) return;
+  const name = $('output').value.split(/[\\/]/).pop() || 'stack.tif';
+  $('output').value = join(dir, name);
+  remember('outdir', dir);
+});
+
+/* Full size, over the page. */
+$('lightbox').addEventListener('click', () => { $('lightbox').hidden = true; });
+document.addEventListener('keydown', ev => {
+  if (ev.key === 'Escape') $('lightbox').hidden = true;
+});
+function zoom(src) {
+  $('lightbox-img').src = src;
+  $('lightbox').hidden = false;
+}
+
+$('back').addEventListener('click', () => {
+  $('s-options').hidden = true; $('s-input').hidden = false;
+});
+
+/* ---- which frames to leave out -------------------------------------- */
+
+/* A soft frame is named but kept: the stack weights it down already. A frame
+   that is wrong rather than soft — trailed, clouded over, unreadable — is left
+   out unless it is put back. */
+const LEAVE_OUT = ['elongated', 'few-stars', 'no-stars', 'unreadable'];
+const leftOut = r => r.flags.some(f => LEAVE_OUT.includes(f.kind));
+let surveyed = [];
+let excluded = new Set();
+let surveyPoll = null;
+
+function resetCull() {
+  clearInterval(surveyPoll); surveyPoll = null;
+  surveyed = []; excluded = new Set();
+  $('cull-result').hidden = true;
+  $('cull-status').textContent = '';
+  $('cull-go').textContent = 'Measure every frame';
+  $('cull-go').hidden = false; $('cull-stop').hidden = true;
+  showErr($('cull-err'), '');
+}
+
+/* A measurement of this set already made, or still going — after a reload, or
+   after going back and reading the same frames again. */
+async function resumeCull(input) {
+  let s;
+  try { s = await (await fetch('/survey')).json(); } catch { return; }
+  if (s.input !== input) return;
+  if (s.running) watchSurvey();
+  else if (s.finished && !s.error) showSurvey(s.frames || []);
+}
+
+$('cull-go').addEventListener('click', async () => {
+  showErr($('cull-err'), '');
+  const r = await post('/survey', { input: found.input });
+  if (!r.ok) { showErr($('cull-err'), r.error); return; }
+  watchSurvey();
+});
+$('cull-stop').addEventListener('click', () => post('/survey-stop'));
+
+function watchSurvey() {
+  $('cull-go').hidden = true; $('cull-stop').hidden = false;
+  $('cull-result').hidden = true;
+  $('cull-status').textContent = 'Listing the frames…';
+  clearInterval(surveyPoll);
+  surveyPoll = setInterval(surveyTick, 700);
+  surveyTick();
+}
+
+async function surveyTick() {
+  let s;
+  try { s = await (await fetch('/survey')).json(); } catch { return; }
+  // The page has moved on to another set.
+  if (!found || s.input !== found.input) { clearInterval(surveyPoll); surveyPoll = null; return; }
+  if (s.running) {
+    if (s.total) $('cull-status').textContent = `Measured ${s.done} of ${s.total} frames…`;
+    return;
+  }
+  clearInterval(surveyPoll); surveyPoll = null;
+  $('cull-go').hidden = false; $('cull-stop').hidden = true;
+  $('cull-go').textContent = 'Measure again';
+  if (s.error) { $('cull-status').textContent = ''; showErr($('cull-err'), s.error); return; }
+  showSurvey(s.frames || []);
+}
+
+function showSurvey(rows) {
+  surveyed = rows;
+  excluded = new Set(rows.filter(leftOut).map(r => r.path));
+  $('cull-go').textContent = 'Measure again';
+  const count = kind => rows.filter(r => r.flags.some(f => f.kind === kind)).length;
+  const out = [
+    [count('elongated'), 'with trailed or elongated stars'],
+    [count('few-stars') + count('no-stars'), 'with few or no stars'],
+    [count('unreadable'), 'that could not be read'],
+  ].filter(([n]) => n).map(([n, what]) => `${n} ${what}`);
+  const soft = rows.filter(r => !leftOut(r) && r.flags.length).length;
+  $('cull-status').textContent = !out.length && !soft
+    ? `All ${rows.length} frames look like the rest of their filter.`
+    : (out.length ? `Left out: ${out.join(', ')}. ` : 'Nothing looks wrong enough to leave out. ')
+      + (soft ? `${soft} soft ${soft === 1 ? 'one is' : 'ones are'} named but kept.` : '');
+  $('cull-result').hidden = false;
+  drawCull();
+}
+
+function drawCull() {
+  const all = $('cull-all').checked;
+  // Worst first: what is left out, then what is only soft, then the rest.
+  const rank = r => leftOut(r) ? 0 : r.flags.length ? 1 : 2;
+  const rows = surveyed.filter(r => all || r.flags.length || excluded.has(r.path))
+    .sort((a, b) => rank(a) - rank(b) || (a.sharpness ?? 0) - (b.sharpness ?? 0));
+  const multi = new Set(surveyed.map(r => r.filter)).size > 1;
+  const num = (v, d, unit = '') => v == null ? '—' : v.toFixed(d) + unit;
+  $('cull-table').innerHTML =
+    `<thead><tr><th>Use</th><th>Frame</th>${multi ? '<th>Filter</th>' : ''}
+     <th>Sharpness</th><th>HFD px</th><th>Ecc.</th><th>Stars</th><th>Why</th></tr></thead><tbody>` +
+    (rows.length ? rows.map(r => `<tr class="${excluded.has(r.path) ? 'out' : ''}">
+      <td><input type="checkbox" data-path="${esc(r.path)}" ${excluded.has(r.path) ? '' : 'checked'}
+           aria-label="Use ${esc(r.file)}"></td>
+      <td class="file" title="${esc(r.path)}">${esc(r.file)}</td>
+      ${multi ? `<td>${esc(r.filter || '—')}</td>` : ''}
+      <td class="num">${num(r.sharpness, 2, '×')}</td><td class="num">${num(r.hfd, 2)}</td>
+      <td class="num">${num(r.eccentricity, 2)}</td><td class="num">${r.stars ?? '—'}</td>
+      <td class="why">${esc(r.flags.map(f => f.text).join('; '))}</td></tr>`).join('')
+    : `<tr><td colspan="8" class="note">Nothing named. Tick the box above to see every frame.</td></tr>`)
+    + '</tbody>';
+  $('cull-table').querySelectorAll('input[data-path]').forEach(c =>
+    c.addEventListener('change', () => {
+      if (c.checked) excluded.delete(c.dataset.path); else excluded.add(c.dataset.path);
+      c.closest('tr').classList.toggle('out', !c.checked);
+      cullNote();
+    }));
+  cullNote();
+}
+
+function cullNote() {
+  const n = excluded.size;
+  $('cull-note').textContent = n
+    ? `Stacking ${surveyed.length - n} of ${surveyed.length} frames; ${n} left out.`
+    : `Stacking all ${surveyed.length} frames.`;
+}
+
+$('cull-flagged').addEventListener('click', () => {
+  excluded = new Set(surveyed.filter(leftOut).map(r => r.path));
+  drawCull();
+});
+$('cull-none').addEventListener('click', () => { excluded = new Set(); drawCull(); });
+$('cull-all').addEventListener('change', drawCull);
+
+$('forget').addEventListener('click', async () => {
+  if (!confirm('Forget every earlier run? The files they wrote stay where they are.')) return;
+  await post('/forget');
+  drawPast();
+});
+
+/* ---- 2. run --------------------------------------------------------- */
+
+/* A stack takes hours and writes without asking. The output box remembers the
+   last name it was given, so writing over a finished result is the likely
+   mistake rather than the unlikely one — but it is also a perfectly ordinary
+   thing to want, so it is a question and not a refusal. */
+async function askedFor(r, what) {
+  if (r.ok || !r.overwrite) return false;
+  const list = r.overwrite.length > 3
+    ? r.overwrite.slice(0, 3).join('\n') + `\n…and ${r.overwrite.length - 3} more`
+    : r.overwrite.join('\n');
+  return confirm(`${what} would write over:\n\n${list}\n\nReplace ${r.overwrite.length > 1 ? 'them' : 'it'}?`);
+}
+
+$('start').addEventListener('click', async () => {
+  showErr($('start-err'), '');
+  const body = {
+    input: found.input,
+    output: $('output').value,
+    scale: parseFloat($('scale').value),
+    threads: parseInt($('threads').value || '0', 10),
+    texture: document.querySelector('input[name=texture]:checked').value,
+    flatten_background: $('flatten_background').checked,
+    sky_field: $('sky_field').checked,
+    split_by_filter: $('split_by_filter').checked && !$('split-wrap').hidden,
+    float_tiff: $('float_tiff').checked,
+    fits: $('fits').checked,
+    xisf: $('xisf').checked,
+    preview: $('preview').checked,
+    max_frames: $('max_frames').disabled ? 0 : parseInt($('max_frames').value || '0', 10),
+    select: $('select').value,
+    scratch_dir: $('scratch_dir').value,
+    diagnostics: $('diagnostics').checked,
+    exclude: [...excluded],
+  };
+  let r = await post('/start', body);
+  if (!r.ok && r.overwrite) {
+    if (!await askedFor(r, 'This run')) return;
+    r = await post('/start', { ...body, overwrite: true });
+  }
+  if (!r.ok) { showErr($('start-err'), r.error); return; }
+  // Where results actually went, for the next set: a folder used in earnest is
+  // a better suggestion than one worked out from where the frames live.
+  remember('outdir', dirOf($('output').value));
+  $('workflow-setup').hidden = true; $('workflow-picker').hidden = true;
+  $('s-options').hidden = true;
+  $('s-run').hidden = false;
+  $('s-done').hidden = true;
+  drawStages(0);
+  poller = setInterval(tick, 500);
+  tick();
+});
+
+function showRunningWorkflow() {
+  $('workflow-setup').hidden = true; $('workflow-picker').hidden = true;
+  $('mosaic-details').open = false;
+  $('project-controls').querySelector('details').open = false;
+  $('s-input').hidden = true; $('s-options').hidden = true;
+  $('s-run').hidden = false; $('s-done').hidden = true;
+  if (poller) clearInterval(poller);
+  poller = setInterval(tick, 500); tick();
+}
+
+let mosaicLoadedExclusions = [];
+for (const id of ['mosaic-input','mosaic-input-text']) $(id).addEventListener('input', () => {
+  mosaicLoadedExclusions = [];
+  if (id === 'mosaic-input' && $(id).value.trim()) $('mosaic-input-text').value = '';
+  if (id === 'mosaic-input-text' && $(id).value.trim()) $('mosaic-input').value = '';
+  $('mosaic-input-note').textContent = $('mosaic-input').value.trim() ? 'The selected folder or list will be used.' : `Selected ${$('mosaic-input-text').value.split('\n').filter(l => l.trim() && !l.trim().startsWith('#')).length} frame paths.`;
+  $('mosaic-plan').value = ''; invalidateMosaic();
+});
+$('mosaic-browse-input').addEventListener('click', async () => {
+  const path = await chooseFolder($('mosaic-browse-input'), 'mosaic-error');
+  if (path) { $('mosaic-input').value = path; $('mosaic-input-text').value = ''; mosaicLoadedExclusions = []; $('mosaic-input-note').textContent = 'The selected folder and its subfolders will be used.'; $('mosaic-plan').value = ''; invalidateMosaic(); }
+});
+$('mosaic-input-pick').addEventListener('click', () => $('mosaic-input-file').click());
+$('mosaic-input-file').addEventListener('change', async e => {
+  const file = e.target.files[0]; if (!file) return;
+  if (file.size > 4*1024*1024) { showErr($('mosaic-error'), 'Frame list exceeds 4 MiB.'); return; }
+  $('mosaic-input-text').value = await file.text(); $('mosaic-input').value = ''; mosaicLoadedExclusions = [];
+  $('mosaic-input-note').textContent = `Loaded ${file.name}. Dropped lists must use absolute frame paths.`;
+  $('mosaic-plan').value = ''; invalidateMosaic();
+});
+$('mosaic-use-loaded').addEventListener('click', () => {
+  if (!found) { showErr($('mosaic-error'), 'Load frames in Stack frames first, or choose a folder here.'); return; }
+  if (!found.mosaic_selection) { showErr($('mosaic-error'), 'Automatic mosaics support up to 512 exposures. Choose a smaller explicit list.'); return; }
+  $('mosaic-input').value = ''; $('mosaic-input-text').value = found.mosaic_selection.filter(([path]) => !excluded.has(path)).map(([,absolute]) => absolute).join('\n'); mosaicLoadedExclusions = [];
+  $('mosaic-input-note').textContent = `${found.mosaic_selection.filter(([path]) => !excluded.has(path)).length} frames selected from Stack frames; ${excluded.size} left out. Stack-only scale and frame limits do not apply. Choose a result folder below to continue.`;
+  $('mosaic-plan').value = ''; invalidateMosaic();
+});
+$('start-mosaic').addEventListener('click', () => {
+  chooseWorkflow('mosaic'); $('mosaic-use-loaded').click();
+  $('workflow-picker').scrollIntoView({behavior:'smooth',block:'start'});
+});
+$('mosaic-import-review').addEventListener('click', () => reviewMosaic());
+$('mosaic-prepare').addEventListener('click', async () => {
+  const button = $('mosaic-prepare'); button.disabled = true; showErr($('mosaic-error'), '');
+  try {
+    const output = $('mosaic-output').value.trim();
+    const r = await post('/mosaic/prepare', {path:$('mosaic-input').value.trim(),text:$('mosaic-input-text').value,
+      output, memory_mb:Number($('mosaic-memory').value), exclude:mosaicLoadedExclusions, stage:$('mosaic-stage').checked});
+    if (!r.ok) throw new Error(r.error);
+    remember('mosaic-output', output); remember('mosaic-input', $('mosaic-input').value);
+    $('mosaic-plan').value = ''; invalidateMosaic(); mosaicRunActive = true; showRunningWorkflow();
+  } catch(e) { showErr($('mosaic-error'), String(e)); }
+  finally { button.disabled = false; }
+});
+$('mosaic-input').value = remembered('mosaic-input');
+let mosaicReview = null, mosaicReviewKey = '', mosaicReviewSerial = 0, mosaicReviewBusy = false, mosaicRunActive = false;
+const mosaicRequest = () => ({plan:$('mosaic-plan').value.trim(), tile:Number($('mosaic-tile').value), memory_mb:Number($('mosaic-memory').value)});
+const mosaicKey = () => JSON.stringify(mosaicRequest());
+const mosaicName = f => f.label || f.path.split(/[\\/]/).pop();
+const mosaicGroup = f => f.group || 'Unlabelled sources';
+const mosaicColour = f => {
+  const groups = [...new Set(mosaicReview.frames.map(mosaicGroup))];
+  return `hsl(${(groups.indexOf(mosaicGroup(f)) * 137.508 + 205) % 360} 68% 65%)`;
+};
+function mosaicCanBuild() {
+  $('mosaic-next').textContent = mosaicRunActive ? 'A run is already in progress.'
+    : mosaicReviewBusy ? 'Checking the plan and source files…'
+    : !mosaicReview || mosaicReviewKey !== mosaicKey() ? 'Prepare your selected frames, or review an imported plan. Changed tile or memory settings require a fresh review.'
+    : !$('mosaic-output').value.trim() ? 'Plan reviewed. Choose a new result folder to enable the build.'
+    : 'Ready to build. All exposures in the reviewed plan will be included.';
+  $('mosaic-build').disabled = mosaicRunActive || mosaicReviewBusy || !mosaicReview || mosaicReviewKey !== mosaicKey() || !$('mosaic-output').value.trim();
+}
+function invalidateMosaic() {
+  ++mosaicReviewSerial; mosaicReview = null; mosaicReviewKey = '';
+  mosaicReviewBusy = false; $('mosaic-review').disabled = false;
+  $('mosaic-review-panel').hidden = true; $('mosaic-review').hidden = !$('mosaic-plan').value.trim(); mosaicCanBuild();
+}
+for (const id of ['mosaic-plan','mosaic-tile','mosaic-memory']) $(id).addEventListener('input', invalidateMosaic);
+$('mosaic-output').addEventListener('input', mosaicCanBuild);
+for (const id of ['mosaic-plan','mosaic-output']) $(id).value = remembered(id);
+$('mosaic-pick').addEventListener('click', async () => {
+  const button = $('mosaic-pick'); button.disabled = true; showErr($('mosaic-error'), '');
+  try {
+    const r = await post('/mosaic/pick-plan', {});
+    if (!r.ok) throw new Error(r.error);
+    if (r.path) { $('mosaic-plan').value = r.path; invalidateMosaic(); }
+  } catch (e) { showErr($('mosaic-error'), String(e)); }
+  finally { button.disabled = false; }
+});
+$('mosaic-output-parent').addEventListener('click', async () => {
+  const path = await chooseFolder($('mosaic-output-parent'), 'mosaic-error');
+  if (path) {
+    const stamp = new Date().toISOString().replace(/[-:]/g,'').replace(/\..*/, '').replace('T','-');
+    $('mosaic-output').value = path.replace(/[\\/]$/, '') + '/mosaic-' + stamp; mosaicCanBuild();
+  }
+});
+async function reviewMosaic() {
+  invalidateMosaic(); const serial = mosaicReviewSerial; const request = mosaicRequest();
+  mosaicReviewBusy = true; $('mosaic-review').disabled = true; showErr($('mosaic-error'), ''); mosaicCanBuild();
+  try {
+    const r = await post('/mosaic/inspect', request);
+    if (serial !== mosaicReviewSerial) return;
+    if (!r.ok) throw new Error(r.error);
+    $('mosaic-plan').value = r.plan; mosaicReview = r; mosaicReviewKey = mosaicKey();
+    remember('mosaic-plan', r.plan);
+    $('mosaic-facts').innerHTML = `<dt>Sources</dt><dd>${r.frames.length} · filter ${esc(r.filter)}</dd><dt>Output canvas</dt><dd>${r.width.toLocaleString()} × ${r.height.toLocaleString()} · ${r.scale}×</dd><dt>Calibration</dt><dd>${esc(r.calibration)}</dd>`;
+    const groups = [...new Set(r.frames.map(mosaicGroup))];
+    $('mosaic-group').innerHTML = '<option value="">All groups</option>' + groups.map(g => `<option value="${esc(g)}">${esc(g)} (${r.frames.filter(f => mosaicGroup(f) === g).length})</option>`).join('');
+    $('mosaic-notes').textContent = (r.notes || []).join('\n\n');
+    $('mosaic-review-panel').hidden = false; $('mosaic-review').hidden = true; drawMosaicSources();
+  } catch (e) { if (serial === mosaicReviewSerial) showErr($('mosaic-error'), String(e)); }
+  finally { if (serial === mosaicReviewSerial) { mosaicReviewBusy = false; $('mosaic-review').disabled = false; mosaicCanBuild(); } }
+}
+$('mosaic-review').addEventListener('click', reviewMosaic);
+function drawMosaicSources() {
+  if (!mosaicReview) return;
+  const group = $('mosaic-group').value;
+  const frames = mosaicReview.frames.filter(f => !group || mosaicGroup(f) === group);
+  $('mosaic-frame').innerHTML = frames.map(f => `<option value="${f.index}">${f.index + 1}. ${esc(mosaicName(f))}</option>`).join('');
+  drawMosaicMap();
+}
+function drawMosaicMap() {
+  if (!mosaicReview) return;
+  const r = mosaicReview, group = $('mosaic-group').value, selected = Number($('mosaic-frame').value);
+  const frames = r.frames.filter(f => !group || mosaicGroup(f) === group).sort((a,b) => Number(a.index === selected)-Number(b.index === selected));
+  const points = r.frames.flatMap(f => f.footprint);
+  // Bound extrema without spreading tens of thousands of values into a call.
+  const bounds = points.reduce((b,p) => [Math.min(b[0],p[0]),Math.min(b[1],p[1]),Math.max(b[2],p[0]),Math.max(b[3],p[1])],[0,0,r.width,r.height]);
+  const padding = Math.max(bounds[2]-bounds[0],bounds[3]-bounds[1]) * .035;
+  $('mosaic-map').setAttribute('viewBox', `${bounds[0]-padding} ${bounds[1]-padding} ${bounds[2]-bounds[0]+2*padding} ${bounds[3]-bounds[1]+2*padding}`);
+  $('mosaic-map').innerHTML = frames.map(f => `<polygon data-index="${f.index}" points="${f.footprint.map(p => p.join(',')).join(' ')}" fill="${mosaicColour(f)}" fill-opacity="${f.index === selected ? .25 : .025}" stroke="${mosaicColour(f)}" stroke-opacity="${f.index === selected ? 1 : .25}" stroke-width="${f.index === selected ? 2 : 1}"><title>${esc(mosaicName(f))}</title></polygon>`).join('') + `<rect x="0" y="0" width="${r.width}" height="${r.height}" fill="none" stroke="#fff" stroke-width="1.5" stroke-dasharray="6 5" vector-effect="non-scaling-stroke" pointer-events="none"/>`;
+  $('mosaic-map').querySelectorAll('polygon').forEach(p => p.addEventListener('click', () => { $('mosaic-frame').value = p.dataset.index; drawMosaicMap(); }));
+  const f = r.frames.find(f => f.index === selected); if (!f) return;
+  $('mosaic-frame-info').innerHTML = `<dl class="facts"><dt>Group</dt><dd>${esc(mosaicGroup(f))}</dd><dt>Source</dt><dd>${esc(f.path)}</dd><dt>Registration residual</dt><dd>median ${f.registration_p50.toFixed(3)} px · p90 ${f.registration_p90.toFixed(3)} px · ${f.validation_stars.toLocaleString()} validation stars</dd><dt>Star size (HFD)</dt><dd>${f.psf_hfd.toFixed(3)} reference px${f.psf_cohort != null ? ' · resolution group '+f.psf_cohort.toFixed(3)+' px' : ''}</dd></dl>`;
+}
+$('mosaic-group').addEventListener('change', drawMosaicSources);
+$('mosaic-frame').addEventListener('change', drawMosaicMap);
+$('mosaic-build').addEventListener('click', async () => {
+  if (!mosaicReview || mosaicReviewKey !== mosaicKey()) return;
+  const button = $('mosaic-build'); button.disabled = true; showErr($('mosaic-error'), '');
+  try {
+    const output = $('mosaic-output').value.trim();
+    const r = await post('/mosaic/start', {...mosaicRequest(),output,plan_sha256:mosaicReview.plan_sha256});
+    if (!r.ok) throw new Error(r.error);
+    mosaicRunActive = true; remember('mosaic-output', output); showRunningWorkflow();
+  } catch (e) { showErr($('mosaic-error'), String(e)); }
+  finally { mosaicCanBuild(); }
+});
+function projectFields() {
+  const action = $('project-action').value;
+  $('project-input-wrap').hidden = !['create','add','relink'].includes(action);
+  $('project-reference-wrap').hidden = action !== 'create';
+  $('project-list-wrap').hidden = !['exclude','include'].includes(action);
+  $('project-reason-wrap').hidden = action !== 'exclude';
+  $('project-go').textContent = $('project-action').selectedOptions[0].textContent;
+}
+$('project-action').addEventListener('change', projectFields);
+$('project-directory').value = remembered('project-directory');
+$('browse-project').addEventListener('click', async () => {
+  const path = await chooseFolder($('browse-project'), 'project-error');
+  if (path) $('project-directory').value = path;
+});
+async function launchWorkflow(button, error, body) {
+  button.disabled = true; showErr($(error), '');
+  try {
+    const result = await post('/workflow', body);
+    if (!result.ok) { showErr($(error), result.error); return; }
+    showRunningWorkflow();
+  } catch (e) { showErr($(error), String(e)); }
+  finally { button.disabled = false; }
+}
+$('project-go').addEventListener('click', () => {
+  remember('project-directory', $('project-directory').value);
+  return launchWorkflow($('project-go'), 'project-error', {
+    action: $('project-action').value, directory: $('project-directory').value,
+    input: $('project-input').value.trim() || (found && found.input) || '',
+    reference: $('project-reference').value, list: $('project-list').value,
+    reason: $('project-reason').value, workers: Number($('project-workers').value) || 2,
+  });
+});
+$('analyze-go').addEventListener('click', () => launchWorkflow($('analyze-go'), 'analysis-error', {
+  action:'analyze', input:found && found.input || '', directory:$('analysis-directory').value,
+  workers:Number($('threads').value) || 2, exclude:[...excluded],
+}));
+
+/* Half the log arrives through the logger, wrapped in a timestamp to the
+   millisecond, a level, and the Rust module that emitted it. None of the three
+   means anything to somebody watching their pictures being stacked, and
+   together they are wider than most of the sentences they precede. The level
+   is kept when it is not routine. */
+const LOGLINE = /^\[[0-9T:.\-]+Z?\s+(TRACE|DEBUG|INFO|WARN|ERROR)\s+[\w:]+\]\s*/;
+const readable = l => l.replace(LOGLINE, (_, level) =>
+  level === 'WARN' || level === 'ERROR' ? level.toLowerCase() + ': ' : '');
+
+const STAGES = __STAGES__;
+// A composite is one short step and does not pass through a stack's stages.
+const COMBINE_STAGES = ['Reading the channels', 'Combining them', 'Writing'];
+
+function drawStages(now, finished, kind) {
+  const list = kind === 'mosaic_prepare' ? ['Detecting stars', 'Finding panels and aligning optics', 'Matching shared sky and checking the plan'] : kind === 'mosaic' ? ['Validating sources and geometry', 'Reconstructing tiles', 'Publishing mosaic'] : kind === 'analysis' ? ['Reading frames', 'Measuring noise and integration', 'Writing report'] : kind === 'project' ? ['Preparing saved project', 'Running project command', 'Publishing result'] : kind === 'composite' ? COMBINE_STAGES : STAGES;
+  const at = ['composite','analysis','project'].includes(kind) ? (finished ? list.length - 1 : 1) : now;
+  $('stages').innerHTML = list.map((label, i) => {
+    const cls = finished || i < at ? 'done' : (i === at ? 'now' : '');
+    return `<li class="${cls}"><span class="dot"></span>${label}</li>`;
+  }).join('');
+}
+
+async function tick() {
+  let p;
+  try { p = await (await fetch('/status')).json(); } catch { return; }
+  mosaicRunActive = p.running; mosaicCanBuild();
+  for (const button of $('past').querySelectorAll('button')) {
+    button.disabled = p.running;
+    button.title = p.running ? 'Available after the current run finishes' : '';
+  }
+  drawStages(p.stage, p.finished && !p.failed, p.kind);
+  $('elapsed').textContent = p.elapsed ? `${p.elapsed.toFixed(0)} s` : '';
+  let mosaicProgress = $('mosaic-progress');
+  if (!mosaicProgress) { mosaicProgress = document.createElement('progress'); mosaicProgress.id = 'mosaic-progress'; mosaicProgress.setAttribute('aria-label','Mosaic tile progress'); $('stages').after(mosaicProgress); }
+  mosaicProgress.hidden = p.kind !== 'mosaic' || !p.tiles_total;
+  if (p.tiles_total) { mosaicProgress.max = p.tiles_total; mosaicProgress.value = p.tiles_done || 0; }
+  // A night stacked a filter at a time is several runs and one piece of work,
+  // and the stage list below only ever describes the run in front of you.
+  const preparing = p.kind === 'mosaic_prepare';
+  const several = preparing || p.steps > 1 || (p.kind === 'mosaic' && p.tiles_total);
+  $('step-note').hidden = !several;
+  if (several) {
+    $('step-note').textContent = preparing ? (p.preparation_detail || 'Starting automatic mosaic preparation…') :
+      p.kind === 'mosaic' && p.tiles_total ? `Tile ${p.tiles_done} of ${p.tiles_total}` :
+      `Run ${p.step} of ${p.steps}${p.step_name ? ' — ' + p.step_name : ''}`;
+  }
+  const log = $('log');
+  const stuck = log.scrollTop + log.clientHeight >= log.scrollHeight - 20;
+  log.textContent = p.log.map(readable).join('\n');
+  if (stuck) log.scrollTop = log.scrollHeight;
+  if (p.finished) {
+    clearInterval(poller); poller = null;
+    $('s-run').hidden = true;
+    $('s-done').hidden = false;
+    showResult(p);
+    showing = p.id;
+    // The new colour image, beside the ones before it, rather than the top of
+    // a stack of results that was already looked at.
+    if (p.extends && p.kind === 'composite' && !p.failed) {
+      $('combine').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+    drawPast();
+    unread = document.hidden;
+    title(p.failed ? 'Stopped' : p.kind === 'mosaic_prepare' ? 'Layout ready' : 'Finished');
+  } else {
+    title('Working');
+  }
+}
+
+/* ---- 3. what came out ----------------------------------------------- */
+
+const isPreview = f => /\.png$/i.test(f);
+// A master, as opposed to the linear copy beside it or a preview of it.
+const MASTER = /_([A-Za-z][A-Za-z0-9]{0,7})\.tif$/i;
+const channelOf = f => (!/\.linear\.tif$/i.test(f) && MASTER.exec(f) || [])[1];
+// `out.preview_H.png` belongs to `out_H.tif`.
+const previewChannel = f => (/[._]preview_([A-Za-z][A-Za-z0-9]{0,7})\.png$/i.exec(f) || [])[1];
+
+/* The lines in a log that say why a run stopped, as the page shows them. */
+const reasonsOf = log => [...new Set(log.map(readable)
+  .filter(l => /^(error|fatal|warn):|^Error:/i.test(l.trim())))];
+
+function showResult(p) {
+  if (p.kind === 'mosaic_prepare' && !p.failed && p.prepared_plan) {
+    chooseWorkflow('mosaic');
+    $('workflow-picker').hidden = false; $('workflow-setup').hidden = false;
+    $('s-run').hidden = true; $('s-done').hidden = true;
+    $('mosaic-plan').value = p.prepared_plan;
+    reviewMosaic();
+    title('Layout ready');
+    return;
+  }
+  showWorkspaceResult(p.kind);
+  const outputs = p.outputs || [];
+  const made = p.colour || [];
+  // Palettes and colour images are made from a stack that finished — there
+  // would be no masters otherwise — so one of those failing is its own failure,
+  // said where it was asked for, and not the stack's.
+  const extra = !!p.extends;
+  const failed = p.failed && !extra;
+  $('done-head').textContent = failed ? 'Did not finish' : p.kind === 'mosaic' ? 'Mosaic ready · experimental' : p.kind === 'analysis' ? 'Analysis ready' : p.kind === 'project' ? 'Project ready' : 'Finished';
+  $('done-msg').textContent = failed
+    ? (p.message || 'The run stopped early.')
+    : `Done in ${(p.took || p.elapsed || 0).toFixed(0)} seconds.${p.kind === 'mosaic' ? ' Preview is display-stretched; image.fits contains the linear scientific result.' : ''}`;
+  // Whatever the last run left behind. Without this a good run shows the
+  // previous one's failure underneath its pictures.
+  document.querySelectorAll('#s-done .why, #s-done .tail').forEach(e => e.remove());
+
+  // The pictures, at the top, because they are why the run happened. The
+  // server hands back only files it watched a run write, so these are fetched
+  // by path rather than copied anywhere.
+  const shots = outputs.filter(isPreview);
+  $('shots').innerHTML = shots.map(f => {
+    const ch = previewChannel(f);
+    const src = `/file?path=${encodeURIComponent(f)}`;
+    const wide = shots.length === 1 ? ' wide' : '';
+    return `<figure class="shot${wide}" style="margin:0">
+      <img src="${esc(src)}" alt="${esc(ch || 'result')}" data-full="${esc(src)}">
+      <figcaption class="cap"><b>${esc(ch || 'Result')}</b>
+      <button class="ghost" data-path="${esc(f)}" style="padding:4px 10px;font-size:12px">Show file</button>
+      </figcaption></figure>`;
+  }).join('');
+  $('shots').querySelectorAll('img').forEach(i =>
+    i.addEventListener('click', () => zoom(i.dataset.full)));
+
+  // What the run decided, which the log said once each and then buried.
+  const groups = [];
+  (p.findings || []).forEach(f => {
+    let g = groups.find(g => g.name === f.group);
+    if (!g) groups.push(g = { name: f.group, items: [] });
+    // A per-filter run reports each of these once per filter; the last word on
+    // a thing is the one that counts.
+    const seen = g.items.find(i => i.label === f.label);
+    if (seen) seen.text = f.text; else g.items.push({ label: f.label, text: f.text });
+  });
+  $('findings').innerHTML = groups.length === 0 ? '' :
+    '<h3>How the run went</h3>' + groups.map(g =>
+      (g.name ? `<h3 style="margin-top:14px">Filter ${esc(g.name)}</h3>` : '') +
+      '<dl>' + g.items.map(i => `<dt>${esc(i.label)}</dt><dd>${esc(i.text)}</dd>`).join('') + '</dl>'
+    ).join('');
+
+  $('completed-log-text').textContent = (p.log || []).map(readable).join('\n') || 'Detailed log is only available for the active session.';
+  $('completed-log').open = p.kind === 'project';
+  showErr($('report-error'), '');
+  $('run-reports').innerHTML = outputs.filter(f => /(?:frame-review|project-analysis)\.html$/i.test(f)).map(f => {
+    const filter = dirOf(f).split(/[\\/]/).pop();
+    const suffix = /^[A-Za-z]{1,8}$/.test(filter) ? ` · ${esc(filter)}` : '';
+    return `<button class="ghost" data-report="${esc(f)}">${/frame-review/i.test(f) ? 'Inspect frames and masks' : 'Open noise and integration report'}${suffix}</button>`;
+  }).join('');
+  $('run-reports').querySelectorAll('[data-report]').forEach(b => b.addEventListener('click', async () => {
+    const result = await post('/open-report', {path:b.dataset.report});
+    if (!result.ok) showErr($('report-error'), result.error);
+  }));
+  $('files').innerHTML = [...outputs, ...made.flatMap(c => c.files)].map(f =>
+    `<li><code>${esc(f)}</code><button class="ghost" data-path="${esc(f)}">Show</button></li>`
+  ).join('') || (failed ? '' : '<li class="note">The run wrote nothing.</li>');
+  document.querySelectorAll('#s-done button[data-path]').forEach(b =>
+    b.addEventListener('click', () => post('/reveal', { path: b.dataset.path })));
+
+  offerCombine(p, outputs, failed);
+
+  if (extra && p.failed) {
+    const said = reasonsOf(p.log || []).slice(-2).map(l => forThePage(l.replace(/^\s*\w+:\s*/, '')));
+    const what = p.message === 'Stopped.' ? 'Stopped.'
+      : said.length ? said.join('\n') : 'It did not finish.';
+    if (p.kind === 'composite') {
+      showErr($('combine-err'), what);
+    } else {
+      $('palette-status').hidden = false;
+      $('palette-status').textContent = what;
+    }
+  }
+
+  if (failed) {
+    // The reason, not forty lines to look for it in. A run that stops says so
+    // in a line that names itself; the log stays underneath for when it does
+    // not, or when the line before it mattered too.
+    const said = p.log.map(readable);
+    const reasons = reasonsOf(p.log);
+    if (reasons.length) {
+      // The stock message points at a log that is now folded away below the
+      // reason itself, so it has nothing left to say.
+      $('done-msg').textContent = 'The run stopped. This is what it said:';
+      const why = document.createElement('div');
+      why.className = 'notes why';
+      why.innerHTML = reasons.slice(-4).map(l => {
+        const [, tag, rest] = /^\s*(\w+):\s*([\s\S]*)$/.exec(l) || [, '', l];
+        const level = /^warn/i.test(tag) ? 'warning' : 'fatal';
+        return `<div class="${level}"><span class="tag">${esc(tag || 'Error')}</span>
+                <span>${esc(forThePage(rest))}</span></div>`;
+      }).join('');
+      $('done-msg').after(why);
+    }
+    const details = document.createElement('details');
+    details.className = 'tail';
+    details.innerHTML =
+      '<summary style="cursor:pointer;color:var(--dim);font-size:13px;margin-top:14px">' +
+      'What the run was doing</summary>';
+    const pre = document.createElement('pre');
+    pre.className = 'log';
+    pre.textContent = said.slice(-40).join('\n');
+    details.append(pre);
+    $('findings').after(details);
+  }
+}
+
+/* Which palettes the channels on hand can actually make. */
+const PALETTES = [
+  ['sho', 'SHO — the Hubble palette: sulphur red, hydrogen green, oxygen blue', ['S', 'H', 'O']],
+  ['hso', 'HSO — hydrogen red, sulphur green, oxygen blue', ['S', 'H', 'O']],
+  ['hoo', 'HOO — hydrogen red, oxygen in both green and blue', ['H', 'O']],
+  ['rgb', 'RGB — a broadband set', ['R', 'G', 'B']],
+];
+
+function offerCombine(p, outputs, failed) {
+  // Only the masters: a colour image already made is kept apart from them, so
+  // it cannot turn up here as a channel of the next one.
+  const masters = failed ? [] : outputs.filter(channelOf);
+  const have = masters.map(channelOf).map(c => c.toUpperCase());
+  const usable = PALETTES.filter(([, , need]) => need.every(c => have.includes(c)));
+  $('combine').hidden = usable.length === 0;
+  if (!usable.length) return;
+
+  combineOf = p.id || 0;
+  combineChannels = masters.map(f => `${channelOf(f).toUpperCase()}=${f}`);
+  // The palette last used stays chosen: the page is redrawn after every
+  // combine, and starting the list over each time is how the same one gets
+  // made twice.
+  const chosen = $('palette').value;
+  $('palette').innerHTML = usable
+    .map(([v, label]) => `<option value="${v}">${esc(label)}</option>`).join('');
+  const made = p.colour || [];
+  $('combine-head').textContent = made.length ? 'Colour images' : 'One colour image';
+  $('combine-why').textContent = made.length
+    ? `${made.length} made from these masters so far, newest first. Each is saved under `
+      + 'its own name, so another palette can be made and put beside '
+      + (made.length > 1 ? 'them.' : 'it.')
+    : `This run stacked ${have.join(', ')} separately, because frames through different `
+      + 'filters are separate measurements. Which palette to combine them into is a display '
+      + 'decision, so here is each of them to look at.';
+  drawColour(made);
+  // Beside the masters, named for the set rather than for one filter.
+  combineBase = masters[0].replace(MASTER, '');
+  delete $('combine-out').dataset.typed;
+  showErr($('combine-err'), '');
+  drawPalettes(p.palettes || []);
+  if ([...$('palette').options].some(o => o.value === chosen)) $('palette').value = chosen;
+  markChosen();
+  suggestName();
+  // Making them takes seconds against the hours the masters took, so they are
+  // made without being asked for — but only once per set of masters.
+  if (!p.palettes?.length && combineChannels.join() !== triedFor) tryPalettes();
+}
+
+/* What has been made from these masters, kept in view so that the next palette
+   is judged against the last one rather than against a memory of it. */
+function drawColour(made) {
+  $('colour-shots').innerHTML = made.slice().reverse().map(c => {
+    const png = c.files.find(isPreview);
+    const tif = c.files.find(f => !isPreview(f));
+    const src = png ? `/file?path=${encodeURIComponent(png)}` : '';
+    return `<figure class="shot" style="margin:0">
+      ${src ? `<img src="${esc(src)}" alt="${esc(c.title)}" data-full="${esc(src)}">` : ''}
+      <figcaption class="cap"><span><b>${esc(c.title)}</b>
+      ${c.mapping ? `<br>${esc(c.mapping)}` : ''}</span>
+      ${tif ? `<button class="ghost" data-path="${esc(tif)}" style="padding:4px 10px;font-size:12px;flex:none">Show file</button>` : ''}
+      </figcaption></figure>`;
+  }).join('');
+  $('colour-shots').querySelectorAll('img').forEach(i =>
+    i.addEventListener('click', () => zoom(i.dataset.full)));
+  $('colour-shots').querySelectorAll('button[data-path]').forEach(b =>
+    b.addEventListener('click', () => post('/reveal', { path: b.dataset.path })));
+}
+
+let triedFor = '';
+let combineOf = 0;
+let combineBase = '';
+
+/* Named for the set and the palette, so that making a second palette does not
+   write over the first. A name somebody typed is theirs until the next result. */
+function suggestName() {
+  if (!combineBase || $('combine-out').dataset.typed) return;
+  $('combine-out').value = `${combineBase}-${$('palette').value}.tif`;
+}
+$('combine-out').addEventListener('input', () => { $('combine-out').dataset.typed = '1'; });
+
+/* The chooser and the list are the same choice, so they are kept agreeing. */
+function markChosen() {
+  $('palette-shots').querySelectorAll('button').forEach(o =>
+    o.setAttribute('aria-current', o.dataset.id === $('palette').value));
+}
+$('palette').addEventListener('change', () => { markChosen(); suggestName(); });
+
+/* Every palette these channels allow, as pictures rather than as names. */
+async function tryPalettes() {
+  triedFor = combineChannels.join();
+  $('palette-status').hidden = false;
+  $('palette-status').textContent = 'Making a small version of each palette to choose by…';
+  const r = await post('/palettes', {
+    channels: combineChannels,
+    stretch_channels: $('stretch_channels').checked,
+    of: combineOf,
+  });
+  if (!r.ok) {
+    $('palette-status').textContent = r.error;
+    return;
+  }
+  poller = setInterval(tick, 500);
+  tick();
+}
+
+function drawPalettes(shots) {
+  $('palette-status').hidden = shots.length > 0;
+  $('palette-shots').innerHTML = shots.map(s =>
+    `<button data-id="${esc(s.id)}" aria-current="${s.id === $('palette').value}">
+      <img src="/file?path=${encodeURIComponent(s.preview)}" alt="${esc(s.label)}" loading="lazy">
+      <span class="meta"><b>${esc(s.label.split('—')[0].trim())}</b>
+      <span>${esc((s.label.split('—')[1] || '').trim())}</span></span>
+    </button>`).join('');
+  // Clicking the one already chosen shows it full size, which is the other
+  // thing anyone wants to do with a thumbnail.
+  if (shots.length) {
+    $('palette').innerHTML = shots
+      .map(s => `<option value="${esc(s.id)}">${esc(s.label)}</option>`).join('');
+  }
+  $('palette-shots').querySelectorAll('button').forEach(b =>
+    b.addEventListener('click', () => {
+      if (b.getAttribute('aria-current') === 'true') {
+        zoom(b.querySelector('img').src);
+        return;
+      }
+      $('palette').value = b.dataset.id;
+      markChosen();
+      suggestName();
+    }));
+}
+
+let combineChannels = [];
+
+/* ---- 4. what else has been tried ------------------------------------ */
+
+/* A stack is slow enough that the way to use this page is to try something,
+   look, and try again — and each look used to destroy the one before it. The
+   server keeps this session's finished runs; the page shows them so two
+   attempts can be put next to each other. */
+let showing = null;
+
+async function drawPast() {
+  let past;
+  try { past = await (await fetch('/history')).json(); } catch { return; }
+  // Hidden only when the one run there is the one already on the page.
+  $('s-past').hidden = past.length === 0 || (past.length === 1 && past[0].id === showing);
+  $('past').innerHTML = past.map((p, i) => {
+    // The last colour image made from a stack is a better picture of it than
+    // the first grey master.
+    const made = (p.colour || []).flatMap(c => c.files).filter(isPreview);
+    const shot = made[made.length - 1] || (p.outputs || []).find(isPreview);
+    const colours = (p.colour || []).length;
+    const when = p.finished_at
+      ? new Date(p.finished_at * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      : '';
+    const art = shot
+      ? `<img src="/file?path=${encodeURIComponent(shot)}" alt="" loading="lazy">`
+      : `<div class="none">${p.kind === 'mosaic_prepare' ? 'Layout' : p.kind === 'analysis' ? 'Report' : p.kind === 'project' ? 'Project' : 'no picture'}</div>`;
+    const took = p.took || p.elapsed;
+    return `<button data-i="${i}" aria-current="${p.id === showing}">${art}
+      <span class="meta"><b>${esc(p.title || 'a run')}</b>
+      <span>${when}${when && took ? ' · ' : ''}${took ? took.toFixed(0) + ' s' : ''}
+      ${colours ? ` · ${colours} colour` : ''}${p.failed ? ' · stopped' : ''}</span></span></button>`;
+  }).join('');
+  // A result can be moved or deleted between runs; a broken image is a worse
+  // answer than saying so.
+  $('past').querySelectorAll('img').forEach(i => i.addEventListener('error', () => {
+    const gone = document.createElement('div');
+    gone.className = 'none';
+    gone.textContent = 'file gone';
+    i.replaceWith(gone);
+  }));
+  $('past').querySelectorAll('button').forEach(b =>
+    b.addEventListener('click', () => {
+      if (poller) return;
+      const p = past[+b.dataset.i];
+      showing = p.id;
+      // The mark moves with the choice; drawing it once left it on whichever
+      // run happened to be the newest.
+      $('past').querySelectorAll('button').forEach(o =>
+        o.setAttribute('aria-current', o === b));
+      $('s-input').hidden = true; $('s-options').hidden = true; $('s-run').hidden = true;
+      $('s-done').hidden = false;
+      showResult({ ...p, log: [] });
+      $('s-done').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }));
+}
+
+$('combine-go').addEventListener('click', async () => {
+  showErr($('combine-err'), '');
+  const body = {
+    channels: combineChannels,
+    output: $('combine-out').value,
+    fits: $('combine-fits').checked,
+    xisf: $('combine-xisf').checked,
+    palette: $('palette').value,
+    stretch_channels: $('stretch_channels').checked,
+    align: false,
+    of: combineOf,
+  };
+  let r = await post('/composite', body);
+  if (!r.ok && r.overwrite) {
+    if (!await askedFor(r, 'Combining')) return;
+    r = await post('/composite', { ...body, overwrite: true });
+  }
+  if (!r.ok) { showErr($('combine-err'), r.error); return; }
+  $('workflow-setup').hidden = true; $('workflow-picker').hidden = true;
+  $('s-done').hidden = true;
+  $('s-run').hidden = false;
+  drawStages(0, false, 'composite');
+  poller = setInterval(tick, 500);
+  tick();
+});
+
+$('cancel').addEventListener('click', async () => { await post('/cancel'); });
+$('again').addEventListener('click', () => {
+  $('workflow-setup').hidden = false; $('workflow-picker').hidden = false;
+  chooseWorkflow(selectedWorkflow);
+  $('s-options').hidden = true;
+  $('s-done').hidden = true; $('s-input').hidden = false;
+  $('input-note').textContent = '';
+  unread = false;
+  title('');
+});
+
+/* ---- the catalog ---------------------------------------------------- */
+
+/* Frames chosen by asking the catalog rather than by pointing at a folder. The
+   server asks, finds each frame on this computer and writes the ones it found
+   as a list; from there it is a list like any other, read by the same button a
+   pasted one is. */
+let catSaved = null;   // a query saved in the catalog itself, while one is being asked
+let catMark = '';      // the bookmark the form was filled from
+let catMarks = [];
+let catCaps = { screening: false, preview: false };   // what the catalog said it can do
+const CAT_FIELDS = [['object', 'cat-object'], ['filter', 'cat-filter'], ['date_from', 'cat-from'],
+                    ['date_to', 'cat-to'], ['where', 'cat-where'], ['image_type', 'cat-type']];
+
+/* The form, as the parameters the server documents. */
+const screenBoxes = () => [...document.querySelectorAll('#cat-screen input[data-screen]')];
+
+function catQuery() {
+  const skipRejected = $('cat-norejected').checked;
+  const screen = screenBoxes().filter(c => c.checked).map(c => c.dataset.screen);
+  if (catSaved) {
+    return { saved: catSaved.id, saved_name: catSaved.name, screen,
+             params: skipRejected ? {} : { include_rejected: 'true' } };
+  }
+  const params = {};
+  CAT_FIELDS.forEach(([k, id]) => { const v = $(id).value.trim(); if (v) params[k] = v; });
+  for (const line of $('cat-more').value.split('\n').map(l => l.trim())) {
+    if (!line || line.startsWith('#')) continue;
+    const at = line.indexOf('=');
+    if (at < 1) throw new Error(`“${line}” is not name=value`);
+    params[line.slice(0, at).trim()] = line.slice(at + 1).trim();
+  }
+  if (skipRejected && params.rejected === undefined) params.rejected = 'false';
+  return { params, screen };
+}
+
+/* And back: a bookmark put into the form it was made from. */
+function catFill(q) {
+  const p = { ...(q.params || {}) };
+  // A bookmark from before the catalog screened asks for no screening, and
+  // is shown asking for none.
+  const screen = new Set(q.screen || []);
+  screenBoxes().forEach(c => { c.checked = screen.has(c.dataset.screen); });
+  if (q.saved) {
+    catSaved = { id: q.saved, name: q.saved_name || `query ${q.saved}` };
+    $('cat-norejected').checked = p.include_rejected !== 'true';
+  } else {
+    catSaved = null;
+    CAT_FIELDS.forEach(([k, id]) => { setValue($(id), p[k] || ''); delete p[k]; });
+    $('cat-norejected').checked = p.rejected === 'false';
+    if (p.rejected === 'false') delete p.rejected;
+    $('cat-more').value = Object.entries(p).map(([k, v]) => `${k}=${v}`).join('\n');
+  }
+  catSavedNote();
+}
+
+function setValue(el, v) {
+  if (el.tagName === 'SELECT' && ![...el.options].some(o => o.value === v)) el.add(new Option(v, v));
+  el.value = v;
+}
+
+/* A saved query makes its own selection, so the fields that would not be used
+   are not shown as though they were. */
+function catSavedNote() {
+  $('cat-fields').hidden = !!catSaved;
+  $('cat-saved-note').hidden = !catSaved;
+  if (catSaved) $('cat-saved-what').textContent = catSaved.name;
+}
+$('cat-own').addEventListener('click', () => { catSaved = null; catMark = ''; catSavedNote(); });
+
+/* What the list, and so the result, is called. */
+const catName = () => catMark || (catSaved && catSaved.name)
+  || [$('cat-object').value.trim(), $('cat-filter').value.trim()].filter(Boolean).join(' ');
+const catDescribe = q => q.saved
+  ? `${q.saved_name} (saved in the catalog)`
+  : Object.entries(q.params || {}).map(([k, v]) => `${k}=${v}`).join('\n');
+
+async function catFrames(write) {
+  showErr($('cat-err'), '');
+  let query;
+  try { query = catQuery(); } catch (e) { showErr($('cat-err'), e.message); return null; }
+  const btn = write ? $('cat-use') : $('cat-look');
+  const was = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Asking the catalog…';
+  try {
+    const r = await post('/catalog/frames', { query, name: catName(), write, bookmark: catMark });
+    if (!r.ok) { showErr($('cat-err'), r.error); return null; }
+    if (r.bookmarks) drawMarks(r.bookmarks);
+    catShow(r);
+    return r;
+  } catch (e) {
+    showErr($('cat-err'), String(e));
+    return null;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = was;
+  }
+}
+
+/* What a query found, before an hour is spent stacking it: how much, through
+   what, of what, when — and a few of the frames, to see that it is the right
+   piece of sky. */
+function catShow(r) {
+  const hours = h => `${h < 10 ? h.toFixed(1) : h.toFixed(0)} h`;
+  const day = d => (d || '').slice(0, 10);
+  const taken = !r.first ? '' : day(r.first) === day(r.last) ? day(r.first)
+    : `${day(r.first)} to ${day(r.last)}, on ${r.dates} dates`;
+  const facts = [
+    ['Frames', r.missing ? `${r.found} of ${r.listed} are on this computer`
+      : `${r.listed}${r.matched > r.listed ? ` of the ${r.matched} matched` : ''}`],
+    ['Integration', r.hours ? hours(r.hours) : ''],
+    ['Filters', r.filters.length > 1 || r.filters[0]?.name
+      ? r.filters.map(f => `${f.name || 'none'} ${f.frames} (${hours(f.hours)})`).join(', ') : ''],
+    ['Targets', r.objects.map(o => `${o.name} (${o.frames})`).join(', ')],
+    ['Taken', taken],
+    ['Camera', r.cameras.join(', ')],
+  ].filter(([, v]) => v);
+  $('cat-facts').innerHTML = facts.map(([k, v]) => `<dt>${k}</dt><dd>${esc(v)}</dd>`).join('');
+  const ex = r.missing_examples[0];
+  const paths = !r.matched
+    ? '<div class="warning"><span class="tag">Nothing</span><span>The catalog has no frames matching that.</span></div>'
+    : !r.missing ? ''
+    : `<div class="${r.found ? 'warning' : 'fatal'}"><span class="tag">Paths</span><span>`
+      + (r.found ? `${r.missing} of them are not on this computer and will be left out. `
+                 : 'None of them is on this computer. ')
+      + `The catalog calls one <code>${esc(ex.catalog)}</code>`
+      + (ex.tried !== ex.catalog ? `, looked for at <code>${esc(ex.tried)}</code>` : '')
+      + '. A path rewrite, under Connection and paths, maps the catalog\'s folders onto this machine\'s.</span></div>';
+  $('cat-notes').innerHTML = paths + screeningNotes(r);
+  // Asked for now rather than when scrolled to: there are eight, and they are
+  // the answer to the question just asked.
+  $('cat-thumbs').innerHTML = r.thumbs.map(id =>
+    `<img src="/catalog/thumb?id=${id}" data-id="${id}" alt="frame ${id}">`).join('');
+  $('cat-thumbs').querySelectorAll('img').forEach(i => {
+    i.addEventListener('click', () => {
+      zoom(i.src);
+      if (!catCaps.preview) return;
+      // The thumbnail at once, and the larger picture in its place when the
+      // catalog has rendered it, which the first time takes it a moment.
+      const want = `/catalog/thumb?id=${i.dataset.id}&size=2048`;
+      const big = new Image();
+      big.onload = () => {
+        if (!$('lightbox').hidden && $('lightbox-img').src.endsWith(i.getAttribute('src'))) {
+          $('lightbox-img').src = want;
+        }
+      };
+      big.src = want;
+    });
+    i.addEventListener('error', () => i.remove());
+  });
+  $('cat-result').hidden = false;
+}
+
+/* What the screening left out, and what it could not judge and so kept. The
+   second matters most just after the catalog has been upgraded or a night
+   indexed, when most frames have not been analyzed yet. */
+const SCREENED = {
+  rejected: 'graded rejected', trailed: 'trailed', occluded: 'partly blocked',
+  anomaly: 'that stand out from their session', satellite: 'with a satellite trail',
+};
+const UNJUDGED = { trailed: 'trailing', occluded: 'a blocked field', anomaly: 'their session', satellite: 'satellite trails' };
+const DEVIATION = {
+  star_drop: v => `${Math.round(v * 100)}% fewer stars`,
+  hfr_rise: v => `${Math.round(v * 100)}% softer`,
+  empty_rise: v => `${Math.round(v * 100)} points more of the field empty`,
+  spread_rise: v => `${Math.round(v * 100)}% more background spread`,
+  flux_drop: v => `${Math.round(v * 100)}% dimmer stars`,
+};
+
+function screeningNotes(r) {
+  let out = '';
+  const left = Object.entries(r.screened || {}).sort((a, b) => b[1] - a[1]);
+  if (left.length) {
+    const n = left.reduce((sum, [, c]) => sum + c, 0);
+    const ex = r.anomaly_example;
+    const why = ex ? Object.entries(ex.deviations || {}).filter(([, v]) => v > 0)
+      .sort((a, b) => b[1] - a[1]).slice(0, 2)
+      .map(([k, v]) => DEVIATION[k] ? DEVIATION[k](v) : `${k} ${v.toFixed(2)}`).join(', ') : '';
+    const each = left.map(([k, c]) => `${c} ${SCREENED[k] || esc(k)}`).join(', ');
+    out += '<div><span class="tag">Screened</span><span>Left out '
+      + (left.length === 1 ? each : `${n}: ${each}`)
+      + (why ? ` — ${esc(ex.file)}, for one, has ${why}` : '') + '.</span></div>';
+  }
+  const waiting = Object.entries(r.unjudged || {}).filter(([, c]) => c);
+  if (waiting.length) {
+    out += '<div><span class="tag">Not judged</span><span>Kept, because the catalog has not judged them for '
+      + waiting.map(([k, c]) => `${UNJUDGED[k] || esc(k)} (${c})`).join(', ')
+      + '. It answers once it has analyzed them.</span></div>';
+  }
+  return out;
+}
+
+$('cat-look').addEventListener('click', () => catFrames(false));
+$('cat-fields').querySelectorAll('input').forEach(i => i.addEventListener('keydown', ev => {
+  if (ev.key === 'Enter') { ev.preventDefault(); $('cat-look').click(); }
+}));
+
+/* Asked afresh rather than taken from the last look, so a frame indexed in the
+   meantime is in it; then read like any typed path. */
+$('cat-use').addEventListener('click', async () => {
+  const r = await catFrames(true);
+  if (!r || !r.list) return;
+  $('path').value = r.list;
+  $('text').value = '';
+  note(`${r.found} frames from the catalog.`);
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+  $('inspect').click();
+});
+
+$('cat-mark').addEventListener('click', async () => {
+  showErr($('cat-err'), '');
+  let query;
+  try { query = catQuery(); } catch (e) { showErr($('cat-err'), e.message); return; }
+  const name = (prompt('Bookmark this query as', catName() || 'catalog') || '').trim();
+  if (!name) return;
+  if (name !== catMark && catMarks.some(b => b.name === name)
+      && !confirm(`There is already a bookmark called “${name}”. Give it this query instead?`)) return;
+  const r = await post('/catalog/bookmark', { name, query });
+  if (!r.ok) { showErr($('cat-err'), r.error); return; }
+  catMark = name;
+  drawMarks(r.bookmarks);
+});
+
+function drawMarks(list) {
+  catMarks = list || [];
+  $('cat-marks').hidden = !catMarks.length;
+  $('cat-marks').innerHTML = catMarks.map((b, i) => {
+    const when = b.last_run
+      ? new Date(b.last_run * 1000).toLocaleDateString([], { month: 'short', day: 'numeric' }) : '';
+    return `<div class="mark"><button data-i="${i}" title="${esc(catDescribe(b.query))}">${esc(b.name)}
+      <span>${when ? `${b.last_frames} frames on ${when}` : 'not asked yet'}</span></button>
+      <button class="x" data-forget="${i}" aria-label="Forget ${esc(b.name)}" title="Forget this bookmark">✕</button></div>`;
+  }).join('');
+  $('cat-marks').querySelectorAll('button[data-i]').forEach(btn => btn.addEventListener('click', () => {
+    const b = catMarks[+btn.dataset.i];
+    catMark = b.name;
+    catFill(b.query);
+    catFrames(false);
+  }));
+  $('cat-marks').querySelectorAll('button[data-forget]').forEach(btn => btn.addEventListener('click', async () => {
+    const b = catMarks[+btn.dataset.forget];
+    if (!confirm(`Forget the bookmark “${b.name}”? Anything stacked from it stays where it is.`)) return;
+    const r = await post('/catalog/forget', { name: b.name });
+    if (!r.ok) { showErr($('cat-err'), r.error); return; }
+    if (catMark === b.name) catMark = '';
+    drawMarks(r.bookmarks);
+  }));
+}
+
+function drawSaved(list) {
+  $('cat-saved').hidden = !list.length;
+  $('cat-saved-list').innerHTML = list.map((q, i) =>
+    `<div class="mark"><button data-i="${i}" title="${esc(q.expression || '')}">${esc(q.name)}
+      <span>${esc(q.folder || 'no folder')}</span></button></div>`).join('');
+  $('cat-saved-list').querySelectorAll('button').forEach(btn => btn.addEventListener('click', () => {
+    const q = list[+btn.dataset.i];
+    catMark = '';
+    catFill({ saved: q.id, saved_name: q.folder ? `${q.folder} / ${q.name}` : q.name,
+              params: $('cat-norejected').checked ? {} : { include_rejected: 'true' } });
+    catFrames(false);
+  }));
+}
+
+/* The settings, and then the catalog itself: what it holds fills the
+   suggestions, and asking at all says whether the connection works. */
+async function catConnect() {
+  let s;
+  try { s = await (await fetch('/catalog/settings')).json(); } catch { return; }
+  if (!s.ok) { showErr($('cat-set-err'), s.error); return; }
+  $('cat-base').value = s.base || '';
+  $('cat-user').value = s.user || '';
+  $('cat-pass').value = '';
+  $('cat-pass').placeholder = s.has_password ? 'kept — type to change' : '';
+  $('cat-key').value = '';
+  $('cat-key').placeholder = s.has_key ? 'kept — type to change' : '';
+  $('cat-rewrites').value = (s.rewrites || []).map(r => `${r.from} => ${r.to}`).join('\n');
+  $('cat-file').textContent = s.file || 'nowhere, because SMOKSTAK_CATALOG is empty';
+  drawMarks(s.bookmarks);
+  if (!s.base) { $('cat-conn').textContent = 'not set up'; $('cat-settings').open = true; return; }
+  $('cat-conn').textContent = 'connecting…';
+  const ask = url => fetch(url).then(r => r.json()).catch(e => ({ ok: false, error: String(e) }));
+  const [sum, saved] = await Promise.all([ask('/catalog/summary'), ask('/catalog/queries')]);
+  if (!sum.ok) {
+    $('cat-conn').textContent = 'not connected';
+    showErr($('cat-set-err'), sum.error);
+    $('cat-settings').open = true;
+    return;
+  }
+  showErr($('cat-set-err'), '');
+  $('cat-conn').textContent = `${Number(sum.total || 0).toLocaleString()} frames in the catalog`
+    + (sum.version ? ` · API ${sum.version}` : '');
+  // Screening that the catalog cannot do is neither offered nor asked for.
+  catCaps = { screening: !!sum.screening, preview: !!sum.preview };
+  $('cat-screen').hidden = !catCaps.screening;
+  if (!catCaps.screening) screenBoxes().forEach(c => { c.checked = false; });
+  const params = sum.params || [];
+  $('cat-params').hidden = !params.length;
+  $('cat-params-list').innerHTML = params
+    .map(p => `<dt><code>${esc(p.name)}</code></dt><dd>${esc(p.description || '')}</dd>`).join('');
+  const suggest = (list, id) => { $(id).innerHTML = (list || []).map(v => `<option value="${esc(v)}">`).join(''); };
+  suggest(sum.objects, 'cat-objects');
+  suggest(sum.filters, 'cat-filters');
+  const chosen = $('cat-type').value;
+  $('cat-type').innerHTML = [...new Set(['Light Frame', ...(sum.imagetypes || [])])]
+    .map(t => `<option value="${esc(t)}">${esc(t)}</option>`).join('') + '<option value="">Any type</option>';
+  setValue($('cat-type'), chosen);
+  drawSaved(saved.ok ? saved.queries : []);
+}
+
+$('cat-save').addEventListener('click', async () => {
+  showErr($('cat-set-err'), '');
+  const rewrites = [];
+  for (const line of $('cat-rewrites').value.split('\n').map(l => l.trim()).filter(Boolean)) {
+    const at = line.indexOf('=>');
+    if (at < 0) { showErr($('cat-set-err'), `“${line}” is not “from => to”`); return; }
+    rewrites.push({ from: line.slice(0, at).trim(), to: line.slice(at + 2).trim() });
+  }
+  const body = { base: $('cat-base').value, user: $('cat-user').value, rewrites };
+  // Left empty, the kept one stays: the page was never given it to send back.
+  if ($('cat-pass').value) body.password = $('cat-pass').value;
+  if ($('cat-key').value) body.api_key = $('cat-key').value;
+  const r = await post('/catalog/settings', body);
+  if (!r.ok) { showErr($('cat-set-err'), r.error); return; }
+  catConnect();
+});
+
+catConnect();
+
+/* ---- 4. a run outlives the page looking at it ------------------------ */
+
+/* A stack takes hours. Closing the tab, reloading, or opening the address in
+   another window must not lose sight of the run: the run is in the server, so
+   the page asks what is happening rather than assuming nothing is. */
+(async function reattach() {
+  let p;
+  try { p = await (await fetch('/status')).json(); } catch { return; }
+  if (p.running) {
+    showWorkspaceResult(p.kind);
+    $('s-input').hidden = true;
+    $('s-run').hidden = false;
+    drawStages(p.stage, false, p.kind);
+    poller = setInterval(tick, 500);
+    tick();
+  } else if (p.finished && (p.failed || (p.outputs || []).length)) {
+    $('s-input').hidden = true;
+    $('s-done').hidden = false;
+    showing = p.id;
+    showResult(p);
+  }
+  drawPast();
+})();
+
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) return;
+  // A hidden tab's timers are throttled to about once a minute, so a run that
+  // ended while you were away can still be showing as working when you come
+  // back to it. Catch up at once rather than on the next tick.
+  if (poller) tick();
+  // The notice is cleared when the tab is looked at again, not the moment the
+  // run ends: a notice nobody was there to see is the only kind worth leaving.
+  if (unread && !poller) { unread = false; document.title = 'smokstak'; }
+});
+</script>
+</body>
+</html>

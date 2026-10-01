@@ -1,0 +1,16 @@
+[package]
+name = "sr-output"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+sr-core = { workspace = true }
+tiff = { workspace = true }
+png = { workspace = true }
+serde = { workspace = true }
+anyhow = { workspace = true }
+
+[dev-dependencies]
+sr-raw = { workspace = true }

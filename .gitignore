@@ -1,0 +1,52 @@
+# Build output.
+/target
+
+# Reconstruction products, diagnostics and validation runs. All large, and all
+# reproducible from the inputs plus the run manifest that accompanies them.
+/out
+/cache
+/diagnostics
+/selftest
+
+# Sample bursts: several gigabytes of camera RAW.
+/example_data/
+
+# Belt and braces against a stray capture landing in a commit.
+*.NEF
+*.CR2
+*.CR3
+*.ARW
+*.DNG
+*.fits
+*.fit
+
+# Side build directories used to test while a run holds the main binary open.
+target_*/
+
+# Generated reports and portable build output.
+/reports/
+/dist/
+
+# Python caches and local environments.
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+
+# Astronomical masters and portable build products.
+*.[fF][iI][tT]
+*.[fF][iI][tT][sS]
+*.[xX][iI][sS][fF]
+*.linear.tif
+*.preview.png
+*.run.json
+*.exe
+*.pdb
+
+# Machine-specific configuration and secrets.
+.env
+.env.*
+!.env.example
+.DS_Store
+Thumbs.db

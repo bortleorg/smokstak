@@ -1,0 +1,14 @@
+[package]
+name = "sr-reconstruct"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+sr-core = { workspace = true }
+sr-quality = { workspace = true }
+sr-noise = { workspace = true }
+rayon = { workspace = true }
+serde = { workspace = true }
+log = { workspace = true }
