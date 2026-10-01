@@ -160,7 +160,7 @@ impl<T: Primitive> Buffer<T> {
         // sharing mode prevents third-party writers; on Unix unlink below
         // makes it inaccessible by name for the mapping's lifetime.
         let map = unsafe { memmap2::MmapOptions::new().len(bytes).map(&*file)? };
-        if map.len() != bytes || (map.as_ptr() as usize) % align_of::<T>() != 0 {
+        if map.len() != bytes || !(map.as_ptr() as usize).is_multiple_of(align_of::<T>()) {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
                 "invalid spill mapping layout",

@@ -1104,11 +1104,10 @@ pub fn star_gains(
             let Some((j, second)) = grid.nearest_two(ax, ay, STAR_MATCH_RADIUS) else {
                 continue;
             };
-            if let Some(d2) = second {
-                if d2 < STAR_MATCH_MARGIN * STAR_MATCH_MARGIN * grid.last_distance2() {
+            if let Some(d2) = second
+                && d2 < STAR_MATCH_MARGIN * STAR_MATCH_MARGIN * grid.last_distance2() {
                     continue;
                 }
-            }
             // One gain for the three channels, from the detector's own
             // achromatic flux.
             //
@@ -1340,7 +1339,7 @@ fn take_the_burst_shape(maps: &mut [FramePhotometry], participates: &[bool]) {
         let fields: Vec<_> = maps
             .iter()
             .zip(&clear)
-            .filter(|(_, &p)| p)
+            .filter(|&(_, &p)| p)
             .map(|(m, _)| {
                 m.map.field[c]
                     .iter()

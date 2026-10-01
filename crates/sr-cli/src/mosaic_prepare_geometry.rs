@@ -205,15 +205,14 @@ fn reciprocal(
 
 fn seed_scales(a: &Catalog, b: &Catalog) -> Vec<f64> {
     let mut scales = vec![1.];
-    if let (Some(x), Some(y)) = (a.pixel_scale, b.pixel_scale) {
-        if x.is_finite() && y.is_finite() && x > 0. && y > 0. {
+    if let (Some(x), Some(y)) = (a.pixel_scale, b.pixel_scale)
+        && x.is_finite() && y.is_finite() && x > 0. && y > 0. {
             return if (y / x - 1.).abs() < 1e-6 {
                 vec![1.]
             } else {
                 vec![y / x, 1.]
             };
         }
-    }
     // Overlapping +/-10% windows cover 1:4 through 4:1 when headers are absent
     // missing. This search changes no ordinary burst matcher defaults.
     for i in 1..=9 {
@@ -464,14 +463,13 @@ pub fn prepare(catalogs: &[Catalog], mut progress: impl FnMut(&str)) -> Result<G
             let p = cache
                 .entry((r, i))
                 .or_insert_with(|| pair(&catalogs[r], &catalogs[i]));
-            if let Some(p) = p {
-                if same_panel(&catalogs[r], &catalogs[i], p) {
+            if let Some(p) = p
+                && same_panel(&catalogs[r], &catalogs[i], p) {
                     groups[i] = g;
                     member_pairs[i] = Some(p.clone());
                     assigned = true;
                     break;
                 }
-            }
         }
         if !assigned {
             groups[i] = representatives.len();

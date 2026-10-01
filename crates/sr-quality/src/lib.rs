@@ -265,7 +265,7 @@ mod tests {
         let mut p = Plane::new(w, h);
         for y in 0..h {
             for x in 0..w {
-                let v = if ((x / period) + (y / period)) % 2 == 0 { 0.7 } else { 0.3 };
+                let v = if ((x / period) + (y / period)).is_multiple_of(2) { 0.7 } else { 0.3 };
                 p.data[y * w + x] = v;
             }
         }

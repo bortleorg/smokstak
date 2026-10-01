@@ -56,11 +56,10 @@ impl BandCache {
     }
 
     fn evict(&mut self) {
-        if let Some(key) = self.order.pop_front() {
-            if let Some(band) = self.bands.remove(&key) {
+        if let Some(key) = self.order.pop_front()
+            && let Some(band) = self.bands.remove(&key) {
                 self.bytes -= band.capacity() * std::mem::size_of::<f32>();
             }
-        }
     }
 }
 

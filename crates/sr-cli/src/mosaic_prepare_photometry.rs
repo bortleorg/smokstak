@@ -122,7 +122,7 @@ fn median(values: &mut [f64]) -> Option<f64> {
     }
     values.sort_unstable_by(f64::total_cmp);
     let n = values.len();
-    Some(if n % 2 == 0 {
+    Some(if n.is_multiple_of(2) {
         (values[n / 2 - 1] + values[n / 2]) * 0.5
     } else {
         values[n / 2]

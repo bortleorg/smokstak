@@ -298,11 +298,10 @@ pub fn estimate_burst(frames: &[RawFrame]) -> (NoiseModel, String) {
 /// The caller supplies at least one frame, in the same order as reconstruction.
 pub fn estimate_burst_refs(frames: &[&RawFrame]) -> (NoiseModel, String) {
     let selected = &frames[..frames.len().min(8)];
-    if let Some(m) = estimate_temporal(selected, 8, 4) {
-        if m.alpha.is_finite() && m.beta.is_finite() && m.alpha >= 0.0 {
+    if let Some(m) = estimate_temporal(selected, 8, 4)
+        && m.alpha.is_finite() && m.beta.is_finite() && m.alpha >= 0.0 {
             return (m, "temporal frame differences".to_string());
         }
-    }
     if let Some(m) = estimate_spatial(frames[0], 8) {
         return (m, "single-frame local statistics".to_string());
     }

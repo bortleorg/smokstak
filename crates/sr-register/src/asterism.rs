@@ -483,7 +483,7 @@ mod tests {
             }).collect();
         assert_eq!(stars.len(), 800);
         let reference = &stars[..200];
-        for (target, rotation) in stars[200..].chunks_exact(200).zip([-179.64f32, -8.82, -9.02]) {
+        for (target, rotation) in stars[200..].as_chunks::<200>().0.iter().zip([-179.64f32, -8.82, -9.02]) {
             let m = match_stars(reference, target).expect("valid rotated exposure must be placed");
             assert!(m.pairs >= MIN_PAIRS);
             assert!(m.residual < PAIR_TOLERANCE);

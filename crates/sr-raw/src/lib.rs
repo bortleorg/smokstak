@@ -231,11 +231,10 @@ fn read_file_list(list: &Path, pattern: Option<&str>) -> Result<Vec<PathBuf>> {
             return Err(SrError::Input(format!("{}: {} is not a file", where_, p.display())));
         }
         let ext = extension_of(&p);
-        if let Some(w) = &want {
-            if !w.is_empty() && &ext != w {
+        if let Some(w) = &want
+            && !w.is_empty() && &ext != w {
                 continue;
             }
-        }
         if format_of(&p).is_none() {
             return Err(SrError::Input(format!(
                 "{}: {} is not a format we read; recognised extensions are {}, {} and {}",

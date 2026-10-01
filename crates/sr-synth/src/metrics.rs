@@ -98,7 +98,7 @@ pub fn compare_excluding(
             }
         }
     }
-    let kept: Vec<usize> = keep.iter().enumerate().filter(|(_, &k)| k).map(|(i, _)| i).collect();
+    let kept: Vec<usize> = keep.iter().enumerate().filter(|&(_, &k)| k).map(|(i, _)| i).collect();
     assert!(kept.len() > 64, "the exclusions leave nothing to compare");
 
     let mut psnr_db = [0.0f32; 3];

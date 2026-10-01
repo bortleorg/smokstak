@@ -338,8 +338,8 @@ impl Job {
         // A palette being tried on for size is not a result. Its preview goes
         // to the chooser and its full-size file is a means to that preview,
         // which nobody asked for and which is deleted once it has been made.
-        if let Some(dir) = self.palette_dir.clone() {
-            if p.parent() == Some(dir.as_path()) {
+        if let Some(dir) = self.palette_dir.clone()
+            && p.parent() == Some(dir.as_path()) {
                 let stem = p.file_stem().and_then(|s| s.to_str()).unwrap_or_default();
                 let id = stem.trim_end_matches(".preview").to_string();
                 if p.extension().and_then(|e| e.to_str()) == Some("png") {
@@ -359,19 +359,17 @@ impl Job {
                 }
                 return;
             }
-        }
 
         // A colour image is not a master. Put among them, it would be offered
         // as a channel of the next colour image.
-        if self.progress.extends && self.progress.kind == "composite" {
-            if let Some(c) = self.progress.colour.last_mut() {
+        if self.progress.extends && self.progress.kind == "composite"
+            && let Some(c) = self.progress.colour.last_mut() {
                 if !c.files.contains(&path) {
                     c.files.push(path.clone());
                 }
                 self.served.insert(std::fs::canonicalize(&p).unwrap_or(p));
                 return;
             }
-        }
 
         if !self.progress.outputs.contains(&path) {
             self.progress.outputs.push(path.clone());
@@ -1060,11 +1058,10 @@ fn inspect(body: &str, exe: &Path) -> Result<String> {
 
     let mut fields: HashMap<String, String> = HashMap::new();
     for line in text.lines() {
-        if let Some((k, v)) = line.split_once(':') {
-            if !k.starts_with(' ') && !k.contains('[') {
+        if let Some((k, v)) = line.split_once(':')
+            && !k.starts_with(' ') && !k.contains('[') {
                 fields.insert(k.trim().to_string(), v.trim().to_string());
             }
-        }
     }
     let read_count = text
         .lines()
@@ -1245,14 +1242,13 @@ fn results_in_the_way(output: &Path, split_by_filter: bool) -> Vec<PathBuf> {
         // between the stem and the extension has to be a filter and nothing
         // else — `m45_H.linear.tif` leaves `H.linear`, which is the linear copy
         // of one, not a second master.
-        if let Some(rest) = name.strip_prefix(&format!("{stem}_")) {
-            if rest
+        if let Some(rest) = name.strip_prefix(&format!("{stem}_"))
+            && rest
                 .strip_suffix(&format!(".{ext}"))
                 .is_some_and(|f| !f.is_empty() && !f.contains('.'))
             {
                 found.push(e.path());
             }
-        }
     }
     found.sort();
     found
@@ -1726,7 +1722,7 @@ fn survey(body: &str, exe: &Path, job: &Arc<Mutex<Job>>) -> Result<String> {
     let req: SurveyRequest = serde_json::from_str(body)?;
     let input = req.input.trim().to_string();
     anyhow::ensure!(!input.is_empty(), "nothing to measure");
-    let gen = {
+    let generation = {
         let mut j = job.lock().unwrap();
         if j.progress.running {
             return Err(anyhow!("a run is going; measure the frames once it has finished"));
@@ -1744,7 +1740,7 @@ fn survey(body: &str, exe: &Path, job: &Arc<Mutex<Job>>) -> Result<String> {
         j.survey_gen
     };
     let out = std::env::temp_dir()
-        .join(format!("smokstak-survey-{}-{gen}.json", std::process::id()));
+        .join(format!("smokstak-survey-{}-{generation}.json", std::process::id()));
     let spawned = Command::new(exe)
         .arg("survey")
         .arg(&input)
@@ -1773,7 +1769,7 @@ fn survey(body: &str, exe: &Path, job: &Arc<Mutex<Job>>) -> Result<String> {
         std::thread::spawn(move || {
             for line in BufReader::new(stdout).lines().map_while(Result::ok) {
                 let mut j = job.lock().unwrap();
-                if j.survey_gen != gen {
+                if j.survey_gen != generation {
                     return;
                 }
                 if let Some(n) = line.strip_prefix("surveying ").and_then(|r| r.strip_suffix(" frames")) {
@@ -1797,7 +1793,7 @@ fn survey(body: &str, exe: &Path, job: &Arc<Mutex<Job>>) -> Result<String> {
         let status = loop {
             let done = {
                 let mut j = job.lock().unwrap();
-                if j.survey_gen != gen {
+                if j.survey_gen != generation {
                     return;
                 }
                 match j.survey_child.as_mut() {
@@ -1814,7 +1810,7 @@ fn survey(body: &str, exe: &Path, job: &Arc<Mutex<Job>>) -> Result<String> {
         let _ = counter.join();
         let said = complaints.join().unwrap_or_default();
         let mut j = job.lock().unwrap();
-        if j.survey_gen != gen {
+        if j.survey_gen != generation {
             return;
         }
         j.survey_child = None;
@@ -2184,11 +2180,10 @@ fn spawn_next(planned: Planned, job: &Arc<Mutex<Job>>) -> Result<String> {
                 // made from it afterwards has its own "Wrote" and would replace
                 // them.
                 if j.progress.extends {
-                    if let Some(rest) = line.strip_prefix("Palette: ") {
-                        if let Some(c) = j.progress.colour.last_mut() {
+                    if let Some(rest) = line.strip_prefix("Palette: ")
+                        && let Some(c) = j.progress.colour.last_mut() {
                             c.mapping = rest.trim().to_string();
                         }
-                    }
                 } else if let Some((label, text)) = finding_of(&line) {
                     let group = j.progress.group.clone();
                     j.progress.findings.push(Finding { group, label: label.into(), text });

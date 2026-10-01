@@ -483,7 +483,7 @@ pub fn register_burst_seeded(
         })
         .inspect(|_| {
             let count = completed.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
-            if proxies.len() >= 32 && (count == 1 || count % 25 == 0 || count == proxies.len()) {
+            if proxies.len() >= 32 && (count == 1 || count.is_multiple_of(25) || count == proxies.len()) {
                 log::info!("global registration: measured {count}/{} frames in {:.1?}",
                     proxies.len(), started.elapsed());
             }

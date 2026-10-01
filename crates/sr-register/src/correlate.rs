@@ -58,7 +58,7 @@ pub struct Correlator {
 
 impl Correlator {
     pub fn new(n: usize) -> Self {
-        assert!(n >= 8 && n % 2 == 0, "patch size must be even and >= 8");
+        assert!(n >= 8 && n.is_multiple_of(2), "patch size must be even and >= 8");
         let mut planner = FftPlanner::<f32>::new();
         let fwd = planner.plan_fft_forward(n);
         let inv = planner.plan_fft_inverse(n);

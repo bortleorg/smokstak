@@ -427,8 +427,8 @@ fn read_output(path: &Path, width: usize, height: usize) -> Vec<f32> {
     let bytes = fs::read(path).unwrap();
     let (_, offset) = sr_raw::fits::read_header(path).unwrap();
     let values: Vec<_> = bytes[offset as usize..offset as usize + width * height * 4]
-        .chunks_exact(4)
-        .map(|b| f32::from_be_bytes(b.try_into().unwrap()))
+        .as_chunks::<4>().0.iter()
+        .map(|b| f32::from_be_bytes(*b))
         .collect();
     values
         .chunks_exact(width)

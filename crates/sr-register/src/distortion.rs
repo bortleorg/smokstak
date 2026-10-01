@@ -298,14 +298,13 @@ pub fn refine_stars(
             let reverse = Grid::new(&mapped, 6.);
             let mut pairs = Vec::new();
             for s in &mapped {
-                if let Some(r) = grid.nearest(ref_stars, s.x, s.y) {
-                    if reverse
+                if let Some(r) = grid.nearest(ref_stars, s.x, s.y)
+                    && reverse
                         .nearest(&mapped, r.x, r.y)
                         .is_some_and(|back| std::ptr::eq(back, s))
                     {
                         pairs.push(([s.x as f64, s.y as f64], [r.x as f64, r.y as f64]));
                     }
-                }
             }
             log::debug!(
                 "frame {i}: testing stellar distortion on {} reciprocal pairs",

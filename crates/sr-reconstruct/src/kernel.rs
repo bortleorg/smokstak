@@ -111,11 +111,10 @@ impl KernelField {
         guide: &Plane<f32>, noise_sigma: f32, frames: usize,
         pattern: CfaPattern, cfg: &KernelConfig,
     ) -> Self {
-        if pattern.is_mono() {
-            if let Some(variance) = cfg.mono_kernel_variance {
+        if pattern.is_mono()
+            && let Some(variance) = cfg.mono_kernel_variance {
                 return Self::isotropic(guide.width, guide.height, variance.max(MIN_K_DETAIL), cfg.radius, 2);
             }
-        }
         Self::from_reference(guide, noise_sigma, frames, cfg)
     }
 

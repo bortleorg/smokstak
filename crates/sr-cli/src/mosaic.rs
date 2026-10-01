@@ -255,7 +255,7 @@ fn validate_geometry(plan: &Plan, tile: usize, memory_mb: usize) -> Result<()> {
     ensure!(plan.version == 1, "unsupported mosaic plan version");
     ensure!(!plan.filter.trim().is_empty(), "filter must be explicit");
     ensure!(
-        (64..=1024).contains(&tile) && tile % 2 == 0,
+        (64..=1024).contains(&tile) && tile.is_multiple_of(2),
         "tile must be even and in 64..1024"
     );
     ensure!(
@@ -785,7 +785,7 @@ fn build_staged(plan: &Plan, out: &Path, tile: usize, memory_mb: usize) -> Resul
                 }
             }
             done += 1;
-            if done == 1 || done % 25 == 0 || done == total {
+            if done == 1 || done.is_multiple_of(25) || done == total {
                 println!(
                     "mosaic tile {done}/{total}, {:.1}s",
                     started.elapsed().as_secs_f64()

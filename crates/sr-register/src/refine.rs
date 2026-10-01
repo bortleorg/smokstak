@@ -216,11 +216,10 @@ fn solve_affine(
     let mut aty = [0.0f64; 3];
     let mut n = 0usize;
     for (k, &(x, y)) in src.iter().enumerate() {
-        if let Some(keep) = keep {
-            if !keep[k] {
+        if let Some(keep) = keep
+            && !keep[k] {
                 continue;
             }
-        }
         n += 1;
         let row = [x as f64, y as f64, 1.0];
         for i in 0..3 {

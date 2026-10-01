@@ -987,14 +987,13 @@ pub fn register_burst(
         let mut vetoed = 0;
         for (i,warp) in warps.iter_mut().enumerate() {
             if stellar_fields[i] { continue; }
-            if let Some(field) = &warp.local {
-                if sr_register::distortion::validates_correlation(
+            if let Some(field) = &warp.local
+                && sr_register::distortion::validates_correlation(
                     &star_lists[choice.index],&star_lists[i],&warp.global,field,w*2,h*2,
                 ) == Some(false) {
                     warp.local = None;
                     vetoed += 1;
                 }
-            }
         }
         if vetoed > 0 { log::info!("stellar validation rejected {vetoed} correlation fields"); }
     }
@@ -1965,11 +1964,10 @@ fn frame_weights(burst: &LoadedBurst, reg: &RegisteredBurst) -> Vec<f32> {
     // A frame named only to fix the grid is not part of this batch's data. It
     // would otherwise be counted once per batch, which across twenty batches
     // is twenty copies of one exposure.
-    if burst.reference_is_extra {
-        if let Some(i) = burst.forced_reference {
+    if burst.reference_is_extra
+        && let Some(i) = burst.forced_reference {
             w[i] = 0.0;
         }
-    }
     w
 }
 
@@ -2532,11 +2530,10 @@ fn write_stack_outputs(
     product: &ReconstructionProduct,
     finished: &FinishedProduct,
 ) -> Result<Vec<String>> {
-    if let Some(parent) = out.output.parent() {
-        if !parent.as_os_str().is_empty() {
+    if let Some(parent) = out.output.parent()
+        && !parent.as_os_str().is_empty() {
             std::fs::create_dir_all(parent)?;
         }
-    }
     let mut output_files = Vec::new();
 
     if let (Some(m), Some(dir)) = (&finished.background, out.diagnostics) {
@@ -3265,11 +3262,10 @@ fn write_preview_of(
     display_referred: bool,
 ) -> Result<()> {
     if display_referred {
-        if let Some(parent) = path.parent() {
-            if !parent.as_os_str().is_empty() {
+        if let Some(parent) = path.parent()
+            && !parent.as_os_str().is_empty() {
                 std::fs::create_dir_all(parent)?;
             }
-        }
         let view: Vec<Plane<f32>> = linear.iter().take(channels).cloned().collect();
         sr_output::write_preview_png(path, &view, max_edge)?;
         println!(
@@ -3289,11 +3285,10 @@ fn write_preview_of(
     // all three.
     let white = sr_color::stretch::ceiling_from_data(linear, channels);
     let (view, how) = sr_color::stretch::render(linear, channels, &white);
-    if let Some(parent) = path.parent() {
-        if !parent.as_os_str().is_empty() {
+    if let Some(parent) = path.parent()
+        && !parent.as_os_str().is_empty() {
             std::fs::create_dir_all(parent)?;
         }
-    }
     sr_output::write_preview_png(path, &view, max_edge)?;
     match how {
         sr_color::stretch::Rendering::Stretched { per_channel } => {
@@ -3332,13 +3327,12 @@ fn exclude_grid_reference(groups: &mut Vec<FilterGroup>, grid: usize, qualities:
     for group in groups.iter_mut() {
         group.active[grid] = false;
         group.members.retain(|&i| i != grid);
-        if group.reference == grid {
-            if let Some(&reference) = group.members.iter().max_by(|&&a, &&b| {
+        if group.reference == grid
+            && let Some(&reference) = group.members.iter().max_by(|&&a, &&b| {
                 qualities[a].composite().total_cmp(&qualities[b].composite())
             }) {
                 group.reference = reference;
             }
-        }
     }
     // --split-by-filter must not emit an empty master for the external filter.
     groups.retain(|group| !group.members.is_empty());
@@ -3596,11 +3590,10 @@ Per-channel stretch (display transform, before combining):");
         );
     }
     let rgb = rgb;
-    if let Some(parent) = output.parent() {
-        if !parent.as_os_str().is_empty() {
+    if let Some(parent) = output.parent()
+        && !parent.as_os_str().is_empty() {
             std::fs::create_dir_all(parent)?;
         }
-    }
     // A stretched channel is already display-referred; putting it through the
     // transfer curve as well would apply two display transforms.
     if stretch_channels {
@@ -3763,11 +3756,10 @@ pub fn combine(
     let gain = sr_color::normalise_exposure(&mut rgb, 0.9995, 1.0);
     log::info!("exposure normalisation gain {gain:.3}");
 
-    if let Some(parent) = output.parent() {
-        if !parent.as_os_str().is_empty() {
+    if let Some(parent) = output.parent()
+        && !parent.as_os_str().is_empty() {
             std::fs::create_dir_all(parent)?;
         }
-    }
     sr_output::write_product16(output, &sr_color::to_rendered(&rgb), channels)?;
     println!("Wrote {} ({w} x {h})", output.display());
     if let Some(p) = preview {

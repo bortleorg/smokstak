@@ -77,14 +77,13 @@ impl FitsWindowReader {
             3 if integer("NAXIS3")? == 1 => {}
             _ => return Err(invalid("requires a mono 2-D image")),
         }
-        if let Some(pattern) = hdr.any_text(&["BAYERPAT", "BAYPAT", "COLORTYP"]) {
-            if !matches!(
+        if let Some(pattern) = hdr.any_text(&["BAYERPAT", "BAYPAT", "COLORTYP"])
+            && !matches!(
                 pattern.trim().to_ascii_uppercase().as_str(),
                 "" | "MONO" | "NONE"
             ) {
                 return Err(invalid("Bayer and color images are unsupported"));
             }
-        }
         let width = usize::try_from(integer("NAXIS1")?).map_err(|_| invalid("invalid NAXIS1"))?;
         let height = usize::try_from(integer("NAXIS2")?).map_err(|_| invalid("invalid NAXIS2"))?;
         if width == 0 || height == 0 {
@@ -147,7 +146,7 @@ impl FitsWindowReader {
                     let count = ((width & !1) - x).min(scratch.len() / 2);
                     reader.seek_pixel(x, y)?;
                     reader.file.read_exact(&mut scratch[..count * 2])?;
-                    for c in scratch[..count * 2].chunks_exact(2) {
+                    for c in scratch[..count * 2].as_chunks::<2>().0 {
                         bits |= reader.integer_sample(c);
                     }
                     if bits & 1 != 0 {

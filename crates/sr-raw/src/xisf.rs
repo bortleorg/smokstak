@@ -374,8 +374,8 @@ fn parse_header(xml: &str, file: &str) -> Result<Image> {
             Event::Eof => break,
             Event::End(e) => {
                 let name = local_name(&e);
-                if name == "Property" {
-                    if let (Some((id, location)), Some(img)) = (property.take(), image.as_mut()) {
+                if name == "Property"
+                    && let (Some((id, location)), Some(img)) = (property.take(), image.as_mut()) {
                         let data = match location.strip_prefix("inline:") {
                             Some(encoding) => decode_text_block(encoding, &text),
                             None => Vec::new(),
@@ -383,14 +383,12 @@ fn parse_header(xml: &str, file: &str) -> Result<Image> {
                         img.properties
                             .push((id, Property { value: text.trim().to_string(), data }));
                     }
-                }
                 if in_image_data && (name == "Image" || name == "Data") {
                     in_image_data = false;
-                    if let Some(img) = image.as_mut() {
-                        if let Location::Inline { encoding } = &img.location {
+                    if let Some(img) = image.as_mut()
+                        && let Location::Inline { encoding } = &img.location {
                             img.inline = decode_text_block(encoding, &image_text);
                         }
-                    }
                 }
                 if name == "Image" && image.is_some() {
                     done = true;
@@ -497,19 +495,16 @@ impl PartialImage {
     fn finish(mut self) -> Result<Image> {
         // Native XISF timestamps join preserved FITS cards in the same metadata
         // path; an explicit DATE-OBS always wins.
-        if self.header.get("DATE-OBS").is_none() {
-            if let Some((_, p)) = self
+        if self.header.get("DATE-OBS").is_none()
+            && let Some((_, p)) = self
                 .properties
                 .iter()
                 .find(|(id, _)| id == "Observation:Time:Start")
-            {
-                if !p.value.trim().is_empty() {
+                && !p.value.trim().is_empty() {
                     self.header
                         .cards
                         .push(("DATE-OBS".into(), format!("'{}'", p.value.trim())));
                 }
-            }
-        }
         // The FITS cards first: a file converted from FITS keeps a solve that
         // is already in this reader's terms. The XISF astrometric properties
         // are the fallback, for a solve written only there.
@@ -568,7 +563,7 @@ fn astrometric_solution(properties: &[(String, Property)]) -> Option<Wcs> {
 /// A property's bytes read as little-endian doubles.
 fn doubles(p: &Property) -> Vec<f64> {
     p.data
-        .chunks_exact(8)
+        .as_chunks::<8>().0.iter()
         .map(|c| f64::from_le_bytes([c[0], c[1], c[2], c[3], c[4], c[5], c[6], c[7]]))
         .collect()
 }
@@ -765,7 +760,7 @@ fn decode_text_block(encoding: &str, text: &str) -> Vec<u8> {
         "hex" => {
             let clean: Vec<u8> = text.bytes().filter(|b| !b.is_ascii_whitespace()).collect();
             clean
-                .chunks_exact(2)
+                .as_chunks::<2>().0.iter()
                 .filter_map(|c| u8::from_str_radix(std::str::from_utf8(c).ok()?, 16).ok())
                 .collect()
         }

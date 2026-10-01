@@ -593,8 +593,8 @@ fn read_samples(
     // The common case by a wide margin: 16-bit signed shifted into unsigned by
     // BZERO, which is exactly a 16-bit unsigned image and needs no arithmetic.
     if bitpix == 16 && bscale == 1.0 && bzero == 32768.0 {
-        for (o, c) in out.iter_mut().zip(bytes.chunks_exact(2)) {
-            *o = (i16::from_be_bytes([c[0], c[1]]) as i32 + 32768) as u16;
+        for (o, c) in out.iter_mut().zip(bytes.as_chunks::<2>().0) {
+            *o = (i16::from_be_bytes(*c) as i32 + 32768) as u16;
         }
         return Ok(out);
     }

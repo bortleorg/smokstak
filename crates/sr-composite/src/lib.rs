@@ -144,7 +144,7 @@ fn fit_line(pairs: &[(f32, f32)], mode: Fit) -> (f32, f32, usize) {
             let d: Vec<f32> = pairs
                 .iter()
                 .zip(&w)
-                .filter(|(_, &wi)| wi > 0.0)
+                .filter(|&(_, &wi)| wi > 0.0)
                 .map(|(p, _)| p.1 - p.0)
                 .collect();
             if d.is_empty() {

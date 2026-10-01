@@ -109,9 +109,8 @@ fn published(j: &mut Job, directory: &Path) {
 
 pub(super) fn record_outputs(j: &mut Job, line: &str, kind: &str) {
     if kind == "project" {
-        if let Some(path) = line.strip_prefix("Frame review: ") {
-            if let Some(directory) = Path::new(path.trim()).parent() { published(j, directory); }
-        }
+        if let Some(path) = line.strip_prefix("Frame review: ")
+            && let Some(directory) = Path::new(path.trim()).parent() { published(j, directory); }
         return;
     }
     if let Some(path) = announced_path(line) { j.announce(path.into()); }
@@ -128,17 +127,15 @@ pub(super) fn record_outputs(j: &mut Job, line: &str, kind: &str) {
 }
 
 pub(super) fn completed(j: &mut Job, kind: &str, args: &[String]) {
-    if kind == "project" && args.get(1).map(String::as_str) == Some("status") {
-        if let Some(directory) = args.get(2) {
-            if let Ok(entries) = std::fs::read_dir(Path::new(directory).join("runs")) {
+    if kind == "project" && args.get(1).map(String::as_str) == Some("status")
+        && let Some(directory) = args.get(2)
+            && let Ok(entries) = std::fs::read_dir(Path::new(directory).join("runs")) {
                 let mut runs: Vec<_> = entries.flatten().map(|e|e.path())
                     .filter(|p| p.file_name().unwrap_or_default().to_string_lossy().chars().all(|c|c.is_ascii_digit())
                         && p.join("project-build.json").is_file()).collect();
                 runs.sort();
                 if let Some(run) = runs.last() { published(j, run); }
             }
-        }
-    }
 }
 
 fn report_to_open(body: &str, job: &Arc<Mutex<Job>>) -> Result<PathBuf> {

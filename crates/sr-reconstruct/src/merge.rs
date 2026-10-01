@@ -206,17 +206,16 @@ pub fn reconstruct_mono_tile_feathered(
         if warp.global.m.iter().any(|v| !v.is_finite()) || warp.global.inverse().is_none() {
             return Err(invalid("invalid mono tile global warp"));
         }
-        if let Some(local) = &warp.local {
-            if local.grid_w == 0 || local.grid_h == 0
+        if let Some(local) = &warp.local
+            && (local.grid_w == 0 || local.grid_h == 0
                 || local.grid_w.checked_mul(local.grid_h) != Some(local.u.len())
                 || local.conf.len() != local.u.len() || !local.spacing.is_finite() || local.spacing <= 0.0
                 || !local.origin.0.is_finite() || !local.origin.1.is_finite()
                 || local.u.iter().flatten().any(|v| !v.is_finite())
-                || local.conf.iter().any(|v| !v.is_finite() || !(0.0..=1.0).contains(v))
+                || local.conf.iter().any(|v| !v.is_finite() || !(0.0..=1.0).contains(v)))
             {
                 return Err(invalid("invalid mono tile local warp"));
             }
-        }
     }
     let geom = Geometry { scale: cfg.scale,
         origin: (origin.0 * cfg.scale, origin.1 * cfg.scale),
@@ -286,17 +285,15 @@ pub fn reconstruct_mono_tile_feathered(
         if accum.mom[0].is_empty() { continue; }
         let m = &accum.mom[0][p];
         if m.clipped {
-            if cfg.kernel.fit_clipped == Some(true) {
-                if let Some(v) = bounded_clipped_plane(std::slice::from_ref(m)) { *value = v[0]; }
-            }
+            if cfg.kernel.fit_clipped == Some(true)
+                && let Some(v) = bounded_clipped_plane(std::slice::from_ref(m)) { *value = v[0]; }
         } else if let Some(v) = plane_fit(m) {
             *value = v;
-            if !accum.curvature[0].is_empty() {
-                if let Some((delta, blend)) = accum.curvature[0][p].correction() {
+            if !accum.curvature[0].is_empty()
+                && let Some((delta, blend)) = accum.curvature[0][p].correction() {
                     let proposed = v + blend * delta;
                     if proposed.is_finite() && proposed >= 0.0 && blend > 0.0 { *value = proposed; }
                 }
-            }
         }
     }
     if values.iter().zip(&accum.den[0]).any(|(v, &w)| w > 0.0 && !v.is_finite()) {
@@ -1455,8 +1452,8 @@ fn reconstruct_impl(
                         count[c].data[dst] = tile.cnt[c][src];
                         values[c] = if d > 0. { tile.num[c][src] / d } else { 0. };
                         // A clipped footprint keeps the same mean estimator in every colour.
-                        if !tile.mom[c].is_empty() && d > 0. && !clipped {
-                            if let Some(v) = plane_fit(&tile.mom[c][src]) {
+                        if !tile.mom[c].is_empty() && d > 0. && !clipped
+                            && let Some(v) = plane_fit(&tile.mom[c][src]) {
                                 fitted += 1;
                                 values[c] = v;
                                 if !tile.curvature[c].is_empty() {
@@ -1465,7 +1462,6 @@ fn reconstruct_impl(
                                     } else { tile.curvature[c][src].correction() };
                                 }
                             }
-                        }
                     }
                     if clipped && fit_clipped {
                         let moments: [Moments; 3] = std::array::from_fn(|c|
@@ -1474,12 +1470,11 @@ fn reconstruct_impl(
                             values = v;
                         }
                     }
-                    if clipped {
-                        if let Some(writer)=clipped_trace.as_mut() {
+                    if clipped
+                        && let Some(writer)=clipped_trace.as_mut() {
                             let moments:Vec<_>=(0..channels).map(|c|tile.mom[c][src]).collect();
                             write_clipped_trace(*writer,tile.x0+x,tile.y0+y,&moments,fit_clipped,values)?;
                         }
-                    }
                     // All colours need adequate support. A shared blend prevents
                     // fitting curvature in green while leaving sparse R/B on a plane.
                     // The corrections themselves remain independent channel profiles.

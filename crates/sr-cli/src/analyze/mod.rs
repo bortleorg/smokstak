@@ -406,7 +406,7 @@ fn measure(
     let background_median = (!values.is_empty()).then(|| sr_core::math::median(&values));
     let background_mad_sigma = (!values.is_empty()).then(|| sr_core::math::mad_sigma(&values));
     let mut sigmas: Vec<_> = raw
-        .chunks_exact(PIXELS)
+        .as_chunks::<PIXELS>().0.iter()
         .zip(&valid_tiles)
         .filter(|(_, valid)| **valid)
         .map(|(v, _)| sr_noise::spatial::detrended_tile_sigma(v, TILE))

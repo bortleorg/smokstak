@@ -77,13 +77,11 @@ pub(super) fn preparation_progress(p: &mut Progress, line: &str) {
         (n>0 && n<=1_000_000).then_some(n)
     }
     let line=line.trim();
-    if p.stage==0 {
-        if let Some(rest)=line.strip_prefix("mosaic prepare catalog ") {
-            if let Some((done,total))=rest.split_once(':').and_then(|(numbers,_)|counts(numbers,"/")) {
+    if p.stage==0
+        && let Some(rest)=line.strip_prefix("mosaic prepare catalog ")
+            && let Some((done,total))=rest.split_once(':').and_then(|(numbers,_)|counts(numbers,"/")) {
                 p.preparation_detail=Some(format!("Detecting stars · frame {done} of {total}"));
             }
-        }
-    }
     if let Some(detail)=line.strip_prefix("mosaic prepare geometry:") {
         if p.stage>1 { return; }
         p.stage=1;
@@ -203,15 +201,12 @@ pub(super) fn start(body: &str, exe: &Path, job: &Arc<Mutex<Job>>) -> Result<Str
 }
 
 pub(super) fn progress(p: &mut Progress, line: &str) {
-    if let Some(rest) = line.split("mosaic tile ").nth(1) {
-        if let Some((done,total)) = rest.split(',').next().unwrap_or("").split_once('/') {
-            if let (Ok(done),Ok(total)) = (done.parse::<usize>(),total.parse::<usize>()) {
-                if total > 0 && done <= total && done >= p.tiles_done.unwrap_or(0) {
+    if let Some(rest) = line.split("mosaic tile ").nth(1)
+        && let Some((done,total)) = rest.split(',').next().unwrap_or("").split_once('/')
+            && let (Ok(done),Ok(total)) = (done.parse::<usize>(),total.parse::<usize>())
+                && total > 0 && done <= total && done >= p.tiles_done.unwrap_or(0) {
                     p.stage = p.stage.max(1); p.tiles_done = Some(done); p.tiles_total = Some(total);
                 }
-            }
-        }
-    }
     // Publication is confirmed by successful process completion, never a log line.
 }
 

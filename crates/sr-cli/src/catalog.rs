@@ -379,11 +379,10 @@ static CAPABILITIES: Mutex<Option<Capabilities>> = Mutex::new(None);
 fn capabilities(s: &Settings, fresh: bool) -> Option<Capabilities> {
     let base = base_of(s).ok()?;
     let mut held = CAPABILITIES.lock().unwrap_or_else(|e| e.into_inner());
-    if !fresh {
-        if let Some(c) = held.as_ref().filter(|c| c.base == base) {
+    if !fresh
+        && let Some(c) = held.as_ref().filter(|c| c.base == base) {
             return Some(c.clone());
         }
-    }
     match get(s, &format!("{base}/openapi.json")).and_then(answer) {
         Ok(spec) => {
             let c = capabilities_of(&spec, &base);

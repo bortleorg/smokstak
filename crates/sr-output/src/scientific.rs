@@ -152,7 +152,7 @@ impl<W: Write + Seek> MonoFitsTileWriter<W> {
             "FITS tile origin out of bounds"
         );
         ensure!(
-            x % self.tile == 0 && y % self.tile == 0,
+            x.is_multiple_of(self.tile) && y.is_multiple_of(self.tile),
             "FITS tile origin is not on the tile grid"
         );
         ensure!(
@@ -465,12 +465,12 @@ mod tests {
                 .flat_map(|p| p.data.iter().copied())
                 .collect();
             let decoded: Vec<_> = bytes[2880..2880 + expected.len() * 4]
-                .chunks_exact(4)
-                .map(|b| f32::from_be_bytes(b.try_into().unwrap()))
+                .as_chunks::<4>().0.iter()
+                .map(|b| f32::from_be_bytes(*b))
                 .collect();
             let fits_expected: Vec<_> = rgb[..channels]
                 .iter()
-                .flat_map(|p| p.data.chunks_exact(16).rev().flatten().copied())
+                .flat_map(|p| p.data.as_chunks::<16>().0.iter().rev().flatten().copied())
                 .collect();
             assert_eq!(decoded, fits_expected);
             let (header, offset) = sr_raw::fits::read_header(&fit).unwrap();
@@ -481,8 +481,8 @@ mod tests {
             write_xisf(&xisf, &rgb, channels).unwrap();
             let payload = std::fs::read(&xisf).unwrap();
             let decoded: Vec<_> = payload[4096..]
-                .chunks_exact(4)
-                .map(|b| f32::from_le_bytes(b.try_into().unwrap()))
+                .as_chunks::<4>().0.iter()
+                .map(|b| f32::from_le_bytes(*b))
                 .collect();
             assert_eq!(decoded, expected, "export must not clip scientific values");
             // The raw ingestion reader normalizes/clamps to nominal bounds;

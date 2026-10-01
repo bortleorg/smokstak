@@ -309,12 +309,11 @@ fn apply_relinks(
     let mut changed = 0;
     for (id, path) in replacements {
         let mut moved = false;
-        if let Some(frame) = revised.frames.iter_mut().find(|f| &f.id == id) {
-            if frame.path != *path {
+        if let Some(frame) = revised.frames.iter_mut().find(|f| &f.id == id)
+            && frame.path != *path {
                 frame.path = path.clone();
                 moved = true;
             }
-        }
         if revised.reference.id == *id && revised.reference.path != *path {
             revised.reference.path = path.clone();
             moved = true;
@@ -386,15 +385,14 @@ fn revisions(directory: &Path) -> Result<Vec<(u64, PathBuf)>> {
         fs::read_dir(directory.join("revisions")).context("project has no revisions directory")?
     {
         let path = entry?.path();
-        if path.extension().is_some_and(|e| e == "json") {
-            if let Some(n) = path
+        if path.extension().is_some_and(|e| e == "json")
+            && let Some(n) = path
                 .file_stem()
                 .and_then(|s| s.to_str())
                 .and_then(|s| s.parse::<u64>().ok())
             {
                 paths.push((n, path));
             }
-        }
     }
     paths.sort_by_key(|p| p.0);
     Ok(paths)

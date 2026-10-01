@@ -43,7 +43,7 @@ fn fits(path: &Path, index: usize, filter: &str, exposure: Option<u32>) {
         header.push_str(&format!("{:<8}= {:<70}", "EXPTIME", e));
     }
     header.push_str(&format!("{:<80}", "END"));
-    while header.len() % 2880 != 0 {
+    while !header.len().is_multiple_of(2880) {
         header.push(' ');
     }
     let mut bytes = header.into_bytes();
@@ -75,7 +75,7 @@ fn fits(path: &Path, index: usize, filter: &str, exposure: Option<u32>) {
             bytes.extend((value + noise * 0.003).to_be_bytes());
         }
     }
-    while bytes.len() % 2880 != 0 {
+    while !bytes.len().is_multiple_of(2880) {
         bytes.push(0);
     }
     fs::write(path, bytes).unwrap();

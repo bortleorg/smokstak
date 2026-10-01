@@ -200,8 +200,8 @@ fn consensus_guide(
                         // disagrees most, so a frame is not half in and half
                         // out of its own consensus.
                         let mut w = 1.0f32;
-                        if let Some((s0, c0, _)) = first {
-                            if c0[idx] > 0.0 {
+                        if let Some((s0, c0, _)) = first
+                            && c0[idx] > 0.0 {
                                 for c in 0..channels {
                                     let mine = photo.apply_at(
                                         c,
@@ -213,7 +213,6 @@ fn consensus_guide(
                                     w = w.min(outlier_weight(mine, mean, noise));
                                 }
                             }
-                        }
                         if w <= 0.0 {
                             continue;
                         }
@@ -316,14 +315,13 @@ fn consensus_guide_frame_noise(frames: &[RawFrame], warps: &[WarpField], active:
                 let mine = photo.apply_at(0, stats.bilinear(tx, ty), u, v);
                 let stored_variance = matched_guide_variance(&frame.noise, photo, mine, u, v)?;
                 let mut weight = 1.;
-                if let Some(first) = prior {
-                    if first.counts[idx] > 0. {
+                if let Some(first) = prior
+                    && first.counts[idx] > 0. {
                         let mean = first.sums.data[idx] / first.counts[idx];
                         let candidate = matched_guide_variance(&frame.noise, photo, mean, u, v)?;
                         let mean_variance = first.variances[idx] / first.counts[idx].powi(2);
                         weight = outlier_weight_with_variance(mine, mean, candidate + mean_variance);
                     }
-                }
                 result.sums.data[idx] += weight * mine;
                 result.counts[idx] += weight;
                 result.variances[idx] += weight * weight * stored_variance;
