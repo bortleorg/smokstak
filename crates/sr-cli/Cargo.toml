@@ -5,6 +5,12 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 
+[features]
+default = ["camera-raw"]
+# Camera RAW input through `rawler` (LGPL-2.1). Build with
+# `--no-default-features` for a FITS/XISF-only binary that links no copyleft code.
+camera-raw = ["sr-raw/camera-raw"]
+
 [dependencies]
 sr-core = { workspace = true }
 sr-raw = { workspace = true }

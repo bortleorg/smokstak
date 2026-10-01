@@ -402,6 +402,12 @@ difference between 2x being supported and not.
 FITS files are read directly; `--pattern` is optional, so a directory of `.fit`
 or `.fits` is picked up the same way a directory of NEF is.
 
+Camera RAW goes through [`rawler`](https://github.com/dnglab/dnglab), which is
+LGPL-2.1; FITS and XISF are read by this project's own code. The `camera-raw`
+feature is on by default. `cargo build -p sr-cli --release --no-default-features`
+builds a FITS/XISF-only binary that links no copyleft code, and CI checks that
+it stays that way.
+
 XISF is read too, which is how a set that has already been through another
 calibration pipeline often gets in, and there is no calibration here yet to do
 that job.
