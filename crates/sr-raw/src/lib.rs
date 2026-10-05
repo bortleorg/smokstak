@@ -21,14 +21,20 @@ use std::fs::File;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
+#[cfg(feature = "camera-raw")]
 use rawler::RawImageData;
+#[cfg(feature = "camera-raw")]
 use rawler::rawimage::RawPhotometricInterpretation;
+#[cfg(feature = "camera-raw")]
 use rawler::rawsource::RawSource;
 use sha2::{Digest, Sha256};
 
 use sr_core::cfa::{CfaColor, CfaPattern};
-use sr_core::frame::{FrameMetadata, NoiseModel, RawFrame};
+use sr_core::frame::RawFrame;
+#[cfg(feature = "camera-raw")]
+use sr_core::frame::{FrameMetadata, NoiseModel};
 use sr_core::plane::Plane;
+#[cfg(feature = "camera-raw")]
 use sr_core::samples::{DefectMask, Levels, SamplePlane};
 use sr_core::{Result, SrError};
 
@@ -362,6 +368,7 @@ pub(crate) fn sha256_prefix(path: &Path) -> std::io::Result<String> {
 ///
 /// Daylight illuminants are preferred because that is what the sRGB working
 /// space assumes; any populated matrix beats none.
+#[cfg(feature = "camera-raw")]
 fn colour_matrix(img: &rawler::RawImage) -> [[f32; 3]; 3] {
     use rawler::imgop::xyz::Illuminant;
 
@@ -414,6 +421,7 @@ fn colour_matrix(img: &rawler::RawImage) -> [[f32; 3]; 3] {
     out
 }
 
+#[cfg(feature = "camera-raw")]
 fn cfa_from_name(name: &str) -> Result<CfaPattern> {
     CfaPattern::from_name(name).ok_or_else(|| {
         SrError::Input(format!(
@@ -435,7 +443,18 @@ pub fn decode_with(path: &Path, opts: &ReadOptions) -> Result<RawFrame> {
         // An unrecognised extension is handed to `rawler` rather than refused:
         // it knows more formats than the list above names, and its own error is
         // more use than ours would be.
+        #[cfg(feature = "camera-raw")]
         _ => decode_camera_raw(path),
+        #[cfg(not(feature = "camera-raw"))]
+        Some(Format::CameraRaw) => Err(SrError::Input(format!(
+            "{}: camera raw support was not built in; rebuild with the `camera-raw` feature",
+            path.display()
+        ))),
+        #[cfg(not(feature = "camera-raw"))]
+        None => Err(SrError::Input(format!(
+            "{}: not a FITS or XISF file",
+            path.display()
+        ))),
     }
 }
 
@@ -445,6 +464,7 @@ pub fn decode_with(path: &Path, opts: &ReadOptions) -> Result<RawFrame> {
 /// level taken per CFA cell position. Values outside `[0, 1]` are preserved
 /// rather than clamped, and flagged in the mask, so downstream stages can tell
 /// "dark" from "clipped".
+#[cfg(feature = "camera-raw")]
 fn decode_camera_raw(path: &Path) -> Result<RawFrame> {
     let src =
         RawSource::new(path).map_err(|e| SrError::Input(format!("{}: {e}", path.display())))?;

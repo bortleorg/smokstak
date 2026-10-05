@@ -116,7 +116,6 @@ pub fn dependency_versions() -> BTreeMap<String, String> {
     // Recorded from the lockfile at build time would be better; these are the
     // majors this workspace is written against.
     let mut m = BTreeMap::new();
-    m.insert("rawler".into(), "0.8".into());
     m.insert("rustfft".into(), "6".into());
     m.insert("tiff".into(), "0.11".into());
     m.insert("rayon".into(), "1".into());

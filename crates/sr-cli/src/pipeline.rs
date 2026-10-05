@@ -3462,7 +3462,13 @@ fn build_manifest(
             .into(),
         started_utc,
         host: sr_diagnostics::HostInfo::default(),
-        dependencies: sr_diagnostics::dependency_versions(),
+        dependencies: {
+            let mut d = sr_diagnostics::dependency_versions();
+            if cfg!(feature = "camera-raw") {
+                d.insert("rawler".into(), "0.8".into());
+            }
+            d
+        },
         input: input.display().to_string(),
         sources: burst
             .paths

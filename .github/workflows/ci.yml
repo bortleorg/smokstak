@@ -44,6 +44,24 @@ jobs:
       - run: cargo clippy --locked --workspace --all-targets -- -D warnings
       - run: cargo test --locked --workspace
 
+  # The FITS/XISF-only build must keep compiling and must not link rawler,
+  # the LGPL-2.1 camera RAW decoder.
+  no-camera-raw:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - run: rustup toolchain install
+      - run: cargo clippy --locked -p sr-cli --no-default-features --all-targets -- -D warnings
+      - name: rawler is absent
+        run: |
+          if cargo tree --locked -p sr-cli --no-default-features -e normal,build | grep -q rawler; then
+            echo "::error::rawler is linked without the camera-raw feature"
+            exit 1
+          fi
+
   msrv:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
