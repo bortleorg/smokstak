@@ -4,18 +4,18 @@
 //! stay detector samples. Geometry, quality, noise and confidence are carried
 //! *alongside* the mosaic rather than baked into resampled RGB intermediates.
 
-pub mod cfa;
 pub mod buffer;
+pub mod cfa;
 pub mod config;
 pub mod frame;
 pub mod geometry;
-pub mod projection;
 pub mod mask;
 pub mod math;
 pub mod plane;
+pub mod product;
+pub mod projection;
 pub mod samples;
 pub mod star;
-pub mod product;
 pub mod wcs;
 
 pub use cfa::{CfaColor, CfaPattern};
@@ -30,10 +30,10 @@ pub use frame::{
 pub use geometry::{
     DeformationField, GlobalTransform, RadialChroma, Rect, TransformModel, WarpField,
 };
-pub use mask::{flags, is_usable, MaskPlane};
+pub use mask::{MaskPlane, flags, is_usable};
 pub use plane::Plane;
-pub use samples::{DefectMask, Levels, SampleData, SamplePlane};
 pub use product::{ProductStats, ReconstructionProduct, SamplingCoverage};
+pub use samples::{DefectMask, Levels, SampleData, SamplePlane};
 
 use thiserror::Error;
 

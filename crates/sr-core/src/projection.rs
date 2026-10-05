@@ -460,11 +460,12 @@ mod tests {
         assert!(p.map(2.0, 0.0).is_none());
         assert!(p.to_warp(5, 5, 0.01).is_err());
         p = identity();
-        assert!(p
-            .to_warp_with_node_budget(6248, 4176, 0.025, 1)
-            .unwrap_err()
-            .to_string()
-            .contains("node budget"));
+        assert!(
+            p.to_warp_with_node_budget(6248, 4176, 0.025, 1)
+                .unwrap_err()
+                .to_string()
+                .contains("node budget")
+        );
         assert!(p.to_warp_with_node_budget(8, 8, 0.025, 0).is_err());
         assert!(p.to_warp_with_node_budget(8, 8, 0.025, 1_000_001).is_err());
         let bounded = p.to_warp_with_node_budget(8, 8, 0.025, 100).unwrap();

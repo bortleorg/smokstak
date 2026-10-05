@@ -141,7 +141,11 @@ pub struct StarMetrics {
 
 impl StarMetrics {
     /// Half-flux diameter in arcseconds, when the frame knows its plate scale.
-    pub fn hfd_arcsec(&self, pixel_pitch_um: Option<f32>, focal_length_mm: Option<f32>) -> Option<f32> {
+    pub fn hfd_arcsec(
+        &self,
+        pixel_pitch_um: Option<f32>,
+        focal_length_mm: Option<f32>,
+    ) -> Option<f32> {
         let (p, f) = (pixel_pitch_um?, focal_length_mm?);
         if !(p > 0.0 && f > 0.0) {
             return None;
@@ -183,7 +187,10 @@ fn sky_of(frame: &RawFrame) -> Sky {
     let mut sigma = [0.0f32; 4];
     // A stride: the median of a few tens of thousands of samples locates the
     // sky to far better than the noise on any one of them.
-    let step = ((frame.width * frame.height / 40_000).max(1) as f32).sqrt().max(1.0) as usize * 2;
+    let step = ((frame.width * frame.height / 40_000).max(1) as f32)
+        .sqrt()
+        .max(1.0) as usize
+        * 2;
     // Samples kept per tile as well as pooled, because how flat the sky is has
     // to be asked of the sky nearby -- see below.
     let mut tiles: Vec<Vec<f32>> = vec![Vec::new(); FLATNESS_TILES * FLATNESS_TILES * 4];
@@ -232,8 +239,16 @@ fn sky_of(frame: &RawFrame) -> Sky {
         flat += v.iter().filter(|x| (*x - l).abs() < 3.0 * sg).count() as u64;
         total += v.len() as u64;
     }
-    let background_fraction = if total == 0 { 1.0 } else { flat as f32 / total as f32 };
-    Sky { level, sigma, background_fraction }
+    let background_fraction = if total == 0 {
+        1.0
+    } else {
+        flat as f32 / total as f32
+    };
+    Sky {
+        level,
+        sigma,
+        background_fraction,
+    }
 }
 
 /// Value at a site in units of its own cell's noise, above its own cell's sky.
@@ -326,9 +341,8 @@ fn detect_with(frame: &RawFrame, sky: &Sky, strongest: bool, per_cell: usize) ->
                         continue;
                     }
                     // A flat-topped source has no measurable profile.
-                    if (0..2).any(|dy| {
-                        (0..2).any(|dx| frame.value(2 * x + dx, 2 * y + dy) >= 1.0)
-                    }) {
+                    if (0..2).any(|dy| (0..2).any(|dx| frame.value(2 * x + dx, 2 * y + dy) >= 1.0))
+                    {
                         continue;
                     }
                     // A point source sits on background. This separates a star
@@ -423,7 +437,12 @@ fn detect_with(frame: &RawFrame, sky: &Sky, strongest: bool, per_cell: usize) ->
                 // Evenly through the cell instead, so that the shape metrics
                 // are not measured on its brightest sources alone.
                 let stride = (usable.len() / per_cell).max(1);
-                usable.into_iter().step_by(stride).take(per_cell).map(site).collect()
+                usable
+                    .into_iter()
+                    .step_by(stride)
+                    .take(per_cell)
+                    .map(site)
+                    .collect()
             }
         })
         .collect();
@@ -478,13 +497,21 @@ fn channel_response(frame: &RawFrame, sky: &Sky, stars: &[Detection]) -> [f32; 4
     let mut out = [1.0f32; 4];
     let mut med = [0.0f32; 4];
     for c in 0..4 {
-        med[c] = if acc[c].is_empty() { 0.0 } else { math::median(&acc[c]) };
+        med[c] = if acc[c].is_empty() {
+            0.0
+        } else {
+            math::median(&acc[c])
+        };
     }
     let reference = math::median(&med).max(1e-6);
     for c in 0..4 {
         // A cell that saw nothing keeps a response of one rather than becoming
         // a divide by almost zero.
-        out[c] = if med[c] > 1e-3 { med[c] / reference } else { 1.0 };
+        out[c] = if med[c] > 1e-3 {
+            med[c] / reference
+        } else {
+            1.0
+        };
     }
     out
 }
@@ -542,7 +569,10 @@ fn measure_one(
             (v.len() >= 8).then(|| math::median(&v))
         };
         let peak = pixels.iter().map(|(_, _, w)| *w).fold(0.0f32, f32::max);
-        match (ring(LOCAL_SKY_INNER, LOCAL_SKY_MID), ring(LOCAL_SKY_MID, LOCAL_SKY_OUTER)) {
+        match (
+            ring(LOCAL_SKY_INNER, LOCAL_SKY_MID),
+            ring(LOCAL_SKY_MID, LOCAL_SKY_OUTER),
+        ) {
             // Flat between the two rings: whatever is out there belongs to the
             // sky, and the source has stopped contributing. Take it away.
             (Some(inner), Some(outer)) if inner - outer <= ANNULUS_FLATNESS * peak.max(1e-6) => {
@@ -554,8 +584,10 @@ fn measure_one(
             _ => 0.0,
         }
     };
-    let pixels: Vec<(f32, f32, f32)> =
-        pixels.iter().map(|&(x, y, w)| (x, y, w - local_sky)).collect();
+    let pixels: Vec<(f32, f32, f32)> = pixels
+        .iter()
+        .map(|&(x, y, w)| (x, y, w - local_sky))
+        .collect();
 
     // Centroid from the core, where the source dominates the noise.
     let (mut cx, mut cy, mut cw) = (0.0f32, 0.0f32, 0.0f32);
@@ -656,33 +688,55 @@ pub fn positions_for_photometry(frame: &RawFrame, limit: usize) -> Vec<Star> {
 /// saturated or defective apertures are omitted rather than partially summed.
 /// Aperture radius is 6 sensor pixels; the sky annulus spans radii 7–11.
 pub fn photometric_catalog(frame: &RawFrame, positions: &[Star]) -> Vec<Star> {
-    positions.iter().filter_map(|s| {
-        aperture_flux(frame, s.x, s.y).map(|flux| Star { flux, ..*s })
-    }).collect()
+    positions
+        .iter()
+        .filter_map(|s| aperture_flux(frame, s.x, s.y).map(|flux| Star { flux, ..*s }))
+        .collect()
 }
 
 fn aperture_flux(frame: &RawFrame, cx: f32, cy: f32) -> Option<f32> {
-    if !cx.is_finite() || !cy.is_finite() || cx < 12.0 || cy < 12.0
-        || cx + 12.0 >= frame.width as f32 || cy + 12.0 >= frame.height as f32 { return None; }
+    if !cx.is_finite()
+        || !cy.is_finite()
+        || cx < 12.0
+        || cy < 12.0
+        || cx + 12.0 >= frame.width as f32
+        || cy + 12.0 >= frame.height as f32
+    {
+        return None;
+    }
     let mut sky: [Vec<f32>; 4] = Default::default();
     let mut aperture = Vec::new();
     let (ix, iy) = (cx.round() as i64, cy.round() as i64);
-    for dy in -12i64..=12 { for dx in -12i64..=12 {
-        let (x, y) = ((ix + dx) as usize, (iy + dy) as usize);
-        let r2 = (x as f32 - cx).powi(2) + (y as f32 - cy).powi(2);
-        if r2 > 121.0 { continue; }
-        let value = frame.value(x, y);
-        let usable = value.is_finite() && value < 0.98 && !frame.defects.get(y * frame.width + x);
-        let cell = (y & 1) * 2 + (x & 1);
-        if r2 <= 36.0 {
-            if !usable { return None; }
-            aperture.push((cell, value));
-        } else if r2 >= 49.0 && usable { sky[cell].push(value); }
-    }}
-    if sky.iter().any(|s| s.len() < 12) { return None; }
+    for dy in -12i64..=12 {
+        for dx in -12i64..=12 {
+            let (x, y) = ((ix + dx) as usize, (iy + dy) as usize);
+            let r2 = (x as f32 - cx).powi(2) + (y as f32 - cy).powi(2);
+            if r2 > 121.0 {
+                continue;
+            }
+            let value = frame.value(x, y);
+            let usable =
+                value.is_finite() && value < 0.98 && !frame.defects.get(y * frame.width + x);
+            let cell = (y & 1) * 2 + (x & 1);
+            if r2 <= 36.0 {
+                if !usable {
+                    return None;
+                }
+                aperture.push((cell, value));
+            } else if r2 >= 49.0 && usable {
+                sky[cell].push(value);
+            }
+        }
+    }
+    if sky.iter().any(|s| s.len() < 12) {
+        return None;
+    }
     let sky = sky.map(|s| math::median(&s));
     // Keep negative sky-subtracted samples; clipping them biases faint sources.
-    let flux = aperture.iter().map(|&(cell, v)| v as f64 - sky[cell] as f64).sum::<f64>() as f32;
+    let flux = aperture
+        .iter()
+        .map(|&(cell, v)| v as f64 - sky[cell] as f64)
+        .sum::<f64>() as f32;
     (flux.is_finite() && flux > 0.0).then_some(flux)
 }
 
@@ -703,7 +757,11 @@ fn positions_impl(frame: &RawFrame, limit: usize) -> Vec<Star> {
         .par_iter()
         .filter_map(|d| {
             let (dx, dy, flux) = centroid_one(frame, &sky, &response, d)?;
-            Some(Star { x: d.x as f32 + dx, y: d.y as f32 + dy, flux })
+            Some(Star {
+                x: d.x as f32 + dx,
+                y: d.y as f32 + dy,
+                flux,
+            })
         })
         .collect();
     // Brightest first, and deterministic where two are equal.
@@ -766,7 +824,12 @@ pub fn measure(frame: &RawFrame) -> Option<StarMetrics> {
 /// tenth of a second.
 pub fn measure_burst(frames: &[RawFrame]) -> Vec<Option<StarMetrics>> {
     let first: Vec<Option<StarMetrics>> = frames.par_iter().map(measure).collect();
-    let hfd: Vec<f32> = first.iter().flatten().map(|m| m.hfd).filter(|h| *h > 0.0).collect();
+    let hfd: Vec<f32> = first
+        .iter()
+        .flatten()
+        .map(|m| m.hfd)
+        .filter(|h| *h > 0.0)
+        .collect();
     if hfd.len() * 4 < frames.len() * 3 || hfd.len() < 3 {
         return first;
     }
@@ -774,7 +837,10 @@ pub fn measure_burst(frames: &[RawFrame]) -> Vec<Option<StarMetrics>> {
     // them does not dominate a measurement weighted by the square of the
     // radius.
     let aperture = (1.25 * math::median(&hfd)).clamp(2.0, WINDOW as f32);
-    frames.par_iter().map(|f| measure_with(f, Some(aperture))).collect()
+    frames
+        .par_iter()
+        .map(|f| measure_with(f, Some(aperture)))
+        .collect()
 }
 
 /// Measure one frame, optionally through an aperture chosen elsewhere.
@@ -844,13 +910,7 @@ mod tests {
     /// `gradient` is the total rise from one edge to the other, in units of the
     /// sky's own noise -- which is how a real gradient is worth stating, and
     /// what decides whether a flatness test survives it.
-    fn field_on(
-        sigma_x: f32,
-        sigma_y: f32,
-        theta: f32,
-        n_stars: usize,
-        gradient: f32,
-    ) -> RawFrame {
+    fn field_on(sigma_x: f32, sigma_y: f32, theta: f32, n_stars: usize, gradient: f32) -> RawFrame {
         let (w, h) = (512usize, 512usize);
         let sky = [0.06f32, 0.09, 0.09, 0.08];
         let gain = [0.7f32, 1.0, 1.0, 0.85];
@@ -914,14 +974,30 @@ mod tests {
         let mut changed_noise = clear.clone();
         changed_noise.noise.alpha *= 100.0;
         changed_noise.noise.beta *= 100.0;
-        let catalogs = vec![positions_for_photometry(&clear, 512), positions_for_photometry(&changed_noise, 512)];
+        let catalogs = vec![
+            positions_for_photometry(&clear, 512),
+            positions_for_photometry(&changed_noise, 512),
+        ];
         assert!(catalogs.iter().all(|c| c.len() >= 30));
-        let gains = crate::photometry::star_gains(&[sr_core::geometry::WarpField::identity(), sr_core::geometry::WarpField::identity()], 0, &catalogs, 2);
-        assert!((gains[1].unwrap()[0] - 1.0).abs() < 0.005,
-            "changing a detection-noise model changed the inferred brightness");
+        let gains = crate::photometry::star_gains(
+            &[
+                sr_core::geometry::WarpField::identity(),
+                sr_core::geometry::WarpField::identity(),
+            ],
+            0,
+            &catalogs,
+            2,
+        );
+        assert!(
+            (gains[1].unwrap()[0] - 1.0).abs() < 0.005,
+            "changing a detection-noise model changed the inferred brightness"
+        );
         let old = [positions(&clear, 512), positions(&changed_noise, 512)];
         let rank_ratio = old[0][0].flux / old[1][0].flux;
-        assert!((rank_ratio - 10.0).abs() < 0.01, "fixture must expose the ranking/flux units mismatch");
+        assert!(
+            (rank_ratio - 10.0).abs() < 0.01,
+            "fixture must expose the ranking/flux units mismatch"
+        );
     }
 
     #[test]
@@ -931,17 +1007,24 @@ mod tests {
         let baseline = photometric_catalog(&original, &positions);
         for scale in [1.0f32 / 18.0, 1.0] {
             let mut transformed = original.clone();
-            transformed.samples = SamplePlane::from_normalised(original.width, original.height,
-                (0..original.width*original.height).map(|i| original.value(i%original.width,i/original.width)*scale - 0.2).collect());
+            transformed.samples = SamplePlane::from_normalised(
+                original.width,
+                original.height,
+                (0..original.width * original.height)
+                    .map(|i| original.value(i % original.width, i / original.width) * scale - 0.2)
+                    .collect(),
+            );
             let measured = photometric_catalog(&transformed, &positions);
             assert_eq!(baseline.len(), measured.len());
-            for (a,b) in baseline.iter().zip(measured) {
+            for (a, b) in baseline.iter().zip(measured) {
                 assert!((b.flux / a.flux / scale - 1.0).abs() < 0.001);
             }
         }
         let star = baseline[0];
         let mut defective = original.clone();
-        defective.defects.set(star.y.round() as usize * original.width + star.x.round() as usize);
+        defective
+            .defects
+            .set(star.y.round() as usize * original.width + star.x.round() as usize);
         assert!(aperture_flux(&defective, star.x, star.y).is_none());
         assert!(aperture_flux(&original, 1.0, 1.0).is_none());
     }
@@ -962,7 +1045,11 @@ mod tests {
             // Attrition that grows with softness is the failure mode this
             // guards: it used to reach total silence by sigma 2.6, and a frame
             // that cannot be measured is a frame that cannot be ranked worst.
-            assert!(m.count >= 100, "sigma {sigma}: only {} of 120 measured", m.count);
+            assert!(
+                m.count >= 100,
+                "sigma {sigma}: only {} of 120 measured",
+                m.count
+            );
         }
     }
 
@@ -998,7 +1085,11 @@ mod tests {
         // amplitudes differ, so without the per-channel response normalisation
         // this reports elongation at 45 degrees on a perfectly round source.
         let m = measure(&field(1.4, 1.4, 0.0, 60)).unwrap();
-        assert!(m.eccentricity < 0.35, "round stars measured {:.3}", m.eccentricity);
+        assert!(
+            m.eccentricity < 0.35,
+            "round stars measured {:.3}",
+            m.eccentricity
+        );
     }
 
     #[test]
@@ -1045,7 +1136,10 @@ mod tests {
             }
         }
         f.samples = SamplePlane::from_u16(w, h, raised, Levels::new([0.0; 4], [65535.0; 4]));
-        assert!(measure(&f).is_none(), "a photograph was measured as a star field");
+        assert!(
+            measure(&f).is_none(),
+            "a photograph was measured as a star field"
+        );
     }
 
     #[test]
@@ -1099,7 +1193,11 @@ mod tests {
                 // Bars of varying pitch, plus a coarse blocking, so that the
                 // frame has bright regions, dark regions and edges everywhere.
                 let pitch = 3 + (x / 64);
-                let bar = if (x / pitch + y / pitch) % 2 == 0 { 0.75 } else { 0.15 };
+                let bar = if (x / pitch + y / pitch) % 2 == 0 {
+                    0.75
+                } else {
+                    0.15
+                };
                 let block = 0.1 * ((x / 128 + y / 128) % 3) as f32;
                 data[y * w + x] = ((bar + block).clamp(0.0, 1.0) * 65535.0) as u16;
             }
@@ -1124,7 +1222,10 @@ mod tests {
         // them produced a half-flux diameter pinned at the window size and an
         // identical "sharpness" for every frame of the burst, which is worse
         // than no measurement: it replaced a ranking that worked.
-        assert!(measure(&chart()).is_none(), "measured a resolution chart as a star field");
+        assert!(
+            measure(&chart()).is_none(),
+            "measured a resolution chart as a star field"
+        );
     }
 
     #[test]
@@ -1160,7 +1261,12 @@ mod tests {
 
     #[test]
     fn arcseconds_need_both_the_pitch_and_the_focal_length() {
-        let m = StarMetrics { count: 100, hfd: 2.0, eccentricity: 0.1, angle_deg: 0.0 };
+        let m = StarMetrics {
+            count: 100,
+            hfd: 2.0,
+            eccentricity: 0.1,
+            angle_deg: 0.0,
+        };
         // 4.63 um at 337 mm is 2.834 arcsec per pixel.
         let a = m.hfd_arcsec(Some(4.63), Some(337.0)).unwrap();
         assert!((a - 5.668).abs() < 0.01, "{a}");

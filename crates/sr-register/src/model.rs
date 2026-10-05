@@ -61,7 +61,10 @@ fn solve_weighted(
             if sw < 1e-9 {
                 return None;
             }
-            Some(GlobalTransform::translation((sx / sw) as f32, (sy / sw) as f32))
+            Some(GlobalTransform::translation(
+                (sx / sw) as f32,
+                (sy / sw) as f32,
+            ))
         }
         TransformModel::Euclidean | TransformModel::Similarity => {
             // x' = a*x - b*y + tx ; y' = b*x + a*y + ty
@@ -95,7 +98,9 @@ fn solve_weighted(
                 a /= m;
                 b /= m;
             }
-            Some(GlobalTransform { m: [a, -b, atb[2] as f32, b, a, atb[3] as f32] })
+            Some(GlobalTransform {
+                m: [a, -b, atb[2] as f32, b, a, atb[3] as f32],
+            })
         }
         TransformModel::Affine => {
             // Two independent 3-parameter problems sharing one normal matrix.
@@ -153,7 +158,11 @@ fn residuals(corr: &[Correspondence], t: &GlobalTransform) -> Vec<f32> {
 /// Tukey rather than Huber for the final passes: a probe that latched onto a
 /// moving object or a repeated texture should be removed from the fit, not
 /// merely trusted less.
-pub fn fit_model(corr: &[Correspondence], model: TransformModel, iters: usize) -> Option<FitResult> {
+pub fn fit_model(
+    corr: &[Correspondence],
+    model: TransformModel,
+    iters: usize,
+) -> Option<FitResult> {
     if corr.len() < model.dof() {
         return None;
     }
@@ -254,7 +263,10 @@ pub fn fit_best(corr: &[Correspondence], tolerance: f32, iters: usize) -> Option
     if fits.is_empty() {
         return None;
     }
-    let best_rms = fits.iter().map(|f| f.residual_rms).fold(f32::INFINITY, f32::min);
+    let best_rms = fits
+        .iter()
+        .map(|f| f.residual_rms)
+        .fold(f32::INFINITY, f32::min);
     // Walk from simplest to richest and stop at the first model that comes
     // within `tolerance` of the best achievable residual.
     for f in &fits {
@@ -276,12 +288,24 @@ mod tests {
             let x = ((i * 37) % 200) as f32 * 5.0;
             let y = ((i * 53) % 150) as f32 * 5.0;
             let (px, py) = t.apply(x, y);
-            v.push(Correspondence { x, y, rx: px - x, ry: py - y, weight: 1.0 });
+            v.push(Correspondence {
+                x,
+                y,
+                rx: px - x,
+                ry: py - y,
+                weight: 1.0,
+            });
         }
         for i in 0..outliers {
             let x = ((i * 71) % 200) as f32 * 5.0;
             let y = ((i * 29) % 150) as f32 * 5.0;
-            v.push(Correspondence { x, y, rx: 25.0, ry: -18.0, weight: 1.0 });
+            v.push(Correspondence {
+                x,
+                y,
+                rx: 25.0,
+                ry: -18.0,
+                weight: 1.0,
+            });
         }
         v
     }
@@ -314,8 +338,16 @@ mod tests {
         let t = GlobalTransform::similarity(0.003, 1.0, 1.5, 2.5);
         // 20% of probes latched onto something moving.
         let f = fit_model(&synth(&t, 80, 20), TransformModel::Similarity, 12).unwrap();
-        assert!((f.transform.m[2] - 1.5).abs() < 0.05, "tx {}", f.transform.m[2]);
-        assert!((f.transform.m[5] - 2.5).abs() < 0.05, "ty {}", f.transform.m[5]);
+        assert!(
+            (f.transform.m[2] - 1.5).abs() < 0.05,
+            "tx {}",
+            f.transform.m[2]
+        );
+        assert!(
+            (f.transform.m[5] - 2.5).abs() < 0.05,
+            "ty {}",
+            f.transform.m[5]
+        );
         assert!(f.inlier_fraction() > 0.7, "inliers {}", f.inlier_fraction());
     }
 
@@ -329,7 +361,9 @@ mod tests {
     #[test]
     fn escalates_to_affine_when_the_data_demands_it() {
         // Shear cannot be represented by a similarity.
-        let t = GlobalTransform { m: [1.0, 0.02, 3.0, -0.005, 1.001, -2.0] };
+        let t = GlobalTransform {
+            m: [1.0, 0.02, 3.0, -0.005, 1.001, -2.0],
+        };
         let f = fit_best(&synth(&t, 120, 0), 0.02, 10).unwrap();
         assert_eq!(f.model, TransformModel::Affine);
         assert!(f.residual_rms < 1e-2);

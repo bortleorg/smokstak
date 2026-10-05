@@ -102,7 +102,11 @@ fn evaluate(
         }
     }
     let position = [q[0] * scale, q[1] * scale];
-    if position.iter().chain(j.iter().flatten()).any(|v| !v.is_finite()) {
+    if position
+        .iter()
+        .chain(j.iter().flatten())
+        .any(|v| !v.is_finite())
+    {
         return None;
     }
     Some((position, j))
@@ -148,8 +152,15 @@ pub fn solve(
     if instruments > frames.len() {
         return None;
     }
-    solve_with_fixed_distortion(frames, pairs, anchor, instruments, scale,
-        max_iterations, &vec![None; instruments])
+    solve_with_fixed_distortion(
+        frames,
+        pairs,
+        anchor,
+        instruments,
+        scale,
+        max_iterations,
+        &vec![None; instruments],
+    )
 }
 
 /// Solve while holding selected instruments' Brown coefficients exactly fixed.
@@ -217,13 +228,18 @@ pub fn solve_with_fixed_distortion(
         .collect();
     let optical = 8 * (frames.len() - 1);
     let mut n = optical;
-    let distortion_slots: Vec<_> = fixed.iter().map(|constraint| {
-        if constraint.is_some() { None } else {
-            let slot = n;
-            n += 3;
-            Some(slot)
-        }
-    }).collect();
+    let distortion_slots: Vec<_> = fixed
+        .iter()
+        .map(|constraint| {
+            if constraint.is_some() {
+                None
+            } else {
+                let slot = n;
+                n += 3;
+                Some(slot)
+            }
+        })
+        .collect();
     if n > 1024 {
         return None;
     } // bounded dense normal matrix, not a survey-scale solver
@@ -243,11 +259,11 @@ pub fn solve_with_fixed_distortion(
     }
     let robust_cost = |s: &BundleSolution| -> Option<f64> {
         let cost: f64 = errors(s, pairs, scale)?
-                .iter()
-                // Algebraically the same pseudo-Huber loss, without subtracting
-                // nearly equal numbers near a perfect solution or squaring e.
-                .map(|&e| e * (0.3 * (e / (e.hypot(0.3) + 0.3))))
-                .sum();
+            .iter()
+            // Algebraically the same pseudo-Huber loss, without subtracting
+            // nearly equal numbers near a perfect solution or squaring e.
+            .map(|&e| e * (0.3 * (e / (e.hypot(0.3) + 0.3))))
+            .sum();
         cost.is_finite().then_some(cost)
     };
     let mut cost = robust_cost(&state)?;
@@ -360,68 +376,134 @@ mod tests {
     use super::*;
     #[test]
     fn fixed_native_gauge_recovers_other_instrument_on_withheld_points() {
-        let identity = [1.,0.,0.,0.,1.,0.,0.,0.,1.];
-        let mut frames: Vec<_> = (0..3).map(|i| BundleFrame {
-            center: [0.,0.], normalization_scale: 1000.,
-            instrument: usize::from(i > 0), homography: identity,
-        }).collect();
+        let identity = [1., 0., 0., 0., 1., 0., 0., 0., 1.];
+        let mut frames: Vec<_> = (0..3)
+            .map(|i| BundleFrame {
+                center: [0., 0.],
+                normalization_scale: 1000.,
+                instrument: usize::from(i > 0),
+                homography: identity,
+            })
+            .collect();
         let truth = [0.015, -0.001, 0.0005];
         let mut pairs = Vec::new();
         for i in 0..240 {
-            let sensor = [(i % 20) as f64 * 0.08-0.8, (i / 20) as f64 * 0.1-0.6];
+            let sensor = [(i % 20) as f64 * 0.08 - 0.8, (i / 20) as f64 * 0.1 - 0.6];
             let q = undistort(sensor, truth);
-            for b in [1,2] {
+            for b in [1, 2] {
                 let dx = b as f64 * 0.12;
                 let dy = b as f64 * -0.07;
-                pairs.push(StarPair { a: 0, b, source_a: [(q[0]+dx)*1000.,(q[1]+dy)*1000.],
-                    source_b: [sensor[0]*1000.,sensor[1]*1000.] });
+                pairs.push(StarPair {
+                    a: 0,
+                    b,
+                    source_a: [(q[0] + dx) * 1000., (q[1] + dy) * 1000.],
+                    source_b: [sensor[0] * 1000., sensor[1] * 1000.],
+                });
                 frames[b].homography[2] = dx + 0.002;
                 frames[b].homography[5] = dy - 0.003;
             }
         }
-        let train: Vec<_> = pairs.iter().enumerate().filter(|(i,_)| i%5 != 0).map(|(_,p)|*p).collect();
-        let test: Vec<_> = pairs.iter().enumerate().filter(|(i,_)| i%5 == 0).map(|(_,p)|*p).collect();
-        let fit = solve_with_fixed_distortion(&frames, &train, 0, 2, 1000., 150,
-            &[Some([0.;3]),None]).unwrap();
+        let train: Vec<_> = pairs
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| i % 5 != 0)
+            .map(|(_, p)| *p)
+            .collect();
+        let test: Vec<_> = pairs
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| i % 5 == 0)
+            .map(|(_, p)| *p)
+            .collect();
+        let fit =
+            solve_with_fixed_distortion(&frames, &train, 0, 2, 1000., 150, &[Some([0.; 3]), None])
+                .unwrap();
         assert!(fit.converged);
         assert_eq!(fit.frames[0].homography, identity);
-        assert_eq!(fit.distortion[0], [0.;3]);
-        for (actual, expected) in fit.distortion[1].iter().zip(truth) { assert!((actual-expected).abs()<1e-7); }
-        assert!(errors(&fit,&test,1000.).unwrap().iter().all(|e|*e<1e-5));
-        for fixed in [vec![], vec![None], vec![Some([f64::NAN,0.,0.]),None],
-            vec![None,Some([0.,f64::INFINITY,0.])]] {
-            assert!(solve_with_fixed_distortion(&frames,&train,0,2,1000.,150,&fixed).is_none());
+        assert_eq!(fit.distortion[0], [0.; 3]);
+        for (actual, expected) in fit.distortion[1].iter().zip(truth) {
+            assert!((actual - expected).abs() < 1e-7);
         }
-        let old = solve(&frames,&train,0,2,1000.,150).unwrap();
-        let free = solve_with_fixed_distortion(&frames,&train,0,2,1000.,150,&[None,None]).unwrap();
+        assert!(
+            errors(&fit, &test, 1000.)
+                .unwrap()
+                .iter()
+                .all(|e| *e < 1e-5)
+        );
+        for fixed in [
+            vec![],
+            vec![None],
+            vec![Some([f64::NAN, 0., 0.]), None],
+            vec![None, Some([0., f64::INFINITY, 0.])],
+        ] {
+            assert!(
+                solve_with_fixed_distortion(&frames, &train, 0, 2, 1000., 150, &fixed).is_none()
+            );
+        }
+        let old = solve(&frames, &train, 0, 2, 1000., 150).unwrap();
+        let free =
+            solve_with_fixed_distortion(&frames, &train, 0, 2, 1000., 150, &[None, None]).unwrap();
         assert_eq!(old.distortion, free.distortion);
         assert_eq!(old.final_cost, free.final_cost);
-        for (a,b) in old.frames.iter().zip(&free.frames) { assert_eq!(a.homography,b.homography); }
+        for (a, b) in old.frames.iter().zip(&free.frames) {
+            assert_eq!(a.homography, b.homography);
+        }
     }
 
     #[test]
     fn nonzero_fixed_coefficients_are_preserved_when_every_instrument_is_fixed() {
-        let frame = BundleFrame { center: [0.,0.], normalization_scale: 1000., instrument: 0,
-            homography: [1.,0.,0.,0.,1.,0.,0.,0.,1.] };
-        let pairs: Vec<_> = (0..100).map(|i| {
-            let p = [(i%10) as f64*80.,(i/10) as f64*50.];
-            StarPair { a:0,b:1,source_a:p,source_b:p }
-        }).collect();
-        let k = [0.005,-0.001,0.002];
-        let fit = solve_with_fixed_distortion(&[frame.clone(),frame], &pairs,0,1,1000.,10,&[Some(k)]).unwrap();
+        let frame = BundleFrame {
+            center: [0., 0.],
+            normalization_scale: 1000.,
+            instrument: 0,
+            homography: [1., 0., 0., 0., 1., 0., 0., 0., 1.],
+        };
+        let pairs: Vec<_> = (0..100)
+            .map(|i| {
+                let p = [(i % 10) as f64 * 80., (i / 10) as f64 * 50.];
+                StarPair {
+                    a: 0,
+                    b: 1,
+                    source_a: p,
+                    source_b: p,
+                }
+            })
+            .collect();
+        let k = [0.005, -0.001, 0.002];
+        let fit = solve_with_fixed_distortion(
+            &[frame.clone(), frame],
+            &pairs,
+            0,
+            1,
+            1000.,
+            10,
+            &[Some(k)],
+        )
+        .unwrap();
         assert!(fit.converged);
-        assert_eq!(fit.distortion,vec![k]);
-        assert_eq!(fit.final_cost,0.);
+        assert_eq!(fit.distortion, vec![k]);
+        assert_eq!(fit.final_cost, 0.);
     }
 
     #[test]
     fn exact_and_near_exact_seeds_converge_without_an_improving_step() {
-        let frame = BundleFrame { center: [0., 0.], normalization_scale: 1000.,
-            instrument: 0, homography: [1.,0.,0.,0.,1.,0.,0.,0.,1.] };
-        let pairs: Vec<_> = (0..100).map(|i| {
-            let source = [(i % 10) as f64 * 70., (i / 10) as f64 * 60.];
-            StarPair { a: 0, b: 1, source_a: source, source_b: source }
-        }).collect();
+        let frame = BundleFrame {
+            center: [0., 0.],
+            normalization_scale: 1000.,
+            instrument: 0,
+            homography: [1., 0., 0., 0., 1., 0., 0., 0., 1.],
+        };
+        let pairs: Vec<_> = (0..100)
+            .map(|i| {
+                let source = [(i % 10) as f64 * 70., (i / 10) as f64 * 60.];
+                StarPair {
+                    a: 0,
+                    b: 1,
+                    source_a: source,
+                    source_b: source,
+                }
+            })
+            .collect();
         for dx in [0., 1e-13] {
             let mut frames = vec![frame.clone(); 2];
             frames[1].homography[2] = dx;
@@ -430,7 +512,12 @@ mod tests {
             assert_eq!(fit.iterations, 1);
             assert_eq!(fit.frames[1].homography, frames[1].homography);
             assert_eq!(fit.initial_cost, fit.final_cost);
-            if dx > 0. { assert!(fit.final_cost > 0., "small residual costs must not cancel to zero"); }
+            if dx > 0. {
+                assert!(
+                    fit.final_cost > 0.,
+                    "small residual costs must not cancel to zero"
+                );
+            }
         }
         let mut frames = vec![frame; 2];
         frames[0].center[0] = f64::NAN;
@@ -469,10 +556,12 @@ mod tests {
             .collect();
         let fit = solve(&frames, &pairs[..140], 0, 1, 1000., 150).unwrap();
         assert!(fit.final_cost < fit.initial_cost * 1e-6);
-        assert!(errors(&fit, &pairs[140..], 1000.)
-            .unwrap()
-            .iter()
-            .all(|e| *e < 0.01));
+        assert!(
+            errors(&fit, &pairs[140..], 1000.)
+                .unwrap()
+                .iter()
+                .all(|e| *e < 0.01)
+        );
         let mut disconnected = frames.clone();
         disconnected.push(frames[1].clone());
         assert!(solve(&disconnected, &pairs, 0, 1, 1000., 50).is_none());

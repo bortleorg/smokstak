@@ -13,7 +13,7 @@ use std::io::BufWriter;
 use std::path::Path;
 
 use anyhow::{Context, Result};
-use tiff::encoder::{colortype, TiffEncoder};
+use tiff::encoder::{TiffEncoder, colortype};
 
 use sr_core::plane::Plane;
 
@@ -60,7 +60,11 @@ pub fn write_preview_png(path: &Path, planes: &[Plane<f32>], max_edge: usize) ->
 
     let file = File::create(path).with_context(|| format!("creating {}", path.display()))?;
     let mut enc = png::Encoder::new(std::io::BufWriter::new(file), ow as u32, oh as u32);
-    enc.set_color(if channels == 3 { png::ColorType::Rgb } else { png::ColorType::Grayscale });
+    enc.set_color(if channels == 3 {
+        png::ColorType::Rgb
+    } else {
+        png::ColorType::Grayscale
+    });
     enc.set_depth(png::BitDepth::Eight);
     let mut writer = enc
         .write_header()
@@ -77,8 +81,8 @@ pub fn write_gray16(path: &Path, plane: &Plane<f32>) -> Result<()> {
     for (o, &v) in buf.iter_mut().zip(&plane.data) {
         *o = (v.clamp(0.0, 1.0) * 65535.0).round() as u16;
     }
-    let file = std::fs::File::create(path)
-        .with_context(|| format!("creating {}", path.display()))?;
+    let file =
+        std::fs::File::create(path).with_context(|| format!("creating {}", path.display()))?;
     let mut enc = tiff::encoder::TiffEncoder::new(std::io::BufWriter::new(file))?;
     enc.write_image::<tiff::encoder::colortype::Gray16>(
         plane.width as u32,
@@ -95,7 +99,11 @@ pub fn write_rgb16(path: &Path, rgb: &[Plane<f32>; 3]) -> Result<()> {
     for i in 0..w * h {
         for c in 0..3 {
             let v = rgb[c].data[i];
-            let v = if v.is_finite() { v.clamp(0.0, 1.0) } else { 0.0 };
+            let v = if v.is_finite() {
+                v.clamp(0.0, 1.0)
+            } else {
+                0.0
+            };
             interleaved[i * 3 + c] = (v * 65535.0).round() as u16;
         }
     }
@@ -189,14 +197,14 @@ pub fn write_diagnostic(
             // Percentile bounds, so one runaway pixel does not flatten the map.
             let lo = plane.percentile(0.001);
             let hi = plane.percentile(0.999);
-            if hi > lo {
-                (lo, hi)
-            } else {
-                plane.min_max()
-            }
+            if hi > lo { (lo, hi) } else { plane.min_max() }
         }
     };
-    let span = if (hi - lo).abs() > 1e-20 { hi - lo } else { 1.0 };
+    let span = if (hi - lo).abs() > 1e-20 {
+        hi - lo
+    } else {
+        1.0
+    };
     let data: Vec<u16> = plane
         .data
         .iter()
@@ -256,7 +264,11 @@ pub fn read_plane(path: &Path) -> Result<(Plane<f32>, bool)> {
     for i in 0..w * h {
         // A colour file collapses to its green channel, which is where the
         // luminance of anything this program writes lives.
-        out.data[i] = samples[if channels == 1 { i } else { i * channels + 1.min(channels - 1) }];
+        out.data[i] = samples[if channels == 1 {
+            i
+        } else {
+            i * channels + 1.min(channels - 1)
+        }];
     }
     Ok((out, floating))
 }
@@ -310,7 +322,11 @@ pub fn read_rgb(path: &Path) -> Result<[Plane<f32>; 3]> {
     ];
     for i in 0..w * h {
         for (c, p) in out.iter_mut().enumerate() {
-            let src = if channels == 1 { i } else { i * channels + c.min(channels - 1) };
+            let src = if channels == 1 {
+                i
+            } else {
+                i * channels + c.min(channels - 1)
+            };
             p.data[i] = samples[src];
         }
     }
@@ -322,8 +338,7 @@ pub fn read_rgb(path: &Path) -> Result<[Plane<f32>; 3]> {
 pub fn luma(rgb: &[Plane<f32>; 3]) -> Plane<f32> {
     let mut out = Plane::<f32>::new(rgb[0].width, rgb[0].height);
     for i in 0..out.data.len() {
-        out.data[i] =
-            0.2126 * rgb[0].data[i] + 0.7152 * rgb[1].data[i] + 0.0722 * rgb[2].data[i];
+        out.data[i] = 0.2126 * rgb[0].data[i] + 0.7152 * rgb[1].data[i] + 0.0722 * rgb[2].data[i];
     }
     out
 }
@@ -357,7 +372,10 @@ mod tests {
         // The bright fraction survives the downsample rather than being
         // sampled away: one in 97 pixels lit, averaged, is a mean near 0.0103.
         let mean = pixels.iter().map(|&v| v as f32).sum::<f32>() / pixels.len() as f32 / 255.0;
-        assert!((mean - 1.0 / 97.0).abs() < 0.006, "mean after downsampling {mean}");
+        assert!(
+            (mean - 1.0 / 97.0).abs() < 0.006,
+            "mean after downsampling {mean}"
+        );
         std::fs::remove_file(&f).ok();
     }
 

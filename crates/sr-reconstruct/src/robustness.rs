@@ -19,10 +19,10 @@ use rayon::prelude::*;
 use std::path::Path;
 
 use sr_core::config::RobustnessConfig;
-use sr_quality::photometry::PhotometricMatch;
 use sr_core::frame::{GuideImage, NoiseModel, RawFrame};
 use sr_core::geometry::WarpField;
 use sr_core::plane::Plane;
+use sr_quality::photometry::PhotometricMatch;
 
 /// Per-frame robustness at guide resolution, quantised to a byte.
 ///
@@ -158,8 +158,13 @@ fn consensus_guide(
     /// One sweep's product: the weighted sums, the weights they were built
     /// from, and how many frames looked at each site regardless of weight.
     type Sweep = (Vec<Plane<f32>>, Vec<f32>, Vec<u16>);
-    let empty =
-        || -> Sweep { (vec![Plane::<f32>::new(gw, gh); channels], vec![0.0f32; n], vec![0u16; n]) };
+    let empty = || -> Sweep {
+        (
+            vec![Plane::<f32>::new(gw, gh); channels],
+            vec![0.0f32; n],
+            vec![0u16; n],
+        )
+    };
 
     // `first` is None on the opening pass and the running mean on the second.
     let sweep = |first: Option<&Sweep>| {
@@ -168,10 +173,13 @@ fn consensus_guide(
             .filter(|&i| active.get(i).copied().unwrap_or(false))
             .fold(empty, |(mut sums, mut counts, mut seen), i| {
                 let guide = frames[i].structure_guide_rgb();
-                let stats: Vec<Plane<f32>> =
-                    (0..channels).map(|c| local_stats(guide.channel(c)).0).collect();
-                let photo =
-                    photometry.get(i).copied().unwrap_or(PhotometricMatch::IDENTITY);
+                let stats: Vec<Plane<f32>> = (0..channels)
+                    .map(|c| local_stats(guide.channel(c)).0)
+                    .collect();
+                let photo = photometry
+                    .get(i)
+                    .copied()
+                    .unwrap_or(PhotometricMatch::IDENTITY);
                 let warp = &warps[i];
                 for gy in 0..gh {
                     for gx in 0..gw {
@@ -181,13 +189,18 @@ fn consensus_guide(
                             continue;
                         };
                         let (tx, ty) = ((sx - 0.5) * 0.5, (sy - 0.5) * 0.5);
-                        if tx < 0.0 || ty < 0.0 || tx > (guide.width - 1) as f32 || ty > (guide.height - 1) as f32
+                        if tx < 0.0
+                            || ty < 0.0
+                            || tx > (guide.width - 1) as f32
+                            || ty > (guide.height - 1) as f32
                         {
                             continue;
                         }
                         let idx = gy * gw + gx;
-                        let (u, v) =
-                            (2.0 * gx as f32 / gw as f32 - 1.0, 2.0 * gy as f32 / gh as f32 - 1.0);
+                        let (u, v) = (
+                            2.0 * gx as f32 / gw as f32 - 1.0,
+                            2.0 * gy as f32 / gh as f32 - 1.0,
+                        );
                         // An obstructed frame did not look at this site.
                         if photo.blocked_at(u, v) {
                             continue;
@@ -200,18 +213,13 @@ fn consensus_guide(
                         // disagrees most, so a frame is not half in and half
                         // out of its own consensus.
                         let mut w = 1.0f32;
-                        if let Some((s0, c0, _)) = first {
-                            if c0[idx] > 0.0 {
-                                for c in 0..channels {
-                                    let mine = photo.apply_at(
-                                        c,
-                                        stats[c].bilinear(tx, ty),
-                                        u,
-                                        v,
-                                    );
-                                    let mean = s0[c].data[idx] / c0[idx];
-                                    w = w.min(outlier_weight(mine, mean, noise));
-                                }
+                        if let Some((s0, c0, _)) = first
+                            && c0[idx] > 0.0
+                        {
+                            for c in 0..channels {
+                                let mine = photo.apply_at(c, stats[c].bilinear(tx, ty), u, v);
+                                let mean = s0[c].data[idx] / c0[idx];
+                                w = w.min(outlier_weight(mine, mean, noise));
                             }
                         }
                         if w <= 0.0 {
@@ -257,7 +265,14 @@ fn consensus_guide(
     // this frame was admitted with, or it cannot take its own contribution back
     // out of the sum exactly.
     let (first_sums, first_counts, _) = prior;
-    Consensus { sums, counts, seen, first_sums, first_counts, frame_variance: None }
+    Consensus {
+        sums,
+        counts,
+        seen,
+        first_sums,
+        first_counts,
+        frame_variance: None,
+    }
 }
 
 // The opt-in mono path keeps two extra f32 arrays per reference guide pixel
@@ -268,75 +283,128 @@ struct ConsensusVariance {
     first_sums: Vec<f32>,
 }
 
-fn matched_guide_variance(noise: &NoiseModel, photo: &PhotometricMatch,
-    matched: f32, u: f32, v: f32) -> sr_core::Result<f32> {
-    let gain = photo.gain_at(0,u,v);
-    if !gain.is_finite() || gain<=0. {
-        return Err(sr_core::SrError::Input("invalid local matched guide gain".into()));
+fn matched_guide_variance(
+    noise: &NoiseModel,
+    photo: &PhotometricMatch,
+    matched: f32,
+    u: f32,
+    v: f32,
+) -> sr_core::Result<f32> {
+    let gain = photo.gain_at(0, u, v);
+    if !gain.is_finite() || gain <= 0. {
+        return Err(sr_core::SrError::Input(
+            "invalid local matched guide gain".into(),
+        ));
     }
     let offset = photo.apply_at(0, 0., u, v);
     let raw = ((matched - offset) / gain).max(0.);
     let variance = noise.variance(raw) * gain * gain / BLUR_EFFECTIVE_SAMPLES;
     if !matched.is_finite() || !offset.is_finite() || !variance.is_finite() || variance < 0. {
-        return Err(sr_core::SrError::Input("nonfinite matched guide noise variance".into()));
+        return Err(sr_core::SrError::Input(
+            "nonfinite matched guide noise variance".into(),
+        ));
     }
     Ok(variance)
 }
 
 fn outlier_weight_with_variance(mine: f32, mean: f32, variance: f32) -> f32 {
     let tolerance = (CONSENSUS_SIGMAS * variance.max(1e-20).sqrt())
-        .max(CONSENSUS_FRACTION * mean.max(0.)).max(1e-9);
+        .max(CONSENSUS_FRACTION * mean.max(0.))
+        .max(1e-9);
     let t = (mine - mean) / tolerance;
     1. / (1. + t * t)
 }
 
 #[allow(clippy::too_many_arguments)]
-fn consensus_guide_frame_noise(frames: &[RawFrame], warps: &[WarpField], active: &[bool],
-    photometry: &[PhotometricMatch], gw: usize, gh: usize) -> sr_core::Result<Consensus> {
+fn consensus_guide_frame_noise(
+    frames: &[RawFrame],
+    warps: &[WarpField],
+    active: &[bool],
+    photometry: &[PhotometricMatch],
+    gw: usize,
+    gh: usize,
+) -> sr_core::Result<Consensus> {
     struct Sweep {
-        sums: Plane<f32>, counts: Vec<f32>, seen: Vec<u16>, variances: Vec<f32>,
+        sums: Plane<f32>,
+        counts: Vec<f32>,
+        seen: Vec<u16>,
+        variances: Vec<f32>,
     }
     let n = gw * gh;
     let sweep = |prior: Option<&Sweep>| -> sr_core::Result<Sweep> {
-        let mut result = Sweep { sums: Plane::new(gw, gh), counts: vec![0.; n],
-            seen: vec![0; n], variances: vec![0.; n] };
+        let mut result = Sweep {
+            sums: Plane::new(gw, gh),
+            counts: vec![0.; n],
+            seen: vec![0; n],
+            variances: vec![0.; n],
+        };
         for (i, frame) in frames.iter().enumerate() {
-            if !active[i] { continue; }
+            if !active[i] {
+                continue;
+            }
             let guide = frame.structure_guide_rgb();
             let stats = local_stats(guide.channel(0)).0;
             let photo = &photometry[i];
-            for gy in 0..gh { for gx in 0..gw {
-                let Some((sx, sy)) = warps[i].inverse_map(gx as f32 * 2. + 0.5, gy as f32 * 2. + 0.5) else { continue; };
-                let (tx, ty) = ((sx - 0.5) * 0.5, (sy - 0.5) * 0.5);
-                if tx < 0. || ty < 0. || tx > (guide.width - 1) as f32 || ty > (guide.height - 1) as f32 { continue; }
-                let idx = gy * gw + gx;
-                let (u, v) = (2. * gx as f32 / gw as f32 - 1., 2. * gy as f32 / gh as f32 - 1.);
-                if photo.blocked_at(u, v) { continue; }
-                result.seen[idx] += 1;
-                let mine = photo.apply_at(0, stats.bilinear(tx, ty), u, v);
-                let stored_variance = matched_guide_variance(&frame.noise, photo, mine, u, v)?;
-                let mut weight = 1.;
-                if let Some(first) = prior {
-                    if first.counts[idx] > 0. {
+            for gy in 0..gh {
+                for gx in 0..gw {
+                    let Some((sx, sy)) =
+                        warps[i].inverse_map(gx as f32 * 2. + 0.5, gy as f32 * 2. + 0.5)
+                    else {
+                        continue;
+                    };
+                    let (tx, ty) = ((sx - 0.5) * 0.5, (sy - 0.5) * 0.5);
+                    if tx < 0.
+                        || ty < 0.
+                        || tx > (guide.width - 1) as f32
+                        || ty > (guide.height - 1) as f32
+                    {
+                        continue;
+                    }
+                    let idx = gy * gw + gx;
+                    let (u, v) = (
+                        2. * gx as f32 / gw as f32 - 1.,
+                        2. * gy as f32 / gh as f32 - 1.,
+                    );
+                    if photo.blocked_at(u, v) {
+                        continue;
+                    }
+                    result.seen[idx] += 1;
+                    let mine = photo.apply_at(0, stats.bilinear(tx, ty), u, v);
+                    let stored_variance = matched_guide_variance(&frame.noise, photo, mine, u, v)?;
+                    let mut weight = 1.;
+                    if let Some(first) = prior
+                        && first.counts[idx] > 0.
+                    {
                         let mean = first.sums.data[idx] / first.counts[idx];
                         let candidate = matched_guide_variance(&frame.noise, photo, mean, u, v)?;
                         let mean_variance = first.variances[idx] / first.counts[idx].powi(2);
-                        weight = outlier_weight_with_variance(mine, mean, candidate + mean_variance);
+                        weight =
+                            outlier_weight_with_variance(mine, mean, candidate + mean_variance);
                     }
+                    result.sums.data[idx] += weight * mine;
+                    result.counts[idx] += weight;
+                    result.variances[idx] += weight * weight * stored_variance;
                 }
-                result.sums.data[idx] += weight * mine;
-                result.counts[idx] += weight;
-                result.variances[idx] += weight * weight * stored_variance;
-            }}
+            }
         }
         Ok(result)
     };
     let mut prior = sweep(None)?;
-    for _ in 0..CONSENSUS_SWEEPS - 2 { prior = sweep(Some(&prior))?; }
+    for _ in 0..CONSENSUS_SWEEPS - 2 {
+        prior = sweep(Some(&prior))?;
+    }
     let result = sweep(Some(&prior))?;
-    Ok(Consensus { sums: vec![result.sums], counts: result.counts, seen: result.seen,
-        first_sums: vec![prior.sums], first_counts: prior.counts,
-        frame_variance: Some(ConsensusVariance { sums: result.variances, first_sums: prior.variances }) })
+    Ok(Consensus {
+        sums: vec![result.sums],
+        counts: result.counts,
+        seen: result.seen,
+        first_sums: vec![prior.sums],
+        first_counts: prior.counts,
+        frame_variance: Some(ConsensusVariance {
+            sums: result.variances,
+            first_sums: prior.variances,
+        }),
+    })
 }
 
 /// What the burst agrees the scene is, and enough of the working to remove any
@@ -355,9 +423,19 @@ impl Consensus {
     /// Mono leave-one-out mean and variance, using exactly the admission weight
     /// from the final sweep. Pixel noise is independent between source frames;
     /// the established guide blur effective-sample approximation is retained.
-    fn without_frame_noise(&self, idx: usize, mine: f32, noise: &NoiseModel,
-        photo: &PhotometricMatch, u: f32, v: f32) -> sr_core::Result<(f32, f32)> {
-        let variance = self.frame_variance.as_ref().expect("per-frame consensus variance");
+    fn without_frame_noise(
+        &self,
+        idx: usize,
+        mine: f32,
+        noise: &NoiseModel,
+        photo: &PhotometricMatch,
+        u: f32,
+        v: f32,
+    ) -> sr_core::Result<(f32, f32)> {
+        let variance = self
+            .frame_variance
+            .as_ref()
+            .expect("per-frame consensus variance");
         let mut weight = 1.;
         if self.first_counts[idx] > 0. {
             let mean = self.first_sums[0].data[idx] / self.first_counts[idx];
@@ -366,10 +444,13 @@ impl Consensus {
             weight = outlier_weight_with_variance(mine, mean, candidate + mean_variance);
         }
         let count = self.counts[idx] - weight;
-        if count <= 1e-3 { return Ok((mine, 0.)); }
+        if count <= 1e-3 {
+            return Ok((mine, 0.));
+        }
         let mean = ((self.sums[0].data[idx] - weight * mine) / count).max(0.);
         let own_variance = matched_guide_variance(noise, photo, mine, u, v)?;
-        let other_variance = (variance.sums[idx] - weight * weight * own_variance).max(0.) / count.powi(2);
+        let other_variance =
+            (variance.sums[idx] - weight * weight * own_variance).max(0.) / count.powi(2);
         Ok((mean, other_variance))
     }
     /// The burst's opinion of a site in one channel, with this frame's own
@@ -380,12 +461,22 @@ impl Consensus {
     /// removing a different per-channel weight would leave a colour bias.
     /// Recompute that same shared weight against the saved penultimate sweep.
     #[inline]
-    fn without(&self, c: usize, idx: usize, rtx: f32, rty: f32, mine: &[f32], noise: &NoiseModel)
-        -> f32 {
+    fn without(
+        &self,
+        c: usize,
+        idx: usize,
+        rtx: f32,
+        rty: f32,
+        mine: &[f32],
+        noise: &NoiseModel,
+    ) -> f32 {
         let w = if self.first_counts[idx] > 0.0 {
             mine.iter().enumerate().fold(1.0f32, |w, (k, &value)| {
-                w.min(outlier_weight(value,
-                    self.first_sums[k].data[idx] / self.first_counts[idx], noise))
+                w.min(outlier_weight(
+                    value,
+                    self.first_sums[k].data[idx] / self.first_counts[idx],
+                    noise,
+                ))
             })
         } else {
             1.0
@@ -437,8 +528,12 @@ impl Consensus {
 /// anchored reference this whole change exists to get away from.
 fn outlier_weight(mine: f32, mean: f32, noise: &NoiseModel) -> f32 {
     let level = mean.max(0.0);
-    let grain = (noise.variance(level) / BLUR_EFFECTIVE_SAMPLES).max(1e-20).sqrt();
-    let tolerance = (CONSENSUS_SIGMAS * grain).max(CONSENSUS_FRACTION * level).max(1e-9);
+    let grain = (noise.variance(level) / BLUR_EFFECTIVE_SAMPLES)
+        .max(1e-20)
+        .sqrt();
+    let tolerance = (CONSENSUS_SIGMAS * grain)
+        .max(CONSENSUS_FRACTION * level)
+        .max(1e-9);
     let t = (mine - mean) / tolerance;
     1.0 / (1.0 + t * t)
 }
@@ -454,8 +549,6 @@ const CONSENSUS_SIGMAS: f32 = 6.0;
 /// And never less than this fraction of the sky level, so that a burst whose
 /// frames genuinely differ by a few percent still all belong to it.
 const CONSENSUS_FRACTION: f32 = 0.10;
-
-
 
 /// Turn a graded trust into a decision, with a narrow band of doubt.
 ///
@@ -547,11 +640,16 @@ fn typical_disagreement(
             if !ref_ok[idx] {
                 continue;
             }
-            let Some((sx, sy)) = warp.inverse_map(gx as f32 * 2.0 + 0.5, gy as f32 * 2.0 + 0.5) else {
+            let Some((sx, sy)) = warp.inverse_map(gx as f32 * 2.0 + 0.5, gy as f32 * 2.0 + 0.5)
+            else {
                 continue;
             };
             let (tx, ty) = ((sx - 0.5) * 0.5, (sy - 0.5) * 0.5);
-            if tx < 0.0 || ty < 0.0 || tx > (stats[0].0.width - 1) as f32 || ty > (stats[0].0.height - 1) as f32 {
+            if tx < 0.0
+                || ty < 0.0
+                || tx > (stats[0].0.width - 1) as f32
+                || ty > (stats[0].0.height - 1) as f32
+            {
                 continue;
             }
             let (rtx, rty) = ref_at[idx];
@@ -572,7 +670,13 @@ fn typical_disagreement(
     }
     per_channel
         .iter()
-        .map(|v| if v.is_empty() { 0.0 } else { sr_core::math::median(v) })
+        .map(|v| {
+            if v.is_empty() {
+                0.0
+            } else {
+                sr_core::math::median(v)
+            }
+        })
         .collect()
 }
 
@@ -625,8 +729,18 @@ pub fn build_maps(
     registration_sigma: f32,
     cfg: &RobustnessConfig,
 ) -> RobustnessMaps {
-    build_maps_spooled(frames, warps, reference, active, photometry, noise, registration_sigma, cfg, None)
-        .expect("building owned robustness maps performs no scratch I/O")
+    build_maps_spooled(
+        frames,
+        warps,
+        reference,
+        active,
+        photometry,
+        noise,
+        registration_sigma,
+        cfg,
+        None,
+    )
+    .expect("building owned robustness maps performs no scratch I/O")
 }
 
 /// The same global consensus and rejection decisions, with completed maps
@@ -643,7 +757,19 @@ pub fn build_maps_spooled(
     cfg: &RobustnessConfig,
     spill_dir: Option<&Path>,
 ) -> sr_core::Result<RobustnessMaps> {
-    build_maps_impl(frames, warps, reference, active, photometry, noise, registration_sigma, cfg, spill_dir, None, false)
+    build_maps_impl(
+        frames,
+        warps,
+        reference,
+        active,
+        photometry,
+        noise,
+        registration_sigma,
+        cfg,
+        spill_dir,
+        None,
+        false,
+    )
 }
 
 /// Build rejection maps with fixed per-frame typical disagreement on the
@@ -663,18 +789,40 @@ pub fn build_maps_with_typical(
     typical: &[[f32; 3]],
 ) -> sr_core::Result<RobustnessMaps> {
     validate_fixed_inputs(frames, warps, reference, active, photometry, typical)?;
-    build_maps_impl(frames, warps, reference, active, photometry, noise, registration_sigma, cfg, None, Some(typical), false)
+    build_maps_impl(
+        frames,
+        warps,
+        reference,
+        active,
+        photometry,
+        noise,
+        registration_sigma,
+        cfg,
+        None,
+        Some(typical),
+        false,
+    )
 }
 
-fn validate_fixed_inputs(frames: &[RawFrame], warps: &[WarpField], reference: usize,
-    active: &[bool], photometry: &[PhotometricMatch], typical: &[[f32; 3]]) -> sr_core::Result<()> {
-    if reference >= frames.len() || warps.len() != frames.len()
-        || active.len() != frames.len() || photometry.len() != frames.len()
+fn validate_fixed_inputs(
+    frames: &[RawFrame],
+    warps: &[WarpField],
+    reference: usize,
+    active: &[bool],
+    photometry: &[PhotometricMatch],
+    typical: &[[f32; 3]],
+) -> sr_core::Result<()> {
+    if reference >= frames.len()
+        || warps.len() != frames.len()
+        || active.len() != frames.len()
+        || photometry.len() != frames.len()
         || typical.len() != frames.len()
         || typical.iter().flatten().any(|v| !v.is_finite() || *v < 0.)
         || frames.iter().any(|f| f.width < 2 || f.height < 2)
     {
-        return Err(sr_core::SrError::Input("invalid fixed robustness inputs or typical disagreement".into()));
+        return Err(sr_core::SrError::Input(
+            "invalid fixed robustness inputs or typical disagreement".into(),
+        ));
     }
     Ok(())
 }
@@ -686,34 +834,70 @@ fn validate_fixed_inputs(frames: &[RawFrame], warps: &[WarpField], reference: us
 /// per reference guide pixel (8 bytes); sequential consensus sweeps bound scratch.
 #[allow(clippy::too_many_arguments)]
 pub fn build_maps_with_frame_noise(
-    frames: &[RawFrame], warps: &[WarpField], reference: usize, active: &[bool],
-    photometry: &[PhotometricMatch], noise: &NoiseModel, registration_sigma: f32,
-    cfg: &RobustnessConfig, typical: &[[f32; 3]],
+    frames: &[RawFrame],
+    warps: &[WarpField],
+    reference: usize,
+    active: &[bool],
+    photometry: &[PhotometricMatch],
+    noise: &NoiseModel,
+    registration_sigma: f32,
+    cfg: &RobustnessConfig,
+    typical: &[[f32; 3]],
 ) -> sr_core::Result<RobustnessMaps> {
     validate_fixed_inputs(frames, warps, reference, active, photometry, typical)?;
-    if frames.len() > u16::MAX as usize || !registration_sigma.is_finite() || registration_sigma < 0.
-        || frames.iter().any(|f| !f.is_mono() || !f.noise.alpha.is_finite() || f.noise.alpha < 0.
-            || !f.noise.beta.is_finite() || f.noise.beta < 0.
-            || !f.noise.variance(0.18).is_finite() || f.noise.variance(0.18) <= 0.)
-        || photometry.iter().any(|p| !p.gain[0].is_finite() || p.gain[0] <= 0.
-            || !p.offset[0].is_finite() || p.field[0].iter().flatten().any(|v| !v.is_finite()))
+    if frames.len() > u16::MAX as usize
+        || !registration_sigma.is_finite()
+        || registration_sigma < 0.
+        || frames.iter().any(|f| {
+            !f.is_mono()
+                || !f.noise.alpha.is_finite()
+                || f.noise.alpha < 0.
+                || !f.noise.beta.is_finite()
+                || f.noise.beta < 0.
+                || !f.noise.variance(0.18).is_finite()
+                || f.noise.variance(0.18) <= 0.
+        })
+        || photometry.iter().any(|p| {
+            !p.gain[0].is_finite()
+                || p.gain[0] <= 0.
+                || !p.offset[0].is_finite()
+                || p.field[0].iter().flatten().any(|v| !v.is_finite())
+        })
     {
-        return Err(sr_core::SrError::Input("per-frame robustness requires mono frames and finite positive noise/photometry".into()));
+        return Err(sr_core::SrError::Input(
+            "per-frame robustness requires mono frames and finite positive noise/photometry".into(),
+        ));
     }
-    for (frame,photo) in frames.iter().zip(photometry) {
+    for (frame, photo) in frames.iter().zip(photometry) {
         if photo.log_gain.is_some() {
-            let (minimum,maximum)=photo.gain_bounds(0,[-1.,1.],[-1.,1.])
-                .ok_or_else(||sr_core::SrError::Input("invalid spatial guide gain".into()))?;
-            for raw in [0.,1.] {for gain in [minimum,maximum] {
-                let variance=frame.noise.variance(raw)*gain*gain;
-                if !variance.is_finite() || variance<=0. {
-                    return Err(sr_core::SrError::Input("spatial gain overflows or collapses guide noise".into()));
+            let (minimum, maximum) = photo
+                .gain_bounds(0, [-1., 1.], [-1., 1.])
+                .ok_or_else(|| sr_core::SrError::Input("invalid spatial guide gain".into()))?;
+            for raw in [0., 1.] {
+                for gain in [minimum, maximum] {
+                    let variance = frame.noise.variance(raw) * gain * gain;
+                    if !variance.is_finite() || variance <= 0. {
+                        return Err(sr_core::SrError::Input(
+                            "spatial gain overflows or collapses guide noise".into(),
+                        ));
+                    }
                 }
-            }}
+            }
         }
     }
-    build_maps_impl(frames, warps, reference, active, photometry, noise, registration_sigma, cfg,
-        None, Some(typical), true)
+    build_maps_impl(
+        frames,
+        warps,
+        reference,
+        active,
+        photometry,
+        noise,
+        registration_sigma,
+        cfg,
+        None,
+        Some(typical),
+        true,
+    )
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -792,12 +976,16 @@ fn build_maps_impl(
             }
 
             let guide = frames[i].structure_guide_rgb();
-            let stats: Vec<(Plane<f32>, Plane<f32>)> =
-                (0..channels).map(|c| local_stats(guide.channel(c))).collect();
+            let stats: Vec<(Plane<f32>, Plane<f32>)> = (0..channels)
+                .map(|c| local_stats(guide.channel(c)))
+                .collect();
             // Frames are compared on the reference's photometric scale, not
             // their own. Without this a burst whose illumination drifted is
             // distrusted uniformly, everywhere, for having been shot later.
-            let photo = photometry.get(i).copied().unwrap_or(PhotometricMatch::IDENTITY);
+            let photo = photometry
+                .get(i)
+                .copied()
+                .unwrap_or(PhotometricMatch::IDENTITY);
 
             // Guide coordinates are half the sensor pitch, so the sensor-space
             // warp is applied at twice the guide coordinate and halved back.
@@ -821,10 +1009,13 @@ fn build_maps_impl(
             // disagreement, which makes the rule what a robust rule should be:
             // reject what stands out from what this frame usually does, not
             // what stands out from what a perfect frame would have done.
-            let typical = fixed_typical.map(|values| values[i][..channels].to_vec())
-                .unwrap_or_else(|| typical_disagreement(
-                    channels, &consensus, noise, &stats, &ref_at, &ref_ok, warp, &photo, gw, gh,
-                ));
+            let typical = fixed_typical
+                .map(|values| values[i][..channels].to_vec())
+                .unwrap_or_else(|| {
+                    typical_disagreement(
+                        channels, &consensus, noise, &stats, &ref_at, &ref_ok, warp, &photo, gw, gh,
+                    )
+                });
 
             for gy in 0..gh {
                 for gx in 0..gw {
@@ -836,7 +1027,11 @@ fn build_maps_impl(
                         continue;
                     };
                     let (tx, ty) = ((sx - 0.5) * 0.5, (sy - 0.5) * 0.5);
-                    if tx < 0.0 || ty < 0.0 || tx > (guide.width - 1) as f32 || ty > (guide.height - 1) as f32 {
+                    if tx < 0.0
+                        || ty < 0.0
+                        || tx > (guide.width - 1) as f32
+                        || ty > (guide.height - 1) as f32
+                    {
                         map.data[idx] = 0;
                         rejected += 1;
                         continue;
@@ -844,7 +1039,10 @@ fn build_maps_impl(
                     let (rtx, rty) = ref_at[idx];
                     // Obstructed here: the merge will not use these samples,
                     // and the map says so.
-                    if photo.blocked_at(2.0 * gx as f32 / gw as f32 - 1.0, 2.0 * gy as f32 / gh as f32 - 1.0) {
+                    if photo.blocked_at(
+                        2.0 * gx as f32 / gw as f32 - 1.0,
+                        2.0 * gy as f32 / gh as f32 - 1.0,
+                    ) {
                         map.data[idx] = 0;
                         rejected += 1;
                         continue;
@@ -889,12 +1087,26 @@ fn build_maps_impl(
                     let mut worst = 0.0f32;
                     for c in 0..channels {
                         let (mu_ref, comparison_variance) = if frame_noise {
-                            let (u, v) = (2. * gx as f32 / gw as f32 - 1., 2. * gy as f32 / gh as f32 - 1.);
-                            let (mean, mean_variance) = consensus.without_frame_noise(idx, mu_t[0], &frames[i].noise, &photo, u, v)?;
-                            let candidate = matched_guide_variance(&frames[i].noise, &photo, mean, u, v)?;
+                            let (u, v) = (
+                                2. * gx as f32 / gw as f32 - 1.,
+                                2. * gy as f32 / gh as f32 - 1.,
+                            );
+                            let (mean, mean_variance) = consensus.without_frame_noise(
+                                idx,
+                                mu_t[0],
+                                &frames[i].noise,
+                                &photo,
+                                u,
+                                v,
+                            )?;
+                            let candidate =
+                                matched_guide_variance(&frames[i].noise, &photo, mean, u, v)?;
                             (mean, Some(candidate + mean_variance))
                         } else {
-                            (consensus.without(c, idx, rtx, rty, &mu_t[..channels], noise), None)
+                            (
+                                consensus.without(c, idx, rtx, rty, &mu_t[..channels], noise),
+                                None,
+                            )
                         };
                         let mu_t = mu_t[c];
                         let d = (mu_t - mu_ref).abs();
@@ -906,7 +1118,8 @@ fn build_maps_impl(
                         // One frame's worth of noise, not two: what it is being
                         // compared against is a mean of the whole burst and has
                         // almost none of its own.
-                        let noise_mean_var = comparison_variance.unwrap_or_else(|| noise.variance(level) / BLUR_EFFECTIVE_SAMPLES);
+                        let noise_mean_var = comparison_variance
+                            .unwrap_or_else(|| noise.variance(level) / BLUR_EFFECTIVE_SAMPLES);
                         // grad is per guide pixel (two sensor pixels), while
                         // registration_sigma is expressed in sensor pixels.
                         let mis = grad.bilinear(rtx, rty) * (0.5 * registration_sigma);
@@ -961,14 +1174,18 @@ fn build_maps_impl(
     // inactive reference grid. A zero may mean no native coverage, not a shared
     // disagreement with one reference exposure. The legacy majority restoration
     // would invent support outside footprints and must not run in this mode.
-    let restored = if frame_noise { 0 } else { restore_where_the_reference_is_the_outlier(
-        &mut maps,
-        active,
-        reference,
-        gw * gh,
-        cfg,
-        spill_dir,
-    )? };
+    let restored = if frame_noise {
+        0
+    } else {
+        restore_where_the_reference_is_the_outlier(
+            &mut maps,
+            active,
+            reference,
+            gw * gh,
+            cfg,
+            spill_dir,
+        )?
+    };
     if restored > 0 {
         log::info!(
             "robustness: {restored} sites where most frames disagreed with the reference \
@@ -986,7 +1203,13 @@ fn build_maps_impl(
         }
     }
 
-    Ok(RobustnessMaps { width: gw, height: gh, maps, rejected_fraction, consensus_luma: Some(ref_luma) })
+    Ok(RobustnessMaps {
+        width: gw,
+        height: gh,
+        maps,
+        rejected_fraction,
+        consensus_luma: Some(ref_luma),
+    })
 }
 
 /// Frames needed before "most of them" is a statement worth acting on.
@@ -1037,7 +1260,10 @@ fn restore_where_the_reference_is_the_outlier(
         }
     }
 
-    let restored = rejected_here.iter().filter(|&&count| count as usize >= majority).count();
+    let restored = rejected_here
+        .iter()
+        .filter(|&&count| count as usize >= majority)
+        .count();
     if restored == 0 {
         return Ok(0);
     }
@@ -1100,7 +1326,11 @@ mod tests {
         NoiseModel::new(2.0e-5, 4.0e-6, sr_core::frame::NoiseSource::Measured)
     }
 
-    fn unequal_noise_fixture(count: usize, hot_patch: bool, normalized: bool) -> (Vec<RawFrame>, Vec<PhotometricMatch>) {
+    fn unequal_noise_fixture(
+        count: usize,
+        hot_patch: bool,
+        normalized: bool,
+    ) -> (Vec<RawFrame>, Vec<PhotometricMatch>) {
         let mut frames = Vec::new();
         let mut photos = Vec::new();
         for i in 0..count {
@@ -1110,23 +1340,40 @@ mod tests {
             let sigma = if high { 0.006f32 } else { 0.001 };
             let mut state = 0x32ad_d658_4983_abd9u64 ^ ((i as u64 + 1) * 997);
             let mut uniform = || {
-                state ^= state << 13; state ^= state >> 7; state ^= state << 17;
+                state ^= state << 13;
+                state ^= state >> 7;
+                state ^= state << 17;
                 ((state >> 11) as f64 + 0.5) / (1u64 << 53) as f64
             };
             let mut values = Vec::new();
-            for y in 0..128 { for x in 0..128 {
-                let normal = (-2. * uniform().ln()).sqrt() * (2. * std::f64::consts::PI * uniform()).cos();
-                let hot = if high && hot_patch && (52..76).contains(&x) && (52..76).contains(&y) { 0.3 } else { 0. };
-                let raw = (0.12 + hot - offset) / gain + sigma * normal as f32;
-                values.push(if normalized { raw * gain + offset } else { raw });
-            }}
+            for y in 0..128 {
+                for x in 0..128 {
+                    let normal = (-2. * uniform().ln()).sqrt()
+                        * (2. * std::f64::consts::PI * uniform()).cos();
+                    let hot = if high && hot_patch && (52..76).contains(&x) && (52..76).contains(&y)
+                    {
+                        0.3
+                    } else {
+                        0.
+                    };
+                    let raw = (0.12 + hot - offset) / gain + sigma * normal as f32;
+                    values.push(if normalized { raw * gain + offset } else { raw });
+                }
+            }
             let mut frame = frame_with_blob(128, 128, None);
             frame.cfa = CfaPattern::MONO;
             frame.samples = SamplePlane::from_normalised(128, 128, values);
-            frame.noise = NoiseModel::new(0., sigma * sigma * if normalized { gain * gain } else { 1. }, sr_core::frame::NoiseSource::Measured);
+            frame.noise = NoiseModel::new(
+                0.,
+                sigma * sigma * if normalized { gain * gain } else { 1. },
+                sr_core::frame::NoiseSource::Measured,
+            );
             frames.push(frame);
-            photos.push(PhotometricMatch { gain: [if normalized { 1. } else { gain }; 3],
-                offset: [if normalized { 0. } else { offset }; 3], ..PhotometricMatch::IDENTITY });
+            photos.push(PhotometricMatch {
+                gain: [if normalized { 1. } else { gain }; 3],
+                offset: [if normalized { 0. } else { offset }; 3],
+                ..PhotometricMatch::IDENTITY
+            });
         }
         (frames, photos)
     }
@@ -1134,11 +1381,15 @@ mod tests {
     fn quiet_retention(maps: &RobustnessMaps, frame: usize) -> f32 {
         let mut retained = 0.;
         let mut count = 0;
-        for y in 6..58 { for x in 6..58 {
-            if (x as f32 - 32.).hypot(y as f32 - 32.) < 16. { continue; }
-            retained += maps.maps[frame].data[y * 64 + x] as f32 / 255.;
-            count += 1;
-        }}
+        for y in 6..58 {
+            for x in 6..58 {
+                if (x as f32 - 32.).hypot(y as f32 - 32.) < 16. {
+                    continue;
+                }
+                retained += maps.maps[frame].data[y * 64 + x] as f32 / 255.;
+                count += 1;
+            }
+        }
         retained / count as f32
     }
 
@@ -1148,15 +1399,45 @@ mod tests {
         let warps = vec![WarpField::identity(); 6];
         let common = NoiseModel::new(0., 1e-6, sr_core::frame::NoiseSource::Measured);
         let cfg = RobustnessConfig::default();
-        let legacy = build_maps_with_typical(&frames, &warps, 0, &[true; 6], &photo, &common, 0., &cfg, &[[0.; 3]; 6]).unwrap();
-        let maps = build_maps_with_frame_noise(&frames, &warps, 0, &[true; 6], &photo, &common, 0., &cfg, &[[0.; 3]; 6]).unwrap();
+        let legacy = build_maps_with_typical(
+            &frames,
+            &warps,
+            0,
+            &[true; 6],
+            &photo,
+            &common,
+            0.,
+            &cfg,
+            &[[0.; 3]; 6],
+        )
+        .unwrap();
+        let maps = build_maps_with_frame_noise(
+            &frames,
+            &warps,
+            0,
+            &[true; 6],
+            &photo,
+            &common,
+            0.,
+            &cfg,
+            &[[0.; 3]; 6],
+        )
+        .unwrap();
         let retained = quiet_retention(&maps, 5);
         let before = quiet_retention(&legacy, 5);
-        println!("heterogeneous noise: quiet retention {before} -> {retained}; hot-patch weight {}", maps.at(5, 64.5, 64.5));
+        println!(
+            "heterogeneous noise: quiet retention {before} -> {retained}; hot-patch weight {}",
+            maps.at(5, 64.5, 64.5)
+        );
         assert!(retained > 0.98, "ordinary noisy sky retained {retained}");
-        assert!(retained > before + 0.05, "fixture must expose common-noise bias: {before} -> {retained}");
+        assert!(
+            retained > before + 0.05,
+            "fixture must expose common-noise bias: {before} -> {retained}"
+        );
         assert!(maps.at(5, 64.5, 64.5) < 0.05, "hot patch admitted");
-        for i in 0..5 { assert!(quiet_retention(&maps, i) > 0.98); }
+        for i in 0..5 {
+            assert!(quiet_retention(&maps, i) > 0.98);
+        }
     }
 
     #[test]
@@ -1165,15 +1446,41 @@ mod tests {
         let common = NoiseModel::new(0., 1e-6, sr_core::frame::NoiseSource::Measured);
         let cfg = RobustnessConfig::default();
         let warps = vec![WarpField::identity(); 2];
-        let maps = build_maps_with_frame_noise(&frames, &warps, 0, &[true; 2],
-            &photo, &common, 0., &cfg, &[[0.; 3]; 2]).unwrap();
-        for i in 0..2 { assert!(quiet_retention(&maps, i) > 0.98, "frame {i} retained {}", quiet_retention(&maps, i)); }
+        let maps = build_maps_with_frame_noise(
+            &frames,
+            &warps,
+            0,
+            &[true; 2],
+            &photo,
+            &common,
+            0.,
+            &cfg,
+            &[[0.; 3]; 2],
+        )
+        .unwrap();
+        for i in 0..2 {
+            assert!(
+                quiet_retention(&maps, i) > 0.98,
+                "frame {i} retained {}",
+                quiet_retention(&maps, i)
+            );
+        }
         // In particular the clean candidate cannot be judged only by its own
         // variance when its sole comparison is a much noisier exposure.
-        let consensus = consensus_guide_frame_noise(&frames, &warps, &[true; 2], &photo, 64, 64).unwrap();
+        let consensus =
+            consensus_guide_frame_noise(&frames, &warps, &[true; 2], &photo, 64, 64).unwrap();
         let guide = frames[0].structure_guide_rgb();
         let mine = local_stats(guide.channel(0)).0.data[10 * 64 + 10];
-        let (_, variance) = consensus.without_frame_noise(10 * 64 + 10, mine, &frames[0].noise, &photo[0], -0.6875, -0.6875).unwrap();
+        let (_, variance) = consensus
+            .without_frame_noise(
+                10 * 64 + 10,
+                mine,
+                &frames[0].noise,
+                &photo[0],
+                -0.6875,
+                -0.6875,
+            )
+            .unwrap();
         assert!((variance - 0.006f32.powi(2) * 9. / BLUR_EFFECTIVE_SAMPLES).abs() < 1e-9);
     }
 
@@ -1184,13 +1491,34 @@ mod tests {
         let common = noise_model();
         let cfg = RobustnessConfig::default();
         let warps = vec![WarpField::identity(); 6];
-        let evaluate = |frames: &[RawFrame], p: &[PhotometricMatch]| build_maps_with_frame_noise(frames,
-            &warps, 0, &[true; 6], p, &common, 0., &cfg, &[[0.; 3]; 6]).unwrap();
+        let evaluate = |frames: &[RawFrame], p: &[PhotometricMatch]| {
+            build_maps_with_frame_noise(
+                frames,
+                &warps,
+                0,
+                &[true; 6],
+                p,
+                &common,
+                0.,
+                &cfg,
+                &[[0.; 3]; 6],
+            )
+            .unwrap()
+        };
         let a = evaluate(&raw, &photo);
         let b = evaluate(&normalized, &identity);
-        let worst = a.maps.iter().zip(&b.maps).flat_map(|(x, y)| x.data.iter().zip(y.data.iter()))
-            .map(|(&x, &y)| x.abs_diff(y)).max().unwrap();
-        assert!(worst <= 1, "gain normalization changes rejection by {worst} byte levels");
+        let worst = a
+            .maps
+            .iter()
+            .zip(&b.maps)
+            .flat_map(|(x, y)| x.data.iter().zip(y.data.iter()))
+            .map(|(&x, &y)| x.abs_diff(y))
+            .max()
+            .unwrap();
+        assert!(
+            worst <= 1,
+            "gain normalization changes rejection by {worst} byte levels"
+        );
     }
 
     #[test]
@@ -1199,12 +1527,47 @@ mod tests {
         let warps = vec![WarpField::identity(); 6];
         let common = noise_model();
         let cfg = RobustnessConfig::default();
-        let pool = rayon::ThreadPoolBuilder::new().num_threads(1).build().unwrap();
-        let before = pool.install(|| build_maps(&frames, &warps, 0, &[true; 6], &photo, &common, 0., &cfg));
-        let fixed_before = pool.install(|| build_maps_with_typical(&frames, &warps, 0, &[true; 6], &photo, &common, 0., &cfg, &[[0.; 3]; 6])).unwrap();
-        for frame in &mut frames { frame.noise.beta *= 100.; }
-        let after = pool.install(|| build_maps(&frames, &warps, 0, &[true; 6], &photo, &common, 0., &cfg));
-        let fixed_after = pool.install(|| build_maps_with_typical(&frames, &warps, 0, &[true; 6], &photo, &common, 0., &cfg, &[[0.; 3]; 6])).unwrap();
+        let pool = rayon::ThreadPoolBuilder::new()
+            .num_threads(1)
+            .build()
+            .unwrap();
+        let before =
+            pool.install(|| build_maps(&frames, &warps, 0, &[true; 6], &photo, &common, 0., &cfg));
+        let fixed_before = pool
+            .install(|| {
+                build_maps_with_typical(
+                    &frames,
+                    &warps,
+                    0,
+                    &[true; 6],
+                    &photo,
+                    &common,
+                    0.,
+                    &cfg,
+                    &[[0.; 3]; 6],
+                )
+            })
+            .unwrap();
+        for frame in &mut frames {
+            frame.noise.beta *= 100.;
+        }
+        let after =
+            pool.install(|| build_maps(&frames, &warps, 0, &[true; 6], &photo, &common, 0., &cfg));
+        let fixed_after = pool
+            .install(|| {
+                build_maps_with_typical(
+                    &frames,
+                    &warps,
+                    0,
+                    &[true; 6],
+                    &photo,
+                    &common,
+                    0.,
+                    &cfg,
+                    &[[0.; 3]; 6],
+                )
+            })
+            .unwrap();
         assert_eq!(before.maps, after.maps);
         assert_eq!(before.consensus_luma, after.consensus_luma);
         assert_eq!(fixed_before.maps, fixed_after.maps);
@@ -1214,8 +1577,14 @@ mod tests {
     #[test]
     fn matched_noise_recovers_raw_level_before_evaluating_shot_variance() {
         let noise = NoiseModel::new(0.002, 0.0001, sr_core::frame::NoiseSource::Measured);
-        let mut photo = PhotometricMatch { gain: [3.; 3], offset: [0.02; 3], ..PhotometricMatch::IDENTITY };
-        for value in photo.field[0].iter_mut().flatten() { *value = 0.04; }
+        let mut photo = PhotometricMatch {
+            gain: [3.; 3],
+            offset: [0.02; 3],
+            ..PhotometricMatch::IDENTITY
+        };
+        for value in photo.field[0].iter_mut().flatten() {
+            *value = 0.04;
+        }
         let variance = matched_guide_variance(&noise, &photo, 0.3, 0.1, -0.2).unwrap();
         let expected = noise.variance((0.3 - 0.02 - 0.04) / 3.) * 9. / BLUR_EFFECTIVE_SAMPLES;
         assert!((variance - expected).abs() < 1e-10);
@@ -1226,13 +1595,37 @@ mod tests {
         let (mut frames, photo) = unequal_noise_fixture(2, false, false);
         let warps = vec![WarpField::identity(); 2];
         frames[0].cfa = CfaPattern::RGGB;
-        assert!(build_maps_with_frame_noise(&frames, &warps, 0, &[true; 2], &photo,
-            &noise_model(), 0., &RobustnessConfig::default(), &[[0.; 3]; 2]).is_err());
+        assert!(
+            build_maps_with_frame_noise(
+                &frames,
+                &warps,
+                0,
+                &[true; 2],
+                &photo,
+                &noise_model(),
+                0.,
+                &RobustnessConfig::default(),
+                &[[0.; 3]; 2]
+            )
+            .is_err()
+        );
         frames[0].cfa = CfaPattern::MONO;
         for beta in [-1., f32::NAN, f32::INFINITY] {
             frames[0].noise.beta = beta;
-            assert!(build_maps_with_frame_noise(&frames, &warps, 0, &[true; 2], &photo,
-                &noise_model(), 0., &RobustnessConfig::default(), &[[0.; 3]; 2]).is_err());
+            assert!(
+                build_maps_with_frame_noise(
+                    &frames,
+                    &warps,
+                    0,
+                    &[true; 2],
+                    &photo,
+                    &noise_model(),
+                    0.,
+                    &RobustnessConfig::default(),
+                    &[[0.; 3]; 2]
+                )
+                .is_err()
+            );
         }
     }
 
@@ -1243,19 +1636,38 @@ mod tests {
         for i in 0..6 {
             frames.push(frame_with_blob(32, 32, None));
             let origin = if i < 3 { 16. } else { 72. };
-            warps.push(WarpField::global_only(sr_core::GlobalTransform::translation(origin, origin)));
+            warps.push(WarpField::global_only(
+                sr_core::GlobalTransform::translation(origin, origin),
+            ));
         }
         for frame in &mut frames {
             frame.cfa = CfaPattern::MONO;
-            frame.samples = SamplePlane::from_normalised(frame.width, frame.height, vec![0.2; frame.width * frame.height]);
+            frame.samples = SamplePlane::from_normalised(
+                frame.width,
+                frame.height,
+                vec![0.2; frame.width * frame.height],
+            );
         }
-        let maps = build_maps_with_frame_noise(&frames, &warps, 0,
-            &[false, true, true, true, true, true, true], &[PhotometricMatch::IDENTITY; 7],
-            &noise_model(), 0., &RobustnessConfig::default(), &[[0.; 3]; 7]).unwrap();
+        let maps = build_maps_with_frame_noise(
+            &frames,
+            &warps,
+            0,
+            &[false, true, true, true, true, true, true],
+            &[PhotometricMatch::IDENTITY; 7],
+            &noise_model(),
+            0.,
+            &RobustnessConfig::default(),
+            &[[0.; 3]; 7],
+        )
+        .unwrap();
         assert!(maps.maps[0].data.is_empty());
         for i in 1..7 {
             for (x, y) in [(8.5, 8.5), (60.5, 60.5), (116.5, 116.5)] {
-                assert_eq!(maps.at(i, x, y), 0., "frame {i} invented coverage at {x},{y}");
+                assert_eq!(
+                    maps.at(i, x, y),
+                    0.,
+                    "frame {i} invented coverage at {x},{y}"
+                );
             }
             let inside = if i <= 3 { 32.5 } else { 88.5 };
             let other = if i <= 3 { 88.5 } else { 32.5 };
@@ -1273,15 +1685,31 @@ mod tests {
             let mut frames = vec![frame_with_blob(64, 64, None), frame_with_blob(w, h, None)];
             for frame in &mut frames {
                 frame.cfa = CfaPattern::MONO;
-                frame.samples = SamplePlane::from_normalised(frame.width, frame.height, vec![0.25; frame.width * frame.height]);
+                frame.samples = SamplePlane::from_normalised(
+                    frame.width,
+                    frame.height,
+                    vec![0.25; frame.width * frame.height],
+                );
             }
-            let warps = [WarpField::identity(), WarpField {
-                global: sr_core::GlobalTransform::translation(dx, dy),
-                ..WarpField::identity()
-            }];
-            let maps = build_maps_with_typical(&frames, &warps, 0, &[false, true],
-                &[PhotometricMatch::IDENTITY; 2], &noise_model(), 0.1,
-                &RobustnessConfig::default(), &[[0.; 3]; 2]).unwrap();
+            let warps = [
+                WarpField::identity(),
+                WarpField {
+                    global: sr_core::GlobalTransform::translation(dx, dy),
+                    ..WarpField::identity()
+                },
+            ];
+            let maps = build_maps_with_typical(
+                &frames,
+                &warps,
+                0,
+                &[false, true],
+                &[PhotometricMatch::IDENTITY; 2],
+                &noise_model(),
+                0.1,
+                &RobustnessConfig::default(),
+                &[[0.; 3]; 2],
+            )
+            .unwrap();
             assert_eq!(maps.at(1, inside.0, inside.1), 1.);
             let luma = maps.consensus_luma.as_ref().unwrap();
             let index = ((inside.1 - 0.5) as usize / 2) * 32 + (inside.0 - 0.5) as usize / 2;
@@ -1297,18 +1725,37 @@ mod tests {
     #[test]
     fn fixed_typical_rejects_invalid_values_and_lengths() {
         let frames = [frame_with_blob(16, 16, None)];
-        for typical in [vec![], vec![[-1.; 3]], vec![[f32::NAN; 3]], vec![[f32::INFINITY; 3]]] {
-            assert!(build_maps_with_typical(&frames, &[WarpField::identity()], 0, &[true],
-                &[PhotometricMatch::IDENTITY], &noise_model(), 0.1,
-                &RobustnessConfig::default(), &typical).is_err());
+        for typical in [
+            vec![],
+            vec![[-1.; 3]],
+            vec![[f32::NAN; 3]],
+            vec![[f32::INFINITY; 3]],
+        ] {
+            assert!(
+                build_maps_with_typical(
+                    &frames,
+                    &[WarpField::identity()],
+                    0,
+                    &[true],
+                    &[PhotometricMatch::IDENTITY],
+                    &noise_model(),
+                    0.1,
+                    &RobustnessConfig::default(),
+                    &typical
+                )
+                .is_err()
+            );
         }
     }
 
     fn spill_test_dir() -> std::path::PathBuf {
         use std::sync::atomic::{AtomicU64, Ordering};
         static NEXT: AtomicU64 = AtomicU64::new(0);
-        let dir = std::env::temp_dir().join(format!("smokstak-robustness-test-{}-{}",
-            std::process::id(), NEXT.fetch_add(1, Ordering::Relaxed)));
+        let dir = std::env::temp_dir().join(format!(
+            "smokstak-robustness-test-{}-{}",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed)
+        ));
         std::fs::create_dir_all(&dir).unwrap();
         dir
     }
@@ -1318,24 +1765,52 @@ mod tests {
         let dir = spill_test_dir();
         // Hold reduction order fixed: this test isolates storage, not Rayon's
         // floating-point reduction scheduling.
-        let pool = rayon::ThreadPoolBuilder::new().num_threads(1).build().unwrap();
+        let pool = rayon::ThreadPoolBuilder::new()
+            .num_threads(1)
+            .build()
+            .unwrap();
         for outlier in [0, 3] {
-            let frames: Vec<_> = (0..7).map(|i|
-                frame_with_blob(64, 64, (i == outlier).then_some((20, 20, 12)))
-            ).collect();
+            let frames: Vec<_> = (0..7)
+                .map(|i| frame_with_blob(64, 64, (i == outlier).then_some((20, 20, 12))))
+                .collect();
             let warps = vec![WarpField::identity(); frames.len()];
             let active = [true, true, true, true, true, true, false];
             let photometry = vec![PhotometricMatch::IDENTITY; frames.len()];
             let noise = noise_model();
             let cfg = RobustnessConfig::default();
-            let owned = pool.install(|| build_maps(&frames, &warps, 0, &active, &photometry, &noise, 0.05, &cfg));
-            let spooled = pool.install(|| build_maps_spooled(&frames, &warps, 0, &active, &photometry, &noise, 0.05, &cfg, Some(&dir))).unwrap();
+            let owned = pool.install(|| {
+                build_maps(&frames, &warps, 0, &active, &photometry, &noise, 0.05, &cfg)
+            });
+            let spooled = pool
+                .install(|| {
+                    build_maps_spooled(
+                        &frames,
+                        &warps,
+                        0,
+                        &active,
+                        &photometry,
+                        &noise,
+                        0.05,
+                        &cfg,
+                        Some(&dir),
+                    )
+                })
+                .unwrap();
             assert_eq!(owned.maps, spooled.maps);
             assert_eq!(owned.rejected_fraction, spooled.rejected_fraction);
             assert_eq!(owned.consensus_luma, spooled.consensus_luma);
-            assert!(spooled.maps.iter().filter(|m| !m.data.is_empty()).all(|m| m.data.is_mapped()));
+            assert!(
+                spooled
+                    .maps
+                    .iter()
+                    .filter(|m| !m.data.is_empty())
+                    .all(|m| m.data.is_mapped())
+            );
             assert!(spooled.maps[6].data.is_empty());
-            assert_eq!(spooled.at(outlier, 26.5, 26.5), owned.at(outlier, 26.5, 26.5));
+            assert_eq!(
+                spooled.at(outlier, 26.5, 26.5),
+                owned.at(outlier, 26.5, 26.5)
+            );
         }
         assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 0);
         std::fs::remove_dir(dir).unwrap();
@@ -1349,14 +1824,37 @@ mod tests {
         let mut owned = vec![Plane::<u8>::filled(5, 1, 255); 8];
         owned[0].data.fill(0); // Reference is never restored.
         owned[7].data.fill(0); // Inactive frame is never counted or restored.
-        for map in owned.iter_mut().take(5).skip(1) { map.data[0] = 0; }
-        for map in owned.iter_mut().take(4).skip(1) { map.data[1] = 0; }
-        for map in owned.iter_mut().take(7).skip(1) { map.data[3] = 0; }
+        for map in owned.iter_mut().take(5).skip(1) {
+            map.data[0] = 0;
+        }
+        for map in owned.iter_mut().take(4).skip(1) {
+            map.data[1] = 0;
+        }
+        for map in owned.iter_mut().take(7).skip(1) {
+            map.data[3] = 0;
+        }
         owned[6].data[0] = 200; // Accepted fractional weight stays unchanged.
         let mut spooled = owned.clone();
-        for map in &mut spooled { map.spill(&dir).unwrap(); }
-        assert_eq!(restore_where_the_reference_is_the_outlier(&mut owned, &active, 0, 5, &cfg, None).unwrap(), 2);
-        assert_eq!(restore_where_the_reference_is_the_outlier(&mut spooled, &active, 0, 5, &cfg, Some(&dir)).unwrap(), 2);
+        for map in &mut spooled {
+            map.spill(&dir).unwrap();
+        }
+        assert_eq!(
+            restore_where_the_reference_is_the_outlier(&mut owned, &active, 0, 5, &cfg, None)
+                .unwrap(),
+            2
+        );
+        assert_eq!(
+            restore_where_the_reference_is_the_outlier(
+                &mut spooled,
+                &active,
+                0,
+                5,
+                &cfg,
+                Some(&dir)
+            )
+            .unwrap(),
+            2
+        );
         assert_eq!(owned, spooled);
         assert!(spooled.iter().all(|m| m.data.is_mapped()));
         assert_eq!(spooled[0].data.as_slice(), &[0; 5]);
@@ -1377,10 +1875,36 @@ mod tests {
         let warps = vec![WarpField::identity(); 2];
         let photo = [PhotometricMatch::IDENTITY; 2];
         let noise = noise_model();
-        assert!(matches!(build_maps_spooled(&frames, &warps, 0, &[true; 2], &photo, &noise, 0.05,
-            &RobustnessConfig::default(), Some(&blocker)), Err(sr_core::SrError::Io(_))));
-        let cfg = RobustnessConfig { enabled: false, ..Default::default() };
-        let disabled = build_maps_spooled(&frames, &warps, 0, &[true; 2], &photo, &noise, 0.05, &cfg, Some(&blocker)).unwrap();
+        assert!(matches!(
+            build_maps_spooled(
+                &frames,
+                &warps,
+                0,
+                &[true; 2],
+                &photo,
+                &noise,
+                0.05,
+                &RobustnessConfig::default(),
+                Some(&blocker)
+            ),
+            Err(sr_core::SrError::Io(_))
+        ));
+        let cfg = RobustnessConfig {
+            enabled: false,
+            ..Default::default()
+        };
+        let disabled = build_maps_spooled(
+            &frames,
+            &warps,
+            0,
+            &[true; 2],
+            &photo,
+            &noise,
+            0.05,
+            &cfg,
+            Some(&blocker),
+        )
+        .unwrap();
         assert!(disabled.maps.is_empty());
         assert_eq!(std::fs::read(&blocker).unwrap(), b"existing file");
         std::fs::remove_file(blocker).unwrap();
@@ -1394,20 +1918,37 @@ mod tests {
         // channel limited that exposure's shared consensus contribution.
         let clean = [0.2f32, 0.3, 0.4];
         let outlier = [0.21f32, 0.32, 0.8];
-        let frames: Vec<_> = (0..6).map(|i| {
-            let mut frame = frame_with_blob(32, 32, None);
-            let rgb = if i == 5 { outlier } else { clean };
-            frame.samples = SamplePlane::from_normalised(32, 32,
-                (0..32*32).map(|p| rgb[frame.cfa.color_at(p%32,p/32).index()]).collect());
-            frame
-        }).collect();
+        let frames: Vec<_> = (0..6)
+            .map(|i| {
+                let mut frame = frame_with_blob(32, 32, None);
+                let rgb = if i == 5 { outlier } else { clean };
+                frame.samples = SamplePlane::from_normalised(
+                    32,
+                    32,
+                    (0..32 * 32)
+                        .map(|p| rgb[frame.cfa.color_at(p % 32, p / 32).index()])
+                        .collect(),
+                );
+                frame
+            })
+            .collect();
         let noise = noise_model();
-        let consensus = consensus_guide(&frames, &vec![WarpField::identity();6],
-            &[true;6], &[PhotometricMatch::IDENTITY;6], &noise, 3, 16, 16);
+        let consensus = consensus_guide(
+            &frames,
+            &vec![WarpField::identity(); 6],
+            &[true; 6],
+            &[PhotometricMatch::IDENTITY; 6],
+            &noise,
+            3,
+            16,
+            16,
+        );
         for (c, &expected) in clean.iter().enumerate() {
-            let actual = consensus.without(c, 8*16+8, 8., 8., &outlier, &noise);
-            assert!((actual-expected).abs()<1e-6,
-                "channel {c}: removing the outlier leaves {actual}, expected {expected}");
+            let actual = consensus.without(c, 8 * 16 + 8, 8., 8., &outlier, &noise);
+            assert!(
+                (actual - expected).abs() < 1e-6,
+                "channel {c}: removing the outlier leaves {actual}, expected {expected}"
+            );
         }
     }
 
@@ -1420,18 +1961,30 @@ mod tests {
         for i in 0..8 {
             let mut frame = frame_with_blob(128, 128, None);
             frame.cfa = CfaPattern::MONO;
-            let data = (0..128*128).map(|p| {
-                let (x, y) = (p % 128, p / 128);
-                let shadow = i == 7 && (32..64).contains(&x) && (32..64).contains(&y);
-                0.2 + 0.002 * x as f32 - if shadow { 0.006 } else { 0.0 }
-            }).collect();
+            let data = (0..128 * 128)
+                .map(|p| {
+                    let (x, y) = (p % 128, p / 128);
+                    let shadow = i == 7 && (32..64).contains(&x) && (32..64).contains(&y);
+                    0.2 + 0.002 * x as f32 - if shadow { 0.006 } else { 0.0 }
+                })
+                .collect();
             frame.samples = SamplePlane::from_normalised(128, 128, data);
             frames.push(frame);
         }
-        let cfg = RobustnessConfig { sigma_floor: 0.0, ..Default::default() };
-        let maps = build_maps(&frames, &vec![WarpField::identity(); 8], 0,
-            &[true; 8], &[PhotometricMatch::IDENTITY; 8],
-            &NoiseModel::new(0.0, 0.0, sr_core::frame::NoiseSource::Measured), 1.0, &cfg);
+        let cfg = RobustnessConfig {
+            sigma_floor: 0.0,
+            ..Default::default()
+        };
+        let maps = build_maps(
+            &frames,
+            &vec![WarpField::identity(); 8],
+            0,
+            &[true; 8],
+            &[PhotometricMatch::IDENTITY; 8],
+            &NoiseModel::new(0.0, 0.0, sr_core::frame::NoiseSource::Measured),
+            1.0,
+            &cfg,
+        );
         let shadow = maps.at(7, 48.5, 48.5);
         assert!(shadow < 0.1, "the shadow retained weight {shadow}");
         assert!(maps.at(0, 48.5, 48.5) > 0.9, "clean sky was suppressed");
@@ -1472,14 +2025,22 @@ mod tests {
     fn a_flipped_frames_photometry_is_read_on_the_reference_grid() {
         let mut frames = vec![frame_with_blob(128, 128, None); 2];
         frames[0].samples = SamplePlane::from_normalised(128, 128, vec![0.3; 128 * 128]);
-        frames[1].samples = SamplePlane::from_normalised(128, 128,
-            (0..128 * 128).map(|i| {
-                let rx = 127.0 - (i % 128) as f32;
-                0.3 + 0.1 * (2.0 * rx / 128.0 - 1.0)
-            }).collect());
-        let warps = vec![WarpField::identity(), WarpField::global_only(GlobalTransform {
-            m: [-1.0, 0.0, 127.0, 0.0, -1.0, 127.0],
-        })];
+        frames[1].samples = SamplePlane::from_normalised(
+            128,
+            128,
+            (0..128 * 128)
+                .map(|i| {
+                    let rx = 127.0 - (i % 128) as f32;
+                    0.3 + 0.1 * (2.0 * rx / 128.0 - 1.0)
+                })
+                .collect(),
+        );
+        let warps = vec![
+            WarpField::identity(),
+            WarpField::global_only(GlobalTransform {
+                m: [-1.0, 0.0, 127.0, 0.0, -1.0, 127.0],
+            }),
+        ];
         let mut photometry = [PhotometricMatch::IDENTITY; 2];
         let n = photometry[1].field[0].len();
         for plane in &mut photometry[1].field {
@@ -1490,14 +2051,27 @@ mod tests {
             }
         }
         for row in &mut photometry[1].blocked {
-            for v in row.iter_mut().take(n / 4) { *v = true; }
+            for v in row.iter_mut().take(n / 4) {
+                *v = true;
+            }
         }
-        let maps = build_maps(&frames, &warps, 0, &[true; 2], &photometry,
-            &noise_model(), 0.05, &RobustnessConfig::default());
+        let maps = build_maps(
+            &frames,
+            &warps,
+            0,
+            &[true; 2],
+            &photometry,
+            &noise_model(),
+            0.05,
+            &RobustnessConfig::default(),
+        );
         let m = maps.plane(1);
         assert_eq!(m.data[32 * m.width + 4], 0.0, "obstructed sky was admitted");
-        assert!(m.data[32 * m.width + 48] > 0.9,
-            "clear sky with a corrected gradient was rejected: {}", m.data[32 * m.width + 48]);
+        assert!(
+            m.data[32 * m.width + 48] > 0.9,
+            "clear sky with a corrected gradient was rejected: {}",
+            m.data[32 * m.width + 48]
+        );
     }
 
     #[test]
@@ -1505,25 +2079,62 @@ mod tests {
         let mut upright = frame_with_blob(128, 128, Some((44, 52, 20)));
         upright.cfa = CfaPattern::MONO;
         let mut flipped = upright.clone();
-        flipped.samples = SamplePlane::from_normalised(128, 128,
-            (0..128 * 128).rev().map(|i| upright.value(i % 128, i / 128)).collect());
+        flipped.samples = SamplePlane::from_normalised(
+            128,
+            128,
+            (0..128 * 128)
+                .rev()
+                .map(|i| upright.value(i % 128, i / 128))
+                .collect(),
+        );
         let frames = vec![upright, flipped];
-        let warps = vec![WarpField::identity(), WarpField::global_only(GlobalTransform {
-            m: [-1.0, 0.0, 127.0, 0.0, -1.0, 127.0],
-        })];
+        let warps = vec![
+            WarpField::identity(),
+            WarpField::global_only(GlobalTransform {
+                m: [-1.0, 0.0, 127.0, 0.0, -1.0, 127.0],
+            }),
+        ];
         let photo = [PhotometricMatch::IDENTITY; 2];
-        let a = consensus_guide(&frames, &warps, &[true, false], &photo, &noise_model(), 1, 64, 64).luma(64,64,1);
-        let b = consensus_guide(&frames, &warps, &[false, true], &photo, &noise_model(), 1, 64, 64).luma(64,64,1);
+        let a = consensus_guide(
+            &frames,
+            &warps,
+            &[true, false],
+            &photo,
+            &noise_model(),
+            1,
+            64,
+            64,
+        )
+        .luma(64, 64, 1);
+        let b = consensus_guide(
+            &frames,
+            &warps,
+            &[false, true],
+            &photo,
+            &noise_model(),
+            1,
+            64,
+            64,
+        )
+        .luma(64, 64, 1);
         let mut worst = 0.0f32;
         for y in 8..56 {
-            for x in 8..56 { worst = worst.max((a.data[y*64+x]-b.data[y*64+x]).abs()); }
+            for x in 8..56 {
+                worst = worst.max((a.data[y * 64 + x] - b.data[y * 64 + x]).abs());
+            }
         }
-        assert!(worst < 1e-6, "rotating the sensor shifted its guide content: {worst}");
+        assert!(
+            worst < 1e-6,
+            "rotating the sensor shifted its guide content: {worst}"
+        );
     }
 
     #[test]
     fn identical_frames_are_fully_trusted() {
-        let frames = vec![frame_with_blob(128, 128, None), frame_with_blob(128, 128, None)];
+        let frames = vec![
+            frame_with_blob(128, 128, None),
+            frame_with_blob(128, 128, None),
+        ];
         let warps = vec![WarpField::identity(), WarpField::identity()];
         let maps = build_maps(
             &frames,
@@ -1544,7 +2155,10 @@ mod tests {
                 lo = lo.min(m.data[y * m.width + x]);
             }
         }
-        assert!(lo > 0.9, "identical frames were distrusted: min weight {lo}");
+        assert!(
+            lo > 0.9,
+            "identical frames were distrusted: min weight {lo}"
+        );
     }
 
     #[test]
@@ -1568,7 +2182,10 @@ mod tests {
         let inside = m.data[26 * m.width + 26];
         let outside = m.data[10 * m.width + 10];
         assert!(inside < 0.1, "moving object not rejected: weight {inside}");
-        assert!(outside > 0.9, "static background rejected: weight {outside}");
+        assert!(
+            outside > 0.9,
+            "static background rejected: weight {outside}"
+        );
         assert!(maps.rejected_fraction[1] > 0.0);
     }
 
@@ -1647,7 +2264,9 @@ mod tests {
         let reference = frame_with_blob(128, 128, None);
         let mut brighter = frame_with_blob(128, 128, None);
         {
-            let mut vals: Vec<f32> = (0..128 * 128).map(|i| brighter.value_at(i) * 1.10).collect();
+            let mut vals: Vec<f32> = (0..128 * 128)
+                .map(|i| brighter.value_at(i) * 1.10)
+                .collect();
             brighter.samples = SamplePlane::from_normalised(128, 128, std::mem::take(&mut vals));
         }
         let frames = vec![reference, brighter];
@@ -1658,7 +2277,10 @@ mod tests {
             &warps,
             0,
             &[true; 2],
-            &[PhotometricMatch::IDENTITY, PhotometricMatch::from_exposure(1.0 / 1.10)],
+            &[
+                PhotometricMatch::IDENTITY,
+                PhotometricMatch::from_exposure(1.0 / 1.10),
+            ],
             &noise_model(),
             0.05,
             &RobustnessConfig::default(),
@@ -1675,7 +2297,10 @@ mod tests {
 
     #[test]
     fn frames_that_do_not_overlap_are_rejected_wholesale() {
-        let frames = vec![frame_with_blob(128, 128, None), frame_with_blob(128, 128, None)];
+        let frames = vec![
+            frame_with_blob(128, 128, None),
+            frame_with_blob(128, 128, None),
+        ];
         let warps = vec![
             WarpField::identity(),
             WarpField::global_only(GlobalTransform::translation(4000.0, 0.0)),
@@ -1690,15 +2315,34 @@ mod tests {
             0.05,
             &RobustnessConfig::default(),
         );
-        assert!(maps.rejected_fraction[1] > 0.99, "{}", maps.rejected_fraction[1]);
+        assert!(
+            maps.rejected_fraction[1] > 0.99,
+            "{}",
+            maps.rejected_fraction[1]
+        );
     }
 
     #[test]
     fn disabling_robustness_costs_nothing() {
-        let frames = vec![frame_with_blob(64, 64, None), frame_with_blob(64, 64, Some((10, 10, 20)))];
+        let frames = vec![
+            frame_with_blob(64, 64, None),
+            frame_with_blob(64, 64, Some((10, 10, 20))),
+        ];
         let warps = vec![WarpField::identity(), WarpField::identity()];
-        let cfg = RobustnessConfig { enabled: false, ..Default::default() };
-        let maps = build_maps(&frames, &warps, 0, &[true; 2], &[PhotometricMatch::IDENTITY; 2], &noise_model(), 0.05, &cfg);
+        let cfg = RobustnessConfig {
+            enabled: false,
+            ..Default::default()
+        };
+        let maps = build_maps(
+            &frames,
+            &warps,
+            0,
+            &[true; 2],
+            &[PhotometricMatch::IDENTITY; 2],
+            &noise_model(),
+            0.05,
+            &cfg,
+        );
         assert!(maps.maps.is_empty());
         assert_eq!(maps.at(1, 10.0, 10.0), 1.0);
     }
@@ -1749,7 +2393,10 @@ mod tests {
         for g in 0..8 {
             let got = maps.at(0, 2.0 * g as f32 + 0.5, 2.0 * 1.0 + 0.5);
             let want = (g * 30) as f32 / 255.0;
-            assert!((got - want).abs() < 1e-6, "cell {g} read {got}, holds {want}");
+            assert!(
+                (got - want).abs() < 1e-6,
+                "cell {g} read {got}, holds {want}"
+            );
         }
     }
 

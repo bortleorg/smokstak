@@ -75,7 +75,11 @@ pub fn compare_excluding(
     exclude: &[(f32, f32, f32)],
 ) -> Comparison {
     let (w, h) = (recon[0].width, recon[0].height);
-    assert_eq!(truth[0].dims(), (w, h), "reconstruction and truth differ in size");
+    assert_eq!(
+        truth[0].dims(),
+        (w, h),
+        "reconstruction and truth differ in size"
+    );
     let bw = w.saturating_sub(2 * border);
     let bh = h.saturating_sub(2 * border);
     assert!(bw > 8 && bh > 8, "border leaves nothing to compare");
@@ -89,16 +93,18 @@ pub fn compare_excluding(
         for j in 0..bh {
             for i in 0..bw {
                 let (px, py) = ((i + border) as f32, (j + border) as f32);
-                if exclude
-                    .iter()
-                    .any(|&(x, y, r)| (px - x).hypot(py - y) <= r)
-                {
+                if exclude.iter().any(|&(x, y, r)| (px - x).hypot(py - y) <= r) {
                     keep[j * bw + i] = false;
                 }
             }
         }
     }
-    let kept: Vec<usize> = keep.iter().enumerate().filter(|(_, &k)| k).map(|(i, _)| i).collect();
+    let kept: Vec<usize> = keep
+        .iter()
+        .enumerate()
+        .filter(|&(_, &k)| k)
+        .map(|(i, _)| i)
+        .collect();
     assert!(kept.len() > 64, "the exclusions leave nothing to compare");
 
     let mut psnr_db = [0.0f32; 3];
@@ -395,12 +401,21 @@ pub fn fit_edge_in_box(
 
     let (l1, l2, e1) = crate::metrics::eig2(jxx as f32, jxy as f32, jyy as f32);
     let sum = l1 + l2;
-    let straightness = if sum > 1e-20 { ((l1 - l2) / sum).clamp(0.0, 1.0) } else { 0.0 };
+    let straightness = if sum > 1e-20 {
+        ((l1 - l2) / sum).clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
     // The edge runs perpendicular to the dominant gradient.
     let (ex, ey) = (-e1[1], e1[0]);
 
     let half = (x1 - x0).min(y1 - y0) as f32 * 0.35;
-    let line = (cx - ex * half, cy - ey * half, cx + ex * half, cy + ey * half);
+    let line = (
+        cx - ex * half,
+        cy - ey * half,
+        cx + ex * half,
+        cy + ey * half,
+    );
     let angle_deg = ey.atan2(ex).to_degrees();
     // Fold into [-90, 90]: an edge and its reverse are the same edge.
     let angle_deg = if angle_deg > 90.0 {
@@ -411,7 +426,12 @@ pub fn fit_edge_in_box(
         angle_deg
     };
 
-    Some(FoundEdge { line, angle_deg, contrast: hi - lo, straightness })
+    Some(FoundEdge {
+        line,
+        angle_deg,
+        contrast: hi - lo,
+        straightness,
+    })
 }
 
 /// Symmetric 2x2 eigen-decomposition, re-exported locally so this crate does
@@ -525,7 +545,11 @@ mod tests {
                 p.data[y * n + x] = if (x as f32) > boundary { 0.8 } else { 0.2 };
             }
         }
-        let p = if blur_passes > 0 { p.blur_n(blur_passes) } else { p };
+        let p = if blur_passes > 0 {
+            p.blur_n(blur_passes)
+        } else {
+            p
+        };
         // Edge line, from top to bottom of the region.
         let half = n as f32 * 0.35;
         let e = (c - slant * half, c - half, c + slant * half, c + half);
@@ -564,7 +588,11 @@ mod tests {
         let a = [p.clone(), p.clone(), p];
         let b = [scaled.clone(), scaled.clone(), scaled];
         let c = compare(&b, &a, 4);
-        assert!(c.psnr_mean_db > 60.0, "gain fitting failed: psnr {}", c.psnr_mean_db);
+        assert!(
+            c.psnr_mean_db > 60.0,
+            "gain fitting failed: psnr {}",
+            c.psnr_mean_db
+        );
         assert!((c.gain - 1.0 / 1.3).abs() < 0.02, "gain {}", c.gain);
     }
 
@@ -613,7 +641,11 @@ mod tests {
         let want = 0.15f32.atan().to_degrees();
         let got = 90.0 - found.angle_deg.abs();
         assert!((got - want).abs() < 2.0, "angle {got} vs {want}");
-        assert!(found.straightness > 0.8, "straightness {}", found.straightness);
+        assert!(
+            found.straightness > 0.8,
+            "straightness {}",
+            found.straightness
+        );
         assert!(found.contrast > 0.4, "contrast {}", found.contrast);
     }
 
@@ -626,7 +658,11 @@ mod tests {
             *v = (seed >> 33) as f32 / (1u32 << 31) as f32;
         }
         let found = fit_edge_in_box(&p, 8, 8, 80, 80).expect("returns something");
-        assert!(found.straightness < 0.3, "texture read as an edge: {}", found.straightness);
+        assert!(
+            found.straightness < 0.3,
+            "texture read as an edge: {}",
+            found.straightness
+        );
     }
 
     #[test]
@@ -649,7 +685,10 @@ mod tests {
             *v += sigma * g as f32;
         }
         let est = flat_field_noise(&p, 32);
-        assert!((est / sigma - 1.0).abs() < 0.25, "estimated {est} for a planted {sigma}");
+        assert!(
+            (est / sigma - 1.0).abs() < 0.25,
+            "estimated {est} for a planted {sigma}"
+        );
     }
 
     #[test]
@@ -741,7 +780,8 @@ pub fn star_chroma(rgb: &[Plane<f32>; 3], stars: &[(f32, f32)], psf: f32) -> Opt
     let mut scatters = Vec::new();
     let mut drifts = Vec::new();
     for &(sx, sy) in stars {
-        if sx < reach as f32 || sy < reach as f32
+        if sx < reach as f32
+            || sy < reach as f32
             || sx >= (w - reach) as f32
             || sy >= (h - reach) as f32
         {
@@ -953,8 +993,16 @@ mod star_chroma_tests {
         let (p, at) = one_star(2.0, [1.0, 0.9, 0.8]);
         let m = star_chroma(&p, &[at], 2.0).expect("a star was placed");
         assert_eq!(m.stars, 1);
-        assert!(m.core_scatter < 0.02, "core scatter {} on a clean star", m.core_scatter);
-        assert!(m.halo_drift < 0.02, "halo drift {} on a clean star", m.halo_drift);
+        assert!(
+            m.core_scatter < 0.02,
+            "core scatter {} on a clean star",
+            m.core_scatter
+        );
+        assert!(
+            m.halo_drift < 0.02,
+            "halo drift {} on a clean star",
+            m.halo_drift
+        );
     }
 
     #[test]
@@ -977,8 +1025,16 @@ mod star_chroma_tests {
             }
         }
         let m = star_chroma(&p, &[at], 2.0).expect("a star was placed");
-        assert!(m.core_scatter > 0.10, "speckle went unnoticed: {}", m.core_scatter);
-        assert!(m.halo_drift < 0.05, "the halo was blamed for a core fault: {}", m.halo_drift);
+        assert!(
+            m.core_scatter > 0.10,
+            "speckle went unnoticed: {}",
+            m.core_scatter
+        );
+        assert!(
+            m.halo_drift < 0.05,
+            "the halo was blamed for a core fault: {}",
+            m.halo_drift
+        );
     }
 
     #[test]
@@ -1007,8 +1063,16 @@ mod star_chroma_tests {
             }
         }
         let m = star_chroma(&p, &[(cx, cy)], 2.0).expect("a star was placed");
-        assert!(m.halo_drift > 0.10, "the rim went unnoticed: {}", m.halo_drift);
-        assert!(m.core_scatter < 0.05, "the core was blamed for a rim: {}", m.core_scatter);
+        assert!(
+            m.halo_drift > 0.10,
+            "the rim went unnoticed: {}",
+            m.halo_drift
+        );
+        assert!(
+            m.core_scatter < 0.05,
+            "the core was blamed for a rim: {}",
+            m.core_scatter
+        );
     }
 
     #[test]

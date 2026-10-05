@@ -4,8 +4,8 @@
 //! stride padding. Sensor samples, weights, masks and diagnostics all use it so
 //! that geometry code can be written once.
 
-use std::ops::{Index, IndexMut};
 use crate::buffer::{Buffer, Primitive};
+use std::ops::{Index, IndexMut};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Plane<T> {
@@ -16,18 +16,30 @@ pub struct Plane<T> {
 
 impl<T: Clone + Default> Plane<T> {
     pub fn new(width: usize, height: usize) -> Self {
-        Self { width, height, data: vec![T::default(); width * height].into() }
+        Self {
+            width,
+            height,
+            data: vec![T::default(); width * height].into(),
+        }
     }
 }
 
 impl<T: Clone> Plane<T> {
     pub fn filled(width: usize, height: usize, value: T) -> Self {
-        Self { width, height, data: vec![value; width * height].into() }
+        Self {
+            width,
+            height,
+            data: vec![value; width * height].into(),
+        }
     }
 
     pub fn from_vec(width: usize, height: usize, data: Vec<T>) -> Self {
         assert_eq!(data.len(), width * height, "plane data length mismatch");
-        Self { width, height, data: data.into() }
+        Self {
+            width,
+            height,
+            data: data.into(),
+        }
     }
 }
 
@@ -43,7 +55,10 @@ impl<T> Plane<T> {
     }
 
     #[inline]
-    pub fn get_mut(&mut self, x: usize, y: usize) -> &mut T where T: Clone {
+    pub fn get_mut(&mut self, x: usize, y: usize) -> &mut T
+    where
+        T: Clone,
+    {
         &mut self.data[y * self.width + x]
     }
 
@@ -53,7 +68,10 @@ impl<T> Plane<T> {
     }
 
     #[inline]
-    pub fn row_mut(&mut self, y: usize) -> &mut [T] where T: Clone {
+    pub fn row_mut(&mut self, y: usize) -> &mut [T]
+    where
+        T: Clone,
+    {
         let w = self.width;
         &mut self.data[y * w..(y + 1) * w]
     }
@@ -140,11 +158,7 @@ impl Plane<f32> {
                 hi = hi.max(v);
             }
         }
-        if lo > hi {
-            (0.0, 1.0)
-        } else {
-            (lo, hi)
-        }
+        if lo > hi { (0.0, 1.0) } else { (lo, hi) }
     }
 
     pub fn mean(&self) -> f32 {
@@ -157,7 +171,12 @@ impl Plane<f32> {
 
     /// Percentile over finite values. `p` in `[0, 1]`.
     pub fn percentile(&self, p: f32) -> f32 {
-        let mut v: Vec<f32> = self.data.iter().copied().filter(|x| x.is_finite()).collect();
+        let mut v: Vec<f32> = self
+            .data
+            .iter()
+            .copied()
+            .filter(|x| x.is_finite())
+            .collect();
         if v.is_empty() {
             return 0.0;
         }
@@ -235,8 +254,8 @@ impl Plane<f32> {
             let ym = y.saturating_sub(1);
             let yp = (y + 1).min(h - 1);
             for x in 0..w {
-                out.data[y * w + x] =
-                    0.25 * (tmp.data[ym * w + x] + 2.0 * tmp.data[y * w + x] + tmp.data[yp * w + x]);
+                out.data[y * w + x] = 0.25
+                    * (tmp.data[ym * w + x] + 2.0 * tmp.data[y * w + x] + tmp.data[yp * w + x]);
             }
         }
         out

@@ -60,11 +60,17 @@ pub struct Cache {
 
 impl Cache {
     pub fn new(dir: Option<&Path>) -> Self {
-        Self { dir: dir.map(|d| d.to_path_buf()) }
+        Self {
+            dir: dir.map(|d| d.to_path_buf()),
+        }
     }
 
     fn path(&self, kind: &str, fingerprint: &str) -> Option<PathBuf> {
-        Some(self.dir.as_ref()?.join(format!("{kind}-{fingerprint}.json")))
+        Some(
+            self.dir
+                .as_ref()?
+                .join(format!("{kind}-{fingerprint}.json")),
+        )
     }
 
     /// Read an entry, or `None` for any reason at all.
@@ -126,7 +132,11 @@ impl Fingerprint {
         let mut hasher = Sha256::new();
         hasher.update(FORMAT.to_le_bytes());
         hasher.update(env!("CARGO_PKG_VERSION").as_bytes());
-        hasher.update(option_env!("SRSTACK_REVISION").unwrap_or("unrecorded").as_bytes());
+        hasher.update(
+            option_env!("SRSTACK_REVISION")
+                .unwrap_or("unrecorded")
+                .as_bytes(),
+        );
         Self { hasher }
     }
 
@@ -152,7 +162,9 @@ impl Fingerprint {
     pub fn frames(mut self, frames: &[RawFrame]) -> Self {
         self.hasher.update((frames.len() as u64).to_le_bytes());
         for f in frames {
-            self = self.text(&f.metadata.file_name).text(&f.metadata.sha256_prefix);
+            self = self
+                .text(&f.metadata.file_name)
+                .text(&f.metadata.sha256_prefix);
         }
         self
     }
@@ -194,7 +206,13 @@ impl CachedDefects {
                 sites.push(i as u32);
             }
         }
-        Self { width: mask.width, height: mask.height, sites, hot, cold }
+        Self {
+            width: mask.width,
+            height: mask.height,
+            sites,
+            hot,
+            cold,
+        }
     }
 
     pub fn to_mask(&self) -> DefectMask {

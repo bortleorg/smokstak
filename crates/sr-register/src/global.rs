@@ -13,9 +13,9 @@ use sr_core::config::RegistrationConfig;
 use sr_core::geometry::{GlobalTransform, TransformModel};
 use sr_core::math::{mad_sigma, median};
 
-use crate::correlate::{patch_for, CorrelatorCache};
-use crate::model::{fit_best, fit_model, Correspondence};
-use crate::pyramid::{extract_patch, extract_patch_warped, probe_grid, RegistrationImage};
+use crate::correlate::{CorrelatorCache, patch_for};
+use crate::model::{Correspondence, fit_best, fit_model};
+use crate::pyramid::{RegistrationImage, extract_patch, extract_patch_warped, probe_grid};
 
 /// Registration of one frame against the reference, in proxy coordinates.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -167,7 +167,14 @@ pub fn register_pair(
     cfg: &RegistrationConfig,
     cache: &mut CorrelatorCache,
 ) -> GlobalRegistration {
-    register_pair_from(frame, reference, target, cfg, cache, GlobalTransform::IDENTITY)
+    register_pair_from(
+        frame,
+        reference,
+        target,
+        cfg,
+        cache,
+        GlobalTransform::IDENTITY,
+    )
 }
 
 /// The same, started from a given estimate rather than from the identity.
@@ -185,7 +192,10 @@ pub fn register_pair_from(
     cache: &mut CorrelatorCache,
     seed: GlobalTransform,
 ) -> GlobalRegistration {
-    let depth = reference.depth().min(target.depth()).min(cfg.pyramid_levels);
+    let depth = reference
+        .depth()
+        .min(target.depth())
+        .min(cfg.pyramid_levels);
 
     // Transform is carried in level-0 proxy coordinates throughout; only the
     // translation changes meaning between levels.
@@ -262,7 +272,10 @@ pub fn register_pair_from(
             // the other levels.
             log::trace!(
                 "frame {frame} level {level} it {it}: n {} p50 {:.2} rms {:.2} inliers {}",
-                corrs.len(), fit.residual_p50, fit.residual_rms, fit.inliers
+                corrs.len(),
+                fit.residual_p50,
+                fit.residual_rms,
+                fit.inliers
             );
             let Some(fit) = supported_update(&corrs, fit, level == 0, agreed, cfg) else {
                 break;
@@ -297,7 +310,15 @@ pub fn register_pair_from(
             f.inliers,
             f.total,
         ),
-        None => (TransformModel::Translation, f32::INFINITY, 0.0, 0.0, 0.0, 0, 0),
+        None => (
+            TransformModel::Translation,
+            f32::INFINITY,
+            0.0,
+            0.0,
+            0.0,
+            0,
+            0,
+        ),
     };
 
     // Provisional confidence, from what this pair alone can know. The residual
@@ -483,9 +504,14 @@ pub fn register_burst_seeded(
         })
         .inspect(|_| {
             let count = completed.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
-            if proxies.len() >= 32 && (count == 1 || count % 25 == 0 || count == proxies.len()) {
-                log::info!("global registration: measured {count}/{} frames in {:.1?}",
-                    proxies.len(), started.elapsed());
+            if proxies.len() >= 32
+                && (count == 1 || count.is_multiple_of(25) || count == proxies.len())
+            {
+                log::info!(
+                    "global registration: measured {count}/{} frames in {:.1?}",
+                    proxies.len(),
+                    started.elapsed()
+                );
             }
         })
         .collect();
@@ -535,21 +561,33 @@ mod tests {
     #[test]
     fn fine_affine_evidence_is_not_rejected_by_a_similarity_residual() {
         let cfg = RegistrationConfig::default();
-        let corrs: Vec<_> = (0..100).map(|i| {
-            let x = (i % 10) as f32 * 100.;
-            let y = (i / 10) as f32 * 100.;
-            Correspondence { x, y, rx: 0.02*x, ry: -0.02*y, weight: 1. }
-        }).collect();
+        let corrs: Vec<_> = (0..100)
+            .map(|i| {
+                let x = (i % 10) as f32 * 100.;
+                let y = (i / 10) as f32 * 100.;
+                Correspondence {
+                    x,
+                    y,
+                    rx: 0.02 * x,
+                    ry: -0.02 * y,
+                    weight: 1.,
+                }
+            })
+            .collect();
         let similarity = fit_model(&corrs, TransformModel::Similarity, cfg.irls_iters).unwrap();
         assert!(similarity.residual_p50 > AGREES_WITHIN);
         let accepted = supported_update(&corrs, similarity.clone(), true, true, &cfg).unwrap();
         assert!(accepted.residual_p50 < 0.01);
         assert!(supported_update(&corrs, similarity, false, true, &cfg).is_none());
-        let scattered: Vec<_> = corrs.iter().enumerate().map(|(i, c)| Correspondence {
-            rx: ((i*37 % 101) as f32 - 50.) * 0.6,
-            ry: ((i*61 % 97) as f32 - 48.) * 0.6,
-            ..*c
-        }).collect();
+        let scattered: Vec<_> = corrs
+            .iter()
+            .enumerate()
+            .map(|(i, c)| Correspondence {
+                rx: ((i * 37 % 101) as f32 - 50.) * 0.6,
+                ry: ((i * 61 % 97) as f32 - 48.) * 0.6,
+                ..*c
+            })
+            .collect();
         let fit = fit_model(&scattered, TransformModel::Similarity, cfg.irls_iters).unwrap();
         assert!(supported_update(&scattered, fit, true, true, &cfg).is_none());
     }
@@ -558,7 +596,9 @@ mod tests {
         let mut p = Plane::new(w, h);
         let mut seed = 0xC0FFEEu64;
         let mut next = || {
-            seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            seed = seed
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
             ((seed >> 33) as f32 / (1u32 << 31) as f32) - 0.5
         };
         // Log-spaced spatial frequencies from very coarse to near Nyquist.
@@ -589,15 +629,27 @@ mod tests {
 
     #[test]
     fn recovers_a_known_translation_between_frames() {
-        let cfg = RegistrationConfig { global_patch: 64, global_probes: 8, ..Default::default() };
+        let cfg = RegistrationConfig {
+            global_patch: 64,
+            global_probes: 8,
+            ..Default::default()
+        };
         let a = RegistrationImage::build(&scene(512, 384, 0.0, 0.0), 3);
         // Target content displaced by (+2.4, -1.3).
         let b = RegistrationImage::build(&scene(512, 384, 2.4, -1.3), 3);
         let mut cache = CorrelatorCache::new();
         let r = register_pair(1, &a, &b, &cfg, &mut cache);
         // Target-to-reference transform must undo the content displacement.
-        assert!((r.centre_shift.0 + 2.4).abs() < 0.1, "dx {:?}", r.centre_shift);
-        assert!((r.centre_shift.1 - 1.3).abs() < 0.1, "dy {:?}", r.centre_shift);
+        assert!(
+            (r.centre_shift.0 + 2.4).abs() < 0.1,
+            "dx {:?}",
+            r.centre_shift
+        );
+        assert!(
+            (r.centre_shift.1 - 1.3).abs() < 0.1,
+            "dy {:?}",
+            r.centre_shift
+        );
         assert!(r.residual_rms < 0.1, "rms {}", r.residual_rms);
         assert!(r.confidence > 0.5, "confidence {}", r.confidence);
     }
@@ -611,7 +663,9 @@ mod tests {
         let mut p = Plane::filled(w, h, 0.02);
         let mut seed = 0x5EEDu64;
         let mut next = || {
-            seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            seed = seed
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
             (seed >> 33) as f32 / (1u32 << 31) as f32
         };
         let sigma = 1.6f32;
@@ -697,7 +751,9 @@ mod tests {
         let truth = register_burst(&proxies, 0, &cfg);
 
         // A seed claiming a half turn that did not happen.
-        let liar = GlobalTransform { m: [-1.0, 0.0, 383.0, 0.0, -1.0, 383.0] };
+        let liar = GlobalTransform {
+            m: [-1.0, 0.0, 383.0, 0.0, -1.0, 383.0],
+        };
         let seeded = register_burst_seeded(&proxies, 0, &cfg, &[None, Some(liar)]);
 
         let (tx, ty) = truth[1].transform.centre_offset(384.0, 384.0);
@@ -710,7 +766,11 @@ mod tests {
 
     #[test]
     fn identity_registration_is_exact() {
-        let cfg = RegistrationConfig { global_patch: 64, global_probes: 6, ..Default::default() };
+        let cfg = RegistrationConfig {
+            global_patch: 64,
+            global_probes: 6,
+            ..Default::default()
+        };
         let a = RegistrationImage::build(&scene(384, 384, 0.0, 0.0), 3);
         let mut cache = CorrelatorCache::new();
         let r = register_pair(1, &a, &a, &cfg, &mut cache);
@@ -748,7 +808,11 @@ mod tests {
         normalise_confidence(&mut loose);
 
         let conf = |v: &[GlobalRegistration]| {
-            let c: Vec<f32> = v.iter().filter(|r| r.probes > 0).map(|r| r.confidence).collect();
+            let c: Vec<f32> = v
+                .iter()
+                .filter(|r| r.probes > 0)
+                .map(|r| r.confidence)
+                .collect();
             sr_core::math::median(&c)
         };
         let (a, b) = (conf(&tight), conf(&loose));
@@ -787,7 +851,10 @@ mod tests {
             .collect();
         normalise_confidence(&mut regs);
         let c = regs[3].confidence;
-        assert!(c > 0.9, "a frame whose every correspondence agreed scored {c}");
+        assert!(
+            c > 0.9,
+            "a frame whose every correspondence agreed scored {c}"
+        );
     }
 
     /// And the other half of it: a frame whose correspondences were measured
@@ -809,8 +876,16 @@ mod tests {
             })
             .collect();
         normalise_confidence(&mut regs);
-        assert!(regs[5].confidence < 0.2, "the odd one out scored {}", regs[5].confidence);
-        assert!(regs[4].confidence > 0.8, "an ordinary frame scored {}", regs[4].confidence);
+        assert!(
+            regs[5].confidence < 0.2,
+            "the odd one out scored {}",
+            regs[5].confidence
+        );
+        assert!(
+            regs[4].confidence > 0.8,
+            "an ordinary frame scored {}",
+            regs[4].confidence
+        );
     }
 
     #[test]
@@ -842,7 +917,11 @@ mod tests {
 
     #[test]
     fn reports_low_confidence_on_unrelated_content() {
-        let cfg = RegistrationConfig { global_patch: 64, global_probes: 6, ..Default::default() };
+        let cfg = RegistrationConfig {
+            global_patch: 64,
+            global_probes: 6,
+            ..Default::default()
+        };
         let a = RegistrationImage::build(&scene(384, 384, 0.0, 0.0), 3);
         let flat = RegistrationImage::build(&Plane::filled(384, 384, 0.5), 3);
         let mut cache = CorrelatorCache::new();

@@ -25,17 +25,23 @@ impl Default for GlobalTransform {
 }
 
 impl GlobalTransform {
-    pub const IDENTITY: GlobalTransform = GlobalTransform { m: [1.0, 0.0, 0.0, 0.0, 1.0, 0.0] };
+    pub const IDENTITY: GlobalTransform = GlobalTransform {
+        m: [1.0, 0.0, 0.0, 0.0, 1.0, 0.0],
+    };
 
     pub fn translation(dx: f32, dy: f32) -> Self {
-        GlobalTransform { m: [1.0, 0.0, dx, 0.0, 1.0, dy] }
+        GlobalTransform {
+            m: [1.0, 0.0, dx, 0.0, 1.0, dy],
+        }
     }
 
     /// Rotation by `theta` (radians) and uniform scale about the origin, plus
     /// translation. This is the "similarity" model of the transform hierarchy.
     pub fn similarity(theta: f32, scale: f32, dx: f32, dy: f32) -> Self {
         let (s, c) = theta.sin_cos();
-        GlobalTransform { m: [scale * c, -scale * s, dx, scale * s, scale * c, dy] }
+        GlobalTransform {
+            m: [scale * c, -scale * s, dx, scale * s, scale * c, dy],
+        }
     }
 
     #[inline]
@@ -63,7 +69,9 @@ impl GlobalTransform {
         let e = self.m[0] * inv;
         let c = -(a * self.m[2] + b * self.m[5]);
         let f = -(d * self.m[2] + e * self.m[5]);
-        Some(GlobalTransform { m: [a, b, c, d, e, f] })
+        Some(GlobalTransform {
+            m: [a, b, c, d, e, f],
+        })
     }
 
     /// `self` applied after `other`.
@@ -157,8 +165,14 @@ impl GlobalTransform {
         let (dx, dy) = (self.m[2], self.m[5]);
         let theta = self.rotation();
         let candidates = [
-            (TransformModel::Translation, GlobalTransform::translation(dx, dy)),
-            (TransformModel::Euclidean, GlobalTransform::similarity(theta, 1.0, dx, dy)),
+            (
+                TransformModel::Translation,
+                GlobalTransform::translation(dx, dy),
+            ),
+            (
+                TransformModel::Euclidean,
+                GlobalTransform::similarity(theta, 1.0, dx, dy),
+            ),
             (
                 TransformModel::Similarity,
                 GlobalTransform::similarity(theta, self.scale(), dx, dy),
@@ -311,7 +325,11 @@ impl DeformationField {
         if self.u.is_empty() {
             return 0.0;
         }
-        let s: f32 = self.u.iter().map(|d| (d[0] * d[0] + d[1] * d[1]).sqrt()).sum();
+        let s: f32 = self
+            .u
+            .iter()
+            .map(|d| (d[0] * d[0] + d[1] * d[1]).sqrt())
+            .sum();
         s / self.u.len() as f32
     }
 
@@ -322,7 +340,11 @@ impl DeformationField {
             spacing: self.spacing * factor,
             grid_w: self.grid_w,
             grid_h: self.grid_h,
-            u: self.u.iter().map(|d| [d[0] * factor, d[1] * factor]).collect(),
+            u: self
+                .u
+                .iter()
+                .map(|d| [d[0] * factor, d[1] * factor])
+                .collect(),
             conf: self.conf.clone(),
         }
     }
@@ -331,7 +353,10 @@ impl DeformationField {
         Plane::from_vec(
             self.grid_w,
             self.grid_h,
-            self.u.iter().map(|d| (d[0] * d[0] + d[1] * d[1]).sqrt()).collect(),
+            self.u
+                .iter()
+                .map(|d| (d[0] * d[0] + d[1] * d[1]).sqrt())
+                .collect(),
         )
     }
 
@@ -350,11 +375,17 @@ pub struct WarpField {
 
 impl WarpField {
     pub fn identity() -> Self {
-        Self { global: GlobalTransform::IDENTITY, local: None }
+        Self {
+            global: GlobalTransform::IDENTITY,
+            local: None,
+        }
     }
 
     pub fn global_only(global: GlobalTransform) -> Self {
-        Self { global, local: None }
+        Self {
+            global,
+            local: None,
+        }
     }
 
     /// Map a sample position from this frame's sensor grid into reference
@@ -410,7 +441,10 @@ impl WarpField {
 
     /// Upper bound on local displacement, for halo sizing.
     pub fn max_local(&self) -> f32 {
-        self.local.as_ref().map(|d| d.max_magnitude()).unwrap_or(0.0)
+        self.local
+            .as_ref()
+            .map(|d| d.max_magnitude())
+            .unwrap_or(0.0)
     }
 }
 
@@ -444,7 +478,11 @@ impl Default for RadialChroma {
 
 impl RadialChroma {
     pub fn identity() -> Self {
-        Self { centre: (0.0, 0.0), norm: 1.0, coeff: [[0.0; 2]; 3] }
+        Self {
+            centre: (0.0, 0.0),
+            norm: 1.0,
+            coeff: [[0.0; 2]; 3],
+        }
     }
 
     pub fn is_identity(&self) -> bool {
@@ -501,7 +539,12 @@ pub struct Rect {
 
 impl Rect {
     pub fn new(x: usize, y: usize, width: usize, height: usize) -> Self {
-        Self { x, y, width, height }
+        Self {
+            x,
+            y,
+            width,
+            height,
+        }
     }
     pub fn x1(&self) -> usize {
         self.x + self.width
@@ -520,7 +563,9 @@ mod tests {
 
     #[test]
     fn affine_inverse_round_trips() {
-        let t = GlobalTransform { m: [1.002, 0.01, -3.5, -0.008, 0.999, 7.25] };
+        let t = GlobalTransform {
+            m: [1.002, 0.01, -3.5, -0.008, 0.999, 7.25],
+        };
         let inv = t.inverse().unwrap();
         for &(x, y) in &[(0.0f32, 0.0f32), (100.0, 250.0), (-40.0, 900.0)] {
             let (a, b) = t.apply(x, y);
@@ -599,7 +644,11 @@ mod tests {
         let (ox, oy) = about_centre.centre_offset(w, h);
         assert!(ox.hypot(oy) < 1e-3, "centre moved by {}", ox.hypot(oy));
         let (tx, ty) = about_centre.shift();
-        assert!(tx.hypot(ty) > 20.0, "translation at the origin was only {}", tx.hypot(ty));
+        assert!(
+            tx.hypot(ty) > 20.0,
+            "translation at the origin was only {}",
+            tx.hypot(ty)
+        );
     }
 
     #[test]
@@ -612,18 +661,29 @@ mod tests {
         assert_eq!(rot.effective_model(w, h, 0.05), TransformModel::Euclidean);
 
         let pure = GlobalTransform::translation(3.0, -2.0);
-        assert_eq!(pure.effective_model(w, h, 0.05), TransformModel::Translation);
+        assert_eq!(
+            pure.effective_model(w, h, 0.05),
+            TransformModel::Translation
+        );
 
         // A rotation small enough to be invisible over the frame is a
         // translation, and saying so is the point of measuring in pixels.
         let tiny = GlobalTransform::similarity(1e-6, 1.0, 3.0, -2.0);
-        assert_eq!(tiny.effective_model(w, h, 0.05), TransformModel::Translation);
+        assert_eq!(
+            tiny.effective_model(w, h, 0.05),
+            TransformModel::Translation
+        );
 
         let scaled = GlobalTransform::similarity(0.5f32.to_radians(), 1.001, 3.0, -2.0);
-        assert_eq!(scaled.effective_model(w, h, 0.05), TransformModel::Similarity);
+        assert_eq!(
+            scaled.effective_model(w, h, 0.05),
+            TransformModel::Similarity
+        );
 
         // Unequal axis scales are not a similarity at any tolerance this small.
-        let sheared = GlobalTransform { m: [1.001, 0.0, 3.0, 0.0, 0.999, -2.0] };
+        let sheared = GlobalTransform {
+            m: [1.001, 0.0, 3.0, 0.0, 0.999, -2.0],
+        };
         assert_eq!(sheared.effective_model(w, h, 0.05), TransformModel::Affine);
     }
 }

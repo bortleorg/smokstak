@@ -405,7 +405,14 @@ pub fn decode(path: &Path, row_order: RowOrder) -> Result<RawFrame> {
     build_frame(
         path,
         &hdr,
-        Mosaic { data, width: cw, height: ch, full_width: w, full_height: h, wcs },
+        Mosaic {
+            data,
+            width: cw,
+            height: ch,
+            full_width: w,
+            full_height: h,
+            wcs,
+        },
     )
 }
 
@@ -436,7 +443,14 @@ pub(crate) struct Mosaic {
 /// metadata.
 pub(crate) fn build_frame(path: &Path, hdr: &Header, m: Mosaic) -> Result<RawFrame> {
     let file = path.display().to_string();
-    let Mosaic { data, width: cw, height: ch, full_width: w, full_height: h, wcs } = m;
+    let Mosaic {
+        data,
+        width: cw,
+        height: ch,
+        full_width: w,
+        full_height: h,
+        wcs,
+    } = m;
 
     let step = quantisation_step(&data);
     // A converter narrower than the file leaves the top codes unreachable, so
@@ -576,7 +590,7 @@ fn read_samples(
             return Err(SrError::Input(format!(
                 "{}: BITPIX = {other} is not a FITS data type",
                 path.display()
-            )))
+            )));
         }
     };
     let mut f = File::open(path)?;
@@ -593,8 +607,8 @@ fn read_samples(
     // The common case by a wide margin: 16-bit signed shifted into unsigned by
     // BZERO, which is exactly a 16-bit unsigned image and needs no arithmetic.
     if bitpix == 16 && bscale == 1.0 && bzero == 32768.0 {
-        for (o, c) in out.iter_mut().zip(bytes.chunks_exact(2)) {
-            *o = (i16::from_be_bytes([c[0], c[1]]) as i32 + 32768) as u16;
+        for (o, c) in out.iter_mut().zip(bytes.as_chunks::<2>().0) {
+            *o = (i16::from_be_bytes(*c) as i32 + 32768) as u16;
         }
         return Ok(out);
     }
@@ -720,7 +734,11 @@ mod tests {
         assert!((w.crpix.0 - 3942.41202799).abs() < 1e-6);
         assert!((w.crpix.1 - 1068.41572062).abs() < 1e-6);
         // 3.76 um at 173 mm.
-        assert!((w.scale_arcsec() - 4.47).abs() < 0.05, "scale {}", w.scale_arcsec());
+        assert!(
+            (w.scale_arcsec() - 4.47).abs() < 0.05,
+            "scale {}",
+            w.scale_arcsec()
+        );
     }
 
     #[test]
@@ -760,19 +778,29 @@ mod tests {
         let bytes = synth(8, 8, &cards, &[1000u16; 64]);
         let p = write("crota.fit", &bytes);
         let w = decode(&p, RowOrder::Auto).unwrap().metadata.wcs.unwrap();
-        assert!((w.scale_arcsec() - 4.478).abs() < 0.05, "scale {}", w.scale_arcsec());
+        assert!(
+            (w.scale_arcsec() - 4.478).abs() < 0.05,
+            "scale {}",
+            w.scale_arcsec()
+        );
     }
 
     #[test]
     fn cards_split_on_the_value_indicator() {
         let c = format!("{:<80}", "BAYERPAT= 'RGGB    '           / Bayer pattern");
-        assert_eq!(parse_card(&c), Some(("BAYERPAT".into(), "'RGGB    '".into())));
+        assert_eq!(
+            parse_card(&c),
+            Some(("BAYERPAT".into(), "'RGGB    '".into()))
+        );
         assert_eq!(unquote("'RGGB    '"), "RGGB");
     }
 
     #[test]
     fn a_slash_inside_a_string_is_not_a_comment() {
-        let c = format!("{:<80}", "FILE    = 'a/b.fit'            / where it came from");
+        let c = format!(
+            "{:<80}",
+            "FILE    = 'a/b.fit'            / where it came from"
+        );
         let (_, v) = parse_card(&c).unwrap();
         assert_eq!(unquote(&v), "a/b.fit");
     }
@@ -799,11 +827,20 @@ mod tests {
     #[test]
     fn the_green_diagonal_is_read_from_the_pixels() {
         // R low, G equal, B middling: an ordinary light-polluted sky.
-        assert_eq!(green_is_antidiagonal([3790.0, 5361.0, 5362.0, 4950.0]), Some(true));
+        assert_eq!(
+            green_is_antidiagonal([3790.0, 5361.0, 5362.0, 4950.0]),
+            Some(true)
+        );
         // The same frame stored bottom-up: the greens move to the main diagonal.
-        assert_eq!(green_is_antidiagonal([5361.0, 4950.0, 3790.0, 5362.0]), Some(false));
+        assert_eq!(
+            green_is_antidiagonal([5361.0, 4950.0, 3790.0, 5362.0]),
+            Some(false)
+        );
         // A grey frame says nothing and must abstain rather than guess.
-        assert_eq!(green_is_antidiagonal([1000.0, 1001.0, 1002.0, 1003.0]), None);
+        assert_eq!(
+            green_is_antidiagonal([1000.0, 1001.0, 1002.0, 1003.0]),
+            None
+        );
     }
 
     #[test]
@@ -811,7 +848,7 @@ mod tests {
         let mut pixels = vec![0u16; 32 * 32];
         for y in 0..32 {
             for x in 0..32 {
-                pixels[y*32+x] = [2000, 6000, 6000, 4000][(y%2)*2+x%2];
+                pixels[y * 32 + x] = [2000, 6000, 6000, 4000][(y % 2) * 2 + x % 2];
             }
         }
         // A narrow feature can put the two green sites at very different
@@ -819,8 +856,8 @@ mod tests {
         // this structure into the channel means and declares the R/B sites G.
         for y in (0..32).step_by(8) {
             for x in (0..32).step_by(8) {
-                for (dy, dx, value) in [(0,0,5000), (0,1,1000), (1,0,8000), (1,1,5000)] {
-                    pixels[(y+dy)*32+x+dx] = value;
+                for (dy, dx, value) in [(0, 0, 5000), (0, 1, 1000), (1, 0, 8000), (1, 1, 5000)] {
+                    pixels[(y + dy) * 32 + x + dx] = value;
                 }
             }
         }
@@ -851,13 +888,22 @@ mod tests {
                 };
             }
         }
-        let bytes = synth(4, 4, &[("BAYERPAT", "'RGGB    '"), ("ROWORDER", "'TOP-DOWN'")], &px);
+        let bytes = synth(
+            4,
+            4,
+            &[("BAYERPAT", "'RGGB    '"), ("ROWORDER", "'TOP-DOWN'")],
+            &px,
+        );
         let p = write("minimal.fit", &bytes);
         let f = decode(&p, RowOrder::Auto).unwrap();
         assert_eq!((f.width, f.height), (4, 4));
         assert_eq!(f.cfa, CfaPattern::RGGB);
         assert_eq!(f.metadata.white_level, 65532.0);
-        assert!((f.value(0, 0) - 1004.0 / 65532.0).abs() < 1e-6, "{}", f.value(0, 0));
+        assert!(
+            (f.value(0, 0) - 1004.0 / 65532.0).abs() < 1e-6,
+            "{}",
+            f.value(0, 0)
+        );
     }
 
     #[test]
@@ -930,6 +976,10 @@ mod tests {
         let p = write("egain.fit", &bytes);
         let f = decode(&p, RowOrder::TopDown).unwrap();
         // alpha = step / (egain * white) = 4 / 65532.
-        assert!((f.noise.alpha - 4.0 / 65532.0).abs() < 1e-9, "{}", f.noise.alpha);
+        assert!(
+            (f.noise.alpha - 4.0 / 65532.0).abs() < 1e-9,
+            "{}",
+            f.noise.alpha
+        );
     }
 }

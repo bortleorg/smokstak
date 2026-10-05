@@ -118,12 +118,23 @@ pub fn refine_against_stars(
                      cell {worst_cell:.3} px over {n} stars"
                 );
             }
-            let report =
-                Refinement { pairs: src.len(), before: b, after: a, worst, applied: false };
+            let report = Refinement {
+                pairs: src.len(),
+                before: b,
+                after: a,
+                worst,
+                applied: false,
+            };
             if worst > MAX_CORRECTION || a > b * MUST_IMPROVE {
                 return (GlobalTransform::IDENTITY, report);
             }
-            (correction, Refinement { applied: true, ..report })
+            (
+                correction,
+                Refinement {
+                    applied: true,
+                    ..report
+                },
+            )
         })
         .collect()
 }
@@ -137,11 +148,7 @@ pub fn refine_against_stars(
 /// residuals in one part of the frame all point the same way, and the mean over
 /// a cell stops falling as the square root of its count. That is the number
 /// that says whether six parameters are enough.
-fn cell_structure(
-    src: &[(f32, f32)],
-    dst: &[(f32, f32)],
-    t: &GlobalTransform,
-) -> (f32, usize) {
+fn cell_structure(src: &[(f32, f32)], dst: &[(f32, f32)], t: &GlobalTransform) -> (f32, usize) {
     const CELLS: usize = 8;
     let (mut x0, mut y0) = (f32::MAX, f32::MAX);
     let (mut x1, mut y1) = (f32::MIN, f32::MIN);
@@ -216,10 +223,10 @@ fn solve_affine(
     let mut aty = [0.0f64; 3];
     let mut n = 0usize;
     for (k, &(x, y)) in src.iter().enumerate() {
-        if let Some(keep) = keep {
-            if !keep[k] {
-                continue;
-            }
+        if let Some(keep) = keep
+            && !keep[k]
+        {
+            continue;
         }
         n += 1;
         let row = [x as f64, y as f64, 1.0];
@@ -320,7 +327,14 @@ impl Grid {
             let gy = (((s.y - y0) / cell) as usize).min(h - 1);
             buckets[gy * w + gx].push(i as u32);
         }
-        Grid { cell, w, h, x0, y0, buckets }
+        Grid {
+            cell,
+            w,
+            h,
+            x0,
+            y0,
+            buckets,
+        }
     }
 
     pub(crate) fn nearest<'a>(&self, stars: &'a [Star], x: f32, y: f32) -> Option<&'a Star> {
@@ -368,7 +382,10 @@ mod tests {
         while out.len() < n {
             let x = rnd() * 2000.0;
             let y = rnd() * 1400.0;
-            if out.iter().any(|o: &Star| (o.x - x).hypot(o.y - y) < 3.0 * MATCH_RADIUS) {
+            if out
+                .iter()
+                .any(|o: &Star| (o.x - x).hypot(o.y - y) < 3.0 * MATCH_RADIUS)
+            {
                 continue;
             }
             out.push(Star { x, y, flux: 1.0 });
@@ -413,7 +430,12 @@ mod tests {
 
         // And the corrected transform agrees with the truth across the frame.
         let refined = correction.compose(&guessed);
-        for &(x, y) in &[(0.0f32, 0.0f32), (2000.0, 0.0), (0.0, 1400.0), (2000.0, 1400.0)] {
+        for &(x, y) in &[
+            (0.0f32, 0.0f32),
+            (2000.0, 0.0),
+            (0.0, 1400.0),
+            (2000.0, 1400.0),
+        ] {
             let (ax, ay) = refined.apply(x, y);
             let (bx, by) = truth.apply(x, y);
             assert!(
@@ -430,12 +452,16 @@ mod tests {
         // neutral: it is a shift invented and then applied to every sample.
         let reference = field(300, 0xBEEF);
         let stars = vec![reference.clone(), reference.clone()];
-        let out =
-            refine_against_stars(0, &stars, &[GlobalTransform::IDENTITY; 2]);
+        let out = refine_against_stars(0, &stars, &[GlobalTransform::IDENTITY; 2]);
         let (correction, report) = out[1];
         // Either it declined, or what it did is far below a tenth of a pixel.
         let mut worst = 0.0f32;
-        for &(x, y) in &[(0.0f32, 0.0f32), (2000.0, 0.0), (0.0, 1400.0), (2000.0, 1400.0)] {
+        for &(x, y) in &[
+            (0.0f32, 0.0f32),
+            (2000.0, 0.0),
+            (0.0, 1400.0),
+            (2000.0, 1400.0),
+        ] {
             let (ax, ay) = correction.apply(x, y);
             worst = worst.max((ax - x).hypot(ay - y));
         }
@@ -473,6 +499,9 @@ mod tests {
         let frame = seen_through(&reference, &truth);
         let stars = vec![reference, frame];
         let out = refine_against_stars(0, &stars, &[GlobalTransform::IDENTITY; 2]);
-        assert!(!out[1].1.applied, "applied a 30 px correction as if it were a polish");
+        assert!(
+            !out[1].1.applied,
+            "applied a 30 px correction as if it were a polish"
+        );
     }
 }

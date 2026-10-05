@@ -224,17 +224,19 @@ mod tests {
         Wcs {
             crpix: (3943.4, 1069.4),
             crval: (300.0823, 34.7828),
-            cd: [
-                [-2.03473e-5, 1.24206e-3],
-                [-1.23976e-3, -1.79194e-5],
-            ],
+            cd: [[-2.03473e-5, 1.24206e-3], [-1.23976e-3, -1.79194e-5]],
         }
     }
 
     #[test]
     fn pixel_and_sky_are_inverses() {
         let w = ngc6871();
-        for &(x, y) in &[(0.0, 0.0), (3124.0, 2088.0), (6247.0, 4175.0), (100.5, 4000.25)] {
+        for &(x, y) in &[
+            (0.0, 0.0),
+            (3124.0, 2088.0),
+            (6247.0, 4175.0),
+            (100.5, 4000.25),
+        ] {
             let (ra, dec) = w.pixel_to_sky(x, y);
             let (bx, by) = w.sky_to_pixel(ra, dec).expect("on this side of the sky");
             assert!((bx - x).abs() < 1e-6, "x {x} came back as {bx}");
@@ -253,7 +255,10 @@ mod tests {
     fn a_frame_against_itself_is_the_identity() {
         let w = ngc6871();
         let a = relative_affine(&w, &w, 6248, 4176).unwrap();
-        assert!((a[0] - 1.0).abs() < 1e-9 && (a[4] - 1.0).abs() < 1e-9, "{a:?}");
+        assert!(
+            (a[0] - 1.0).abs() < 1e-9 && (a[4] - 1.0).abs() < 1e-9,
+            "{a:?}"
+        );
         assert!(a[1].abs() < 1e-9 && a[3].abs() < 1e-9, "{a:?}");
         assert!(a[2].abs() < 1e-6 && a[5].abs() < 1e-6, "{a:?}");
     }
@@ -322,7 +327,10 @@ mod tests {
                 worst = worst.max(((px - tx).powi(2) + (py - ty).powi(2)).sqrt());
             }
         }
-        assert!(worst < 10.0, "affine seed is {worst:.2} px out at the corners");
+        assert!(
+            worst < 10.0,
+            "affine seed is {worst:.2} px out at the corners"
+        );
         assert!(worst > 0.01, "this test no longer measures anything");
     }
 

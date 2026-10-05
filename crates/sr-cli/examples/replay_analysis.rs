@@ -1,7 +1,7 @@
 //! Recompute statistics from a saved report and verified compact samples.
 //! Does not decode source images or bypass cache validation in normal analyze.
-use anyhow::{ensure, Context, Result};
-use serde_json::{json, Value};
+use anyhow::{Context, Result, ensure};
+use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::{
     collections::{HashMap, HashSet},
@@ -24,7 +24,10 @@ fn retain_subset(report: &mut Value, list: &std::path::Path) -> Result<()> {
     let original = report["frames"].as_array().context("frames missing")?;
     ensure!(!requested.is_empty(), "retained list is empty");
     let known: HashSet<_> = original.iter().filter_map(|f| f["path"].as_str()).collect();
-    ensure!(requested.iter().all(|p| known.contains(p.as_str())), "retained list contains paths absent from the saved report; exact original paths are required");
+    ensure!(
+        requested.iter().all(|p| known.contains(p.as_str())),
+        "retained list contains paths absent from the saved report; exact original paths are required"
+    );
     let mut frames: Vec<_> = original
         .iter()
         .filter(|f| requested.contains(f["path"].as_str().unwrap_or_default()))
@@ -60,14 +63,18 @@ fn retain_subset(report: &mut Value, list: &std::path::Path) -> Result<()> {
         let accepted: Vec<_> = rows.iter().filter(|f| f["accepted"] == true).collect();
         group["accepted_frames"] = json!(accepted.len());
         group["rejected_frames"] = json!(rows.len() - accepted.len());
-        group["known_integration_seconds"] = json!(accepted
-            .iter()
-            .filter_map(|f| f["exposure_seconds"].as_f64())
-            .sum::<f64>());
-        group["unknown_exposures"] = json!(accepted
-            .iter()
-            .filter(|f| f["exposure_seconds"].is_null())
-            .count());
+        group["known_integration_seconds"] = json!(
+            accepted
+                .iter()
+                .filter_map(|f| f["exposure_seconds"].as_f64())
+                .sum::<f64>()
+        );
+        group["unknown_exposures"] = json!(
+            accepted
+                .iter()
+                .filter(|f| f["exposure_seconds"].is_null())
+                .count()
+        );
         for (output, input) in [
             ("median_hfd_sensor_px", "hfd"),
             ("median_eccentricity", "eccentricity"),
@@ -90,7 +97,9 @@ fn retain_subset(report: &mut Value, list: &std::path::Path) -> Result<()> {
         for field in ["global_fit", "recent_fit"] {
             group[field] = Value::Null;
         }
-        let mut warnings = vec![json!("Subset replay: original registration, photometry, common footprint and per-frame advisory flags retained; no source-image remeasurement.")];
+        let mut warnings = vec![json!(
+            "Subset replay: original registration, photometry, common footprint and per-frame advisory flags retained; no source-image remeasurement."
+        )];
         let fallback = accepted
             .iter()
             .filter(|f| f["stellar_gain"] == false)
@@ -174,7 +183,10 @@ fn main() -> Result<()> {
         let Some(input) = record["metadata"]["path"].as_str().map(str::to_owned) else {
             continue;
         };
-        ensure!(records.insert(input.to_owned(), (path, record)).is_none(), "multiple cache entries for {input}; use a cache directory containing one measurement set");
+        ensure!(
+            records.insert(input.to_owned(), (path, record)).is_none(),
+            "multiple cache entries for {input}; use a cache directory containing one measurement set"
+        );
     }
     let original_frames = report["frames"]
         .as_array()
@@ -258,8 +270,10 @@ fn main() -> Result<()> {
                 "sample checksum mismatch"
             );
             let values: Vec<f32> = bytes
-                .chunks_exact(4)
-                .map(|b| f32::from_le_bytes(b.try_into().unwrap()))
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .map(|b| f32::from_le_bytes(*b))
                 .collect();
             depth.push(acc.push(
                 &values,
@@ -298,7 +312,13 @@ fn main() -> Result<()> {
     }
     report["schema_version"] = json!(3);
     report["method"] = json!(stats::METHOD);
-    report["limitations"] = json!([stats::LIMITATION, "Spatial residuals include astronomical structure and are not a random-noise measurement.", "Equal weighting and nearest-detector sampling differ from a resampled, weighted, rejection-based production stack.", "Fits are descriptive; projections assume the recent trend continues and are not forecasts.", "Recomputed selected saved samples using original registration, photometry and common footprint; original advisory flags, measurement timings and build identity are retained."]);
+    report["limitations"] = json!([
+        stats::LIMITATION,
+        "Spatial residuals include astronomical structure and are not a random-noise measurement.",
+        "Equal weighting and nearest-detector sampling differ from a resampled, weighted, rejection-based production stack.",
+        "Fits are descriptive; projections assume the recent trend continues and are not forecasts.",
+        "Recomputed selected saved samples using original registration, photometry and common footprint; original advisory flags, measurement timings and build identity are retained."
+    ]);
     report["statistics_replay"] = json!({"source_report":source, "retain_list":args.get(3).map(PathBuf::from), "original_frame_count":original_frames.len(), "retained_frame_count":frames.len(), "fixed_original_footprint":true, "elapsed_seconds":started.elapsed().as_secs_f64(), "statistics_executable_sha256":format!("{:x}", Sha256::digest(fs::read(std::env::current_exe()?)?)), "verified_sample_checksums":true});
     let embedded = serde_json::to_string(&report)?
         .replace('<', "\\u003c")

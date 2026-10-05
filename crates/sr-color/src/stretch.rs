@@ -84,7 +84,10 @@ impl Stretch {
         let high = high.max(median + 1e-4).min(0.999);
         let at = |shadows: f32| -> (Stretch, f32) {
             let x0 = ((median - shadows) / (1.0 - shadows).max(1e-6)).clamp(1e-6, 1.0 - 1e-6);
-            let s = Stretch { shadows, midtone: midtone_for(x0, TARGET_BACKGROUND) };
+            let s = Stretch {
+                shadows,
+                midtone: midtone_for(x0, TARGET_BACKGROUND),
+            };
             (s, s.apply(high))
         };
         let (mut lo, mut hi) = (0.0f32, (median * 0.999).max(0.0));
@@ -107,7 +110,10 @@ impl Stretch {
     pub fn for_background(median: f32, mad: f32) -> Stretch {
         let shadows = (median - SHADOW_CLIP * mad).clamp(0.0, 0.999);
         let x0 = ((median - shadows) / (1.0 - shadows).max(1e-6)).clamp(1e-6, 1.0 - 1e-6);
-        Stretch { shadows, midtone: midtone_for(x0, TARGET_BACKGROUND) }
+        Stretch {
+            shadows,
+            midtone: midtone_for(x0, TARGET_BACKGROUND),
+        }
     }
 
     #[inline]
@@ -183,7 +189,13 @@ fn anchors(p: &Plane<f32>) -> Option<(f32, f32)> {
         return None;
     }
     let step = (p.data.len() / 400_000).max(1);
-    let mut v: Vec<f32> = p.data.iter().step_by(step).copied().filter(|x| x.is_finite()).collect();
+    let mut v: Vec<f32> = p
+        .data
+        .iter()
+        .step_by(step)
+        .copied()
+        .filter(|x| x.is_finite())
+        .collect();
     if v.len() < 64 {
         return None;
     }
@@ -290,13 +302,21 @@ pub enum Rendering {
 /// The gate is the same one the preview uses, judged on the channels together:
 /// an image that is already legible -- a daytime frame -- is not stretched, and
 /// gets the sRGB curve as before.
-pub fn render(linear: &[Plane<f32>], channels: usize, white: &[f32; 3]) -> (Vec<Plane<f32>>, Rendering) {
+pub fn render(
+    linear: &[Plane<f32>],
+    channels: usize,
+    white: &[f32; 3],
+) -> (Vec<Plane<f32>>, Rendering) {
     let scaled: Vec<Plane<f32>> = linear
         .iter()
         .take(channels)
         .enumerate()
         .map(|(c, p)| {
-            let w = if white[c].is_finite() && white[c] > 1e-6 { white[c] } else { 1.0 };
+            let w = if white[c].is_finite() && white[c] > 1e-6 {
+                white[c]
+            } else {
+                1.0
+            };
             let mut q = p.clone();
             for v in q.data.iter_mut() {
                 *v = (*v / w).clamp(0.0, 1.0);
@@ -308,7 +328,12 @@ pub fn render(linear: &[Plane<f32>], channels: usize, white: &[f32; 3]) -> (Vec<
     // sits at three different levels, and pooled statistics read that spread
     // as a wide, legible image and decline to stretch exactly the pictures
     // that need it most. Green for a mosaic, the only plane for a monochrome.
-    if choose(std::slice::from_ref(&scaled[channels.min(scaled.len()) / 2]), 1).is_none() {
+    if choose(
+        std::slice::from_ref(&scaled[channels.min(scaled.len()) / 2]),
+        1,
+    )
+    .is_none()
+    {
         let out = scaled
             .iter()
             .map(|p| {
@@ -331,7 +356,11 @@ pub fn render(linear: &[Plane<f32>], channels: usize, white: &[f32; 3]) -> (Vec<
     // the luminance width by nothing, because it does not touch it. The eye
     // resolves colour at a fraction of the resolution it resolves brightness,
     // and every viewer and every processing tool does this somewhere.
-    let scaled = if channels == 3 { smooth_chroma(&scaled, CHROMA_SMOOTH_SIGMA) } else { scaled };
+    let scaled = if channels == 3 {
+        smooth_chroma(&scaled, CHROMA_SMOOTH_SIGMA)
+    } else {
+        scaled
+    };
     let mut per_channel = Vec::with_capacity(channels);
     let mut out = Vec::with_capacity(channels);
     for p in &scaled {
@@ -339,7 +368,10 @@ pub fn render(linear: &[Plane<f32>], channels: usize, white: &[f32; 3]) -> (Vec<
             Some((median, high)) => Stretch::for_anchors(median, high),
             // A channel with no spread at all has nothing to place; the
             // identity leaves it as it is rather than inventing a level.
-            None => Stretch { shadows: 0.0, midtone: 0.5 },
+            None => Stretch {
+                shadows: 0.0,
+                midtone: 0.5,
+            },
         };
         let mut q = p.clone();
         for v in q.data.iter_mut() {
@@ -421,8 +453,13 @@ pub fn ceiling_from_data(planes: &[Plane<f32>], channels: usize) -> [f32; 3] {
             continue;
         }
         let step = (p.data.len() / 2_000_000).max(1);
-        let mut v: Vec<f32> =
-            p.data.iter().step_by(step).copied().filter(|x| x.is_finite()).collect();
+        let mut v: Vec<f32> = p
+            .data
+            .iter()
+            .step_by(step)
+            .copied()
+            .filter(|x| x.is_finite())
+            .collect();
         if v.len() < 1000 {
             v = p.data.iter().copied().filter(|x| x.is_finite()).collect();
         }
@@ -534,7 +571,10 @@ mod tests {
         // targets a background of a quarter would darken it, which is worse
         // than doing nothing, so nothing is what happens.
         let img = image(0.75, 0.35, 256);
-        assert!(choose(&img, 3).is_none(), "stretched an image that was already legible");
+        assert!(
+            choose(&img, 3).is_none(),
+            "stretched an image that was already legible"
+        );
         let (out, applied) = auto(&img, 3);
         assert!(applied.is_none());
         assert_eq!(out[0].data, img[0].data);
@@ -604,7 +644,11 @@ mod render_tests {
         let planes = product([0.22, 0.39, 0.27], white);
         let found = ceiling_from_data(&planes, 3);
         for c in 0..3 {
-            assert!((found[c] - white[c]).abs() < 1e-4, "ceiling {c} read as {}", found[c]);
+            assert!(
+                (found[c] - white[c]).abs() < 1e-4,
+                "ceiling {c} read as {}",
+                found[c]
+            );
         }
         let (out, how) = render(&planes, 3, &found);
         assert!(matches!(how, Rendering::Stretched { .. }));
@@ -642,9 +686,14 @@ mod render_tests {
         }
         let out = smooth_chroma(&planes, 0.6);
         for i in 0..n * n {
-            let before = 0.2126 * planes[0].data[i] + 0.7152 * planes[1].data[i] + 0.0722 * planes[2].data[i];
+            let before = 0.2126 * planes[0].data[i]
+                + 0.7152 * planes[1].data[i]
+                + 0.0722 * planes[2].data[i];
             let after = 0.2126 * out[0].data[i] + 0.7152 * out[1].data[i] + 0.0722 * out[2].data[i];
-            assert!((before - after).abs() < 1e-5, "luminance moved at {i}: {before} -> {after}");
+            assert!(
+                (before - after).abs() < 1e-5,
+                "luminance moved at {i}: {before} -> {after}"
+            );
         }
         // And the colour did spread: the neighbour now carries some of it.
         let centre_before = planes[0].data[16 * n + 16] - planes[2].data[16 * n + 16];
