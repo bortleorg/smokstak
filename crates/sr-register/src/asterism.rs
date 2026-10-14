@@ -136,7 +136,11 @@ fn shape(stars: &[Star], v: [usize; 3]) -> Option<Triangle> {
     // Side k is the one opposite vertex k.
     let sides = [d(1, 2), d(0, 2), d(0, 1)];
     let mut order = [0usize, 1, 2];
-    order.sort_by(|&a, &b| sides[a].partial_cmp(&sides[b]).unwrap_or(std::cmp::Ordering::Equal));
+    order.sort_by(|&a, &b| {
+        sides[a]
+            .partial_cmp(&sides[b])
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     let (s0, s1, s2) = (sides[order[0]], sides[order[1]], sides[order[2]]);
     if s2 < 8.0 || s0 < 1.0 {
         // Degenerate, or so small that centroid noise dominates the shape.
@@ -153,7 +157,11 @@ fn shape(stars: &[Star], v: [usize; 3]) -> Option<Triangle> {
     } else {
         (ends[1], ends[0])
     };
-    Some(Triangle { key, v: [v[first], v[second], v[far]], long: s2 })
+    Some(Triangle {
+        key,
+        v: [v[first], v[second], v[far]],
+        long: s2,
+    })
 }
 
 fn bucket(key: (f32, f32)) -> (i32, i32) {
@@ -218,7 +226,12 @@ pub fn match_stars(reference: &[Star], target: &[Star]) -> Option<Match> {
                     votes
                         .entry((deg / ROTATION_BIN) as i32)
                         .or_default()
-                        .push(Vote { scale, deg, reference: ri, target: ti });
+                        .push(Vote {
+                            scale,
+                            deg,
+                            reference: ri,
+                            target: ti,
+                        });
                 }
             }
         }
@@ -228,7 +241,9 @@ pub fn match_stars(reference: &[Star], target: &[Star]) -> Option<Match> {
     // a boundary is not split in two.
     let bins: Vec<i32> = votes.keys().copied().collect();
     let best = bins.iter().copied().max_by_key(|b| {
-        (-1..=1).map(|d| votes.get(&(b + d)).map_or(0, |v| v.len())).sum::<usize>()
+        (-1..=1)
+            .map(|d| votes.get(&(b + d)).map_or(0, |v| v.len()))
+            .sum::<usize>()
     })?;
     let mut mode: Vec<Vote> = Vec::new();
     for d in -1..=1 {
@@ -238,7 +253,11 @@ pub fn match_stars(reference: &[Star], target: &[Star]) -> Option<Match> {
     }
     log::debug!(
         "asterism: {} x {} triangles, {} vote bins, mode {} at {} deg",
-        rt.len(), tt.len(), votes.len(), mode.len(), best as f32 * ROTATION_BIN
+        rt.len(),
+        tt.len(),
+        votes.len(),
+        mode.len(),
+        best as f32 * ROTATION_BIN
     );
     if mode.len() < 4 {
         return None;
@@ -286,14 +305,24 @@ pub fn match_stars(reference: &[Star], target: &[Star]) -> Option<Match> {
         let (sin, cos) = (angle.sin() * v.scale, angle.cos() * v.scale);
         let r = reference[rt[v.reference].v[0]];
         let g = target[tt[v.target].v[0]];
-        let candidate = GlobalTransform { m: [cos, -sin,
-            r.x - (cos*g.x - sin*g.y), sin, cos,
-            r.y - (sin*g.x + cos*g.y)] };
+        let candidate = GlobalTransform {
+            m: [
+                cos,
+                -sin,
+                r.x - (cos * g.x - sin * g.y),
+                sin,
+                cos,
+                r.y - (sin * g.x + cos * g.y),
+            ],
+        };
         let pairs = pair_up(bright_ref, bright_target, &candidate, 2.0 * PAIR_TOLERANCE);
-        if pairs.len() < MIN_PAIRS { continue; }
+        if pairs.len() < MIN_PAIRS {
+            continue;
+        }
         let residual = median_residual(bright_ref, bright_target, &candidate, &pairs);
-        if best.as_ref().is_none_or(|&(count, error, _)|
-            pairs.len() > count || (pairs.len() == count && residual < error)) {
+        if best.as_ref().is_none_or(|&(count, error, _)| {
+            pairs.len() > count || (pairs.len() == count && residual < error)
+        }) {
             best = Some((pairs.len(), residual, candidate));
         }
     }
@@ -313,19 +342,29 @@ pub fn match_stars_at_scale(
     target_to_reference_scale: f32,
 ) -> Option<Match> {
     let scale = target_to_reference_scale;
-    if !scale.is_finite() || scale <= 0.0
-        || reference.iter().any(|s| !s.x.is_finite() || !s.y.is_finite())
+    if !scale.is_finite()
+        || scale <= 0.0
+        || reference
+            .iter()
+            .any(|s| !s.x.is_finite() || !s.y.is_finite())
     {
         return None;
     }
-    let scaled: Vec<_> = target.iter().map(|s| Star {
-        x: s.x * scale, y: s.y * scale, flux: s.flux,
-    }).collect();
+    let scaled: Vec<_> = target
+        .iter()
+        .map(|s| Star {
+            x: s.x * scale,
+            y: s.y * scale,
+            flux: s.flux,
+        })
+        .collect();
     if scaled.iter().any(|s| !s.x.is_finite() || !s.y.is_finite()) {
         return None;
     }
     let mut result = match_stars(reference, &scaled)?;
-    result.transform = result.transform.compose(&GlobalTransform::similarity(0.0, scale, 0.0, 0.0));
+    result.transform = result
+        .transform
+        .compose(&GlobalTransform::similarity(0.0, scale, 0.0, 0.0));
     result.scale = result.transform.scale();
     Some(result)
 }
@@ -458,7 +497,7 @@ mod tests {
         assert!(m.residual < 0.01);
         for (r, t) in a.iter().zip(&b) {
             let p = m.transform.apply(t.x, t.y);
-            assert!((p.0-r.x).hypot(p.1-r.y) < 0.01);
+            assert!((p.0 - r.x).hypot(p.1 - r.y) < 0.01);
         }
         for invalid in [0.0, -1.0, f32::NAN, f32::INFINITY] {
             assert!(match_stars_at_scale(&a, &b, invalid).is_none());
@@ -477,13 +516,25 @@ mod tests {
         // registered through a neighbouring exposure (0.28-0.36 sensor-pixel
         // residual). These are positions only, rounded to 0.001 sensor pixel.
         let stars: Vec<Star> = include_str!("../tests/data/iris-bright-stars.txt")
-            .lines().filter(|line| !line.is_empty()).map(|line| {
+            .lines()
+            .filter(|line| !line.is_empty())
+            .map(|line| {
                 let mut values = line.split_whitespace().map(|v| v.parse::<f32>().unwrap());
-                Star { x: values.next().unwrap(), y: values.next().unwrap(), flux: 1. }
-            }).collect();
+                Star {
+                    x: values.next().unwrap(),
+                    y: values.next().unwrap(),
+                    flux: 1.,
+                }
+            })
+            .collect();
         assert_eq!(stars.len(), 800);
         let reference = &stars[..200];
-        for (target, rotation) in stars[200..].chunks_exact(200).zip([-179.64f32, -8.82, -9.02]) {
+        for (target, rotation) in stars[200..]
+            .as_chunks::<200>()
+            .0
+            .iter()
+            .zip([-179.64f32, -8.82, -9.02])
+        {
             let m = match_stars(reference, target).expect("valid rotated exposure must be placed");
             assert!(m.pairs >= MIN_PAIRS);
             assert!(m.residual < PAIR_TOLERANCE);
@@ -495,14 +546,16 @@ mod tests {
     fn candidate_fallback_does_not_invent_matches_in_unrelated_fields() {
         let reference = field(200, 0x123456);
         for seed in 0..12 {
-            assert!(match_stars(&reference, &field(200, 0xABCD + seed*17)).is_none());
+            assert!(match_stars(&reference, &field(200, 0xABCD + seed * 17)).is_none());
         }
     }
 
     fn field(n: usize, seed: u64) -> Vec<Star> {
         let mut s = seed | 1;
         let mut next = || {
-            s = s.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            s = s
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
             (s >> 33) as f32 / (1u32 << 31) as f32
         };
         (0..n)
@@ -539,7 +592,10 @@ mod tests {
         assert!(m.residual < 0.5, "residual {}", m.residual);
         // Recovering the map back: rotation -96, scale 1/1.01.
         let rot = m.rotation_deg;
-        assert!((rot + 96.0).abs() < 0.5 || (rot - 264.0).abs() < 0.5, "rotation {rot}");
+        assert!(
+            (rot + 96.0).abs() < 0.5 || (rot - 264.0).abs() < 0.5,
+            "rotation {rot}"
+        );
         assert!((m.scale - 1.0 / 1.01).abs() < 0.01, "scale {}", m.scale);
     }
 
@@ -548,7 +604,11 @@ mod tests {
         let a = field(80, 0xBEEF);
         let b = transform(&a, 180.0, 1.0, 4000.0, 3000.0);
         let m = match_stars(&a, &b).expect("a meridian flip must be found");
-        assert!((m.rotation_deg.abs() - 180.0).abs() < 0.5, "rotation {}", m.rotation_deg);
+        assert!(
+            (m.rotation_deg.abs() - 180.0).abs() < 0.5,
+            "rotation {}",
+            m.rotation_deg
+        );
         assert!(m.residual < 0.5);
     }
 
@@ -562,7 +622,11 @@ mod tests {
         let mut b = transform(&shared, 30.0, 1.0, 120.0, -80.0);
         b.extend(field(50, 0x2222));
         let m = match_stars(&a, &b).expect("half a field in common is plenty");
-        assert!((m.rotation_deg + 30.0).abs() < 0.5, "rotation {}", m.rotation_deg);
+        assert!(
+            (m.rotation_deg + 30.0).abs() < 0.5,
+            "rotation {}",
+            m.rotation_deg
+        );
     }
 
     #[test]
@@ -593,7 +657,11 @@ mod tests {
             p.y -= j;
         }
         let m = match_stars(&a, &b).expect("a third of a pixel of jitter is nothing");
-        assert!((m.rotation_deg + 120.0).abs() < 0.5, "rotation {}", m.rotation_deg);
+        assert!(
+            (m.rotation_deg + 120.0).abs() < 0.5,
+            "rotation {}",
+            m.rotation_deg
+        );
         assert!(m.residual < 1.0, "residual {}", m.residual);
     }
 }

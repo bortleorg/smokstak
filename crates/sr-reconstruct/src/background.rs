@@ -72,11 +72,7 @@ impl BackgroundModel {
     /// both live; the only channel there is for a monochrome sensor.
     #[inline]
     fn primary(&self) -> usize {
-        if self.channels <= 1 {
-            0
-        } else {
-            1
-        }
+        if self.channels <= 1 { 0 } else { 1 }
     }
 
     /// Multiplicative falloff at normalised radius `r`.
@@ -118,7 +114,10 @@ impl BackgroundModel {
         let vignette = if self.channels == 1 {
             format!("{:+.2}% at the corner", v[0])
         } else {
-            format!("{:+.2}% red, {:+.2}% green, {:+.2}% blue at the corner", v[0], v[1], v[2])
+            format!(
+                "{:+.2}% red, {:+.2}% green, {:+.2}% blue at the corner",
+                v[0], v[1], v[2]
+            )
         };
         format!(
             "Background model: vignetting {vignette}; sky gradient {gp:.2}% of the background \
@@ -222,7 +221,10 @@ fn fit_channel(samples: &[(f32, f32, f32)]) -> Option<[f64; 5]> {
 /// Fit a background model to a reconstructed image.
 pub fn fit(rgb: &[Plane<f32>; 3], channels: usize) -> Option<BackgroundModel> {
     let channels = channels.clamp(1, 3);
-    let mut m = BackgroundModel { channels, ..Default::default() };
+    let mut m = BackgroundModel {
+        channels,
+        ..Default::default()
+    };
     for (c, plane) in rgb.iter().enumerate().take(channels) {
         let s = blocks(plane);
         let coeff = fit_channel(&s)?;
@@ -247,7 +249,11 @@ pub fn fit(rgb: &[Plane<f32>; 3], channels: usize) -> Option<BackgroundModel> {
         let inv = 1.0 / mean_v.clamp(0.2, 5.0);
         m.gradient[c] = [coeff[3] as f32 * inv, coeff[4] as f32 * inv];
         m.level[c] = level;
-        if !m.vignette[c].iter().chain(m.gradient[c].iter()).all(|v| v.is_finite()) {
+        if !m.vignette[c]
+            .iter()
+            .chain(m.gradient[c].iter())
+            .all(|v| v.is_finite())
+        {
             return None;
         }
     }
@@ -313,8 +319,7 @@ pub fn render(m: &BackgroundModel, width: usize, height: usize) -> [Plane<f32>; 
             for x in 0..width {
                 let nx = (x as f32 + 0.5) / width as f32 * 2.0 - 1.0;
                 let r = ((nx * nx + ny * ny) * 0.5).sqrt();
-                p.data[y * width + x] =
-                    m.vignette_at(c, r) + m.gradient_at(c, nx, ny) * inv_level;
+                p.data[y * width + x] = m.vignette_at(c, r) + m.gradient_at(c, nx, ny) * inv_level;
             }
         }
     }
@@ -390,8 +395,16 @@ mod tests {
             "corner falloff {:?}",
             m.corner_falloff_percent()
         );
-        assert!((m.gradient[1][0] - 0.004).abs() < 5e-4, "gx {:?}", m.gradient[1]);
-        assert!((m.gradient[1][1] + 0.010).abs() < 5e-4, "gy {:?}", m.gradient[1]);
+        assert!(
+            (m.gradient[1][0] - 0.004).abs() < 5e-4,
+            "gx {:?}",
+            m.gradient[1]
+        );
+        assert!(
+            (m.gradient[1][1] + 0.010).abs() < 5e-4,
+            "gy {:?}",
+            m.gradient[1]
+        );
         assert!((m.level[1] - 0.08).abs() < 0.002, "level {:?}", m.level);
     }
 
@@ -404,7 +417,9 @@ mod tests {
         let before = &img[1].data;
         let after = &corrected[1].data;
         let spread = |v: &[f32]| {
-            let (lo, hi) = v.iter().fold((f32::MAX, f32::MIN), |(l, h), &x| (l.min(x), h.max(x)));
+            let (lo, hi) = v
+                .iter()
+                .fold((f32::MAX, f32::MIN), |(l, h), &x| (l.min(x), h.max(x)));
             hi - lo
         };
         assert!(
@@ -485,9 +500,14 @@ mod tests {
 
         let mut corrected = mono.clone();
         apply(&mut corrected, &m);
-        assert!(corrected[1].data.is_empty(), "an absent channel was written to");
+        assert!(
+            corrected[1].data.is_empty(),
+            "an absent channel was written to"
+        );
         let spread = |v: &[f32]| {
-            let (lo, hi) = v.iter().fold((f32::MAX, f32::MIN), |(l, h), &x| (l.min(x), h.max(x)));
+            let (lo, hi) = v
+                .iter()
+                .fold((f32::MAX, f32::MIN), |(l, h), &x| (l.min(x), h.max(x)));
             hi - lo
         };
         assert!(spread(&corrected[0].data) < 0.05 * spread(&mono[0].data));
@@ -501,6 +521,10 @@ mod tests {
     fn a_flat_image_produces_a_model_worth_declining() {
         let img = planted(320, 240, 0.08, 0.0, 0.0, 0.0, false);
         let m = fit(&img, 3).unwrap();
-        assert!(magnitude(&m) < 0.005, "magnitude {} on a flat image", magnitude(&m));
+        assert!(
+            magnitude(&m) < 0.005,
+            "magnitude {} on a flat image",
+            magnitude(&m)
+        );
     }
 }

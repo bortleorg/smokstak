@@ -73,7 +73,12 @@ pub fn build(size: usize, hr_per_lr: f32, seed: u64) -> LatentScene {
             let octave = (i % 7) as f32;
             let k = 0.004 * 2.0f32.powf(octave) / hr_per_lr.max(1.0) * hr_per_lr;
             let ang: f32 = rng.gen_range(0.0..std::f32::consts::TAU);
-            (k * ang.cos(), k * ang.sin(), rng.gen_range(0.0..std::f32::consts::TAU), 1.0 / (1.0 + octave))
+            (
+                k * ang.cos(),
+                k * ang.sin(),
+                rng.gen_range(0.0..std::f32::consts::TAU),
+                1.0 / (1.0 + octave),
+            )
         })
         .collect();
 
@@ -118,8 +123,20 @@ pub fn build(size: usize, hr_per_lr: f32, seed: u64) -> LatentScene {
     // slanted-edge MTF measurement.
     let mut edges = Vec::new();
     let edge_specs = [
-        (w as f32 * 0.70, h as f32 * 0.20, 5.0f32, [0.75f32, 0.72, 0.68], [0.10f32, 0.10, 0.11]),
-        (w as f32 * 0.72, h as f32 * 0.70, 95.0, [0.70, 0.70, 0.70], [0.12, 0.12, 0.12]),
+        (
+            w as f32 * 0.70,
+            h as f32 * 0.20,
+            5.0f32,
+            [0.75f32, 0.72, 0.68],
+            [0.10f32, 0.10, 0.11],
+        ),
+        (
+            w as f32 * 0.72,
+            h as f32 * 0.70,
+            95.0,
+            [0.70, 0.70, 0.70],
+            [0.12, 0.12, 0.12],
+        ),
     ];
     for &(ex, ey, angle_deg, bright, dark) in &edge_specs {
         let a = angle_deg.to_radians();
@@ -179,7 +196,9 @@ pub fn build(size: usize, hr_per_lr: f32, seed: u64) -> LatentScene {
     let tex_h = (h as f32 * 0.22) as usize;
     let mut tseed = seed ^ 0xA5A5_5A5A;
     let mut trnd = move || {
-        tseed = tseed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        tseed = tseed
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
         ((tseed >> 33) as f32 / (1u32 << 31) as f32) - 0.5
     };
     // Generated at the sensor's own sampling pitch, then held constant across
@@ -307,7 +326,12 @@ mod tests {
         for _ in 0..3 {
             cur = cur.blur3().downsample2();
             let (lo, hi) = cur.min_max();
-            assert!(hi - lo > 0.05, "scene went flat at {}x{}", cur.width, cur.height);
+            assert!(
+                hi - lo > 0.05,
+                "scene went flat at {}x{}",
+                cur.width,
+                cur.height
+            );
         }
     }
 
@@ -339,7 +363,10 @@ mod tests {
             let mut hi = f32::NEG_INFINITY;
             for y in 0..s.height {
                 for x in 0..s.width {
-                    if s.stars.iter().any(|st| (st.x - x as f32).hypot(st.y - y as f32) < 12.0) {
+                    if s.stars
+                        .iter()
+                        .any(|st| (st.x - x as f32).hypot(st.y - y as f32) < 12.0)
+                    {
                         continue;
                     }
                     let v = p.data[y * s.width + x];
@@ -360,11 +387,26 @@ mod tests {
         let g = &s.rgb[1];
         let at = |st: &Star| g.data[st.y.round() as usize * s.width + st.x.round() as usize];
         let peaks: Vec<f32> = s.stars.iter().map(at).collect();
-        assert!(peaks[0] > 4.0, "the brightest star peaks at only {}", peaks[0]);
-        assert!(peaks[2] > 1.0, "the third star does not reach full scale: {}", peaks[2]);
-        assert!(peaks[3] < 1.0, "the control star saturates too: {}", peaks[3]);
+        assert!(
+            peaks[0] > 4.0,
+            "the brightest star peaks at only {}",
+            peaks[0]
+        );
+        assert!(
+            peaks[2] > 1.0,
+            "the third star does not reach full scale: {}",
+            peaks[2]
+        );
+        assert!(
+            peaks[3] < 1.0,
+            "the control star saturates too: {}",
+            peaks[3]
+        );
         for w in peaks.windows(2) {
-            assert!(w[0] > w[1], "the stars are not in descending order: {peaks:?}");
+            assert!(
+                w[0] > w[1],
+                "the stars are not in descending order: {peaks:?}"
+            );
         }
     }
 
@@ -386,7 +428,11 @@ mod tests {
                     hi = hi.max(v);
                 }
             }
-            assert!(hi - lo < 0.12, "star at {sx},{sy} sits on structure of {}", hi - lo);
+            assert!(
+                hi - lo < 0.12,
+                "star at {sx},{sy} sits on structure of {}",
+                hi - lo
+            );
         }
     }
 

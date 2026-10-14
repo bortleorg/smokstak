@@ -32,15 +32,15 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use serde::{Deserialize, Serialize};
 
 use crate::catalog;
 
-#[path = "gui_workflows.rs"]
-mod workflows;
 #[path = "gui_mosaic.rs"]
 mod mosaic;
+#[path = "gui_workflows.rs"]
+mod workflows;
 
 /// The stages a run passes through, in the order the page draws them.
 ///
@@ -81,7 +81,10 @@ fn stage_of(line: &str) -> Option<usize> {
         ("Rendered:", 6),
         ("Wrote ", 7),
     ];
-    MARKS.iter().find(|(m, _)| line.contains(m)).map(|(_, s)| *s)
+    MARKS
+        .iter()
+        .find(|(m, _)| line.contains(m))
+        .map(|(_, s)| *s)
 }
 
 /// One palette, as a picture rather than as a name.
@@ -161,10 +164,14 @@ fn finding_of(line: &str) -> Option<(&'static str, String)> {
 /// `approved_lights (10).txt`, the result is named after it, and cutting there
 /// lost every file the run wrote.
 fn announced_path(line: &str) -> Option<&str> {
-    let rest = ["Wrote ", "Preview written to ", "Background model written to "]
-        .iter()
-        .find_map(|prefix| line.strip_prefix(prefix))?
-        .trim();
+    let rest = [
+        "Wrote ",
+        "Preview written to ",
+        "Background model written to ",
+    ]
+    .iter()
+    .find_map(|prefix| line.strip_prefix(prefix))?
+    .trim();
     if rest.ends_with(')') {
         let mut depth = 0usize;
         for (i, c) in rest.char_indices().rev() {
@@ -338,39 +345,40 @@ impl Job {
         // A palette being tried on for size is not a result. Its preview goes
         // to the chooser and its full-size file is a means to that preview,
         // which nobody asked for and which is deleted once it has been made.
-        if let Some(dir) = self.palette_dir.clone() {
-            if p.parent() == Some(dir.as_path()) {
-                let stem = p.file_stem().and_then(|s| s.to_str()).unwrap_or_default();
-                let id = stem.trim_end_matches(".preview").to_string();
-                if p.extension().and_then(|e| e.to_str()) == Some("png") {
-                    let label = CANDIDATES
-                        .iter()
-                        .find(|c| c.id == id)
-                        .map(|c| c.label)
-                        .unwrap_or("a palette");
-                    self.progress.palettes.push(PaletteShot {
-                        id,
-                        label: label.to_string(),
-                        preview: path.clone(),
-                    });
-                    self.served.insert(std::fs::canonicalize(&p).unwrap_or(p));
-                } else {
-                    let _ = std::fs::remove_file(&p);
-                }
-                return;
+        if let Some(dir) = self.palette_dir.clone()
+            && p.parent() == Some(dir.as_path())
+        {
+            let stem = p.file_stem().and_then(|s| s.to_str()).unwrap_or_default();
+            let id = stem.trim_end_matches(".preview").to_string();
+            if p.extension().and_then(|e| e.to_str()) == Some("png") {
+                let label = CANDIDATES
+                    .iter()
+                    .find(|c| c.id == id)
+                    .map(|c| c.label)
+                    .unwrap_or("a palette");
+                self.progress.palettes.push(PaletteShot {
+                    id,
+                    label: label.to_string(),
+                    preview: path.clone(),
+                });
+                self.served.insert(std::fs::canonicalize(&p).unwrap_or(p));
+            } else {
+                let _ = std::fs::remove_file(&p);
             }
+            return;
         }
 
         // A colour image is not a master. Put among them, it would be offered
         // as a channel of the next colour image.
-        if self.progress.extends && self.progress.kind == "composite" {
-            if let Some(c) = self.progress.colour.last_mut() {
-                if !c.files.contains(&path) {
-                    c.files.push(path.clone());
-                }
-                self.served.insert(std::fs::canonicalize(&p).unwrap_or(p));
-                return;
+        if self.progress.extends
+            && self.progress.kind == "composite"
+            && let Some(c) = self.progress.colour.last_mut()
+        {
+            if !c.files.contains(&path) {
+                c.files.push(path.clone());
             }
+            self.served.insert(std::fs::canonicalize(&p).unwrap_or(p));
+            return;
         }
 
         if !self.progress.outputs.contains(&path) {
@@ -391,11 +399,18 @@ pub fn run(port: u16, open_browser: bool) -> Result<()> {
         let _ = open_in_browser(&url);
     }
 
-    let mut state = Job { history: history_file(), ..Default::default() };
+    let mut state = Job {
+        history: history_file(),
+        ..Default::default()
+    };
     if let Some(file) = state.history.clone() {
         restore(&mut state, load_history(&file));
         if !state.past.is_empty() {
-            println!("{} earlier runs, kept in {}", state.past.len(), file.display());
+            println!(
+                "{} earlier runs, kept in {}",
+                state.past.len(),
+                file.display()
+            );
         }
     }
     let job: Arc<Mutex<Job>> = Arc::new(Mutex::new(state));
@@ -455,7 +470,12 @@ fn serve(mut stream: TcpStream, job: &Arc<Mutex<Job>>, exe: &Path) -> Result<()>
     // is send a Host of `localhost` or `127.0.0.1`, because that is not the
     // name it was loaded from. So that is what is required.
     if !host_is_loopback(&req.host) {
-        return respond(&mut stream, 403, "text/plain", b"not for other sites".to_vec());
+        return respond(
+            &mut stream,
+            403,
+            "text/plain",
+            b"not for other sites".to_vec(),
+        );
     }
     // What a site can do is post a form here: the browser sends it to the
     // address it was aimed at, so the Host is ours, and with the Origin of the
@@ -463,7 +483,12 @@ fn serve(mut stream: TcpStream, job: &Arc<Mutex<Job>>, exe: &Path) -> Result<()>
     // only start a stack. It matters now that one can change where the
     // catalog's password is sent.
     if req.method == "POST" && !req.origin.is_empty() && !origin_is_loopback(&req.origin) {
-        return respond(&mut stream, 403, "text/plain", b"not for other sites".to_vec());
+        return respond(
+            &mut stream,
+            403,
+            "text/plain",
+            b"not for other sites".to_vec(),
+        );
     }
 
     let (route, query) = match req.path.split_once('?') {
@@ -493,7 +518,11 @@ fn serve(mut stream: TcpStream, job: &Arc<Mutex<Job>>, exe: &Path) -> Result<()>
         ("POST", "/survey") => json_reply(survey(&req.body, exe, job)),
         ("GET", "/survey") => {
             let s = job.lock().unwrap().survey.clone();
-            (200, "application/json".to_string(), serde_json::to_string(&s)?.into_bytes())
+            (
+                200,
+                "application/json".to_string(),
+                serde_json::to_string(&s)?.into_bytes(),
+            )
         }
         ("POST", "/survey-stop") => {
             let mut j = job.lock().unwrap();
@@ -503,23 +532,39 @@ fn serve(mut stream: TcpStream, job: &Arc<Mutex<Job>>, exe: &Path) -> Result<()>
                     let _ = c.kill();
                 }
             }
-            (200, "application/json".to_string(), b"{\"ok\":true}".to_vec())
+            (
+                200,
+                "application/json".to_string(),
+                b"{\"ok\":true}".to_vec(),
+            )
         }
         ("POST", "/forget") => {
             let mut j = job.lock().unwrap();
             j.past.clear();
             save_history(&j);
-            (200, "application/json".to_string(), b"{\"ok\":true}".to_vec())
+            (
+                200,
+                "application/json".to_string(),
+                b"{\"ok\":true}".to_vec(),
+            )
         }
         ("GET", "/status") => {
             let p = job.lock().unwrap().progress.clone();
-            (200, "application/json".to_string(), serde_json::to_string(&p)?.into_bytes())
+            (
+                200,
+                "application/json".to_string(),
+                serde_json::to_string(&p)?.into_bytes(),
+            )
         }
         ("GET", "/history") => {
             // Newest first, which is the order they are wanted in.
             let mut past = job.lock().unwrap().past.clone();
             past.reverse();
-            (200, "application/json".to_string(), serde_json::to_string(&past)?.into_bytes())
+            (
+                200,
+                "application/json".to_string(),
+                serde_json::to_string(&past)?.into_bytes(),
+            )
         }
         ("GET", "/file") => match serve_file(query, job) {
             Ok((kind, bytes)) => (200, kind, bytes),
@@ -541,7 +586,11 @@ fn serve(mut stream: TcpStream, job: &Arc<Mutex<Job>>, exe: &Path) -> Result<()>
             if j.progress.running {
                 j.progress.message = "Stopped.".into();
             }
-            (200, "application/json".to_string(), b"{\"ok\":true}".to_vec())
+            (
+                200,
+                "application/json".to_string(),
+                b"{\"ok\":true}".to_vec(),
+            )
         }
         ("POST", "/reveal") => json_reply(reveal(&req.body)),
         ("POST", "/pick") => json_reply(pick_folder()),
@@ -633,7 +682,11 @@ fn serve_file(query: &str, job: &Arc<Mutex<Job>>) -> Result<(String, Vec<u8>)> {
             return mosaic::serve(&canonical);
         }
     }
-    let kind = match p.extension().and_then(|e| e.to_str()).map(str::to_ascii_lowercase).as_deref()
+    let kind = match p
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(str::to_ascii_lowercase)
+        .as_deref()
     {
         Some("png") => "image/png",
         Some("jpg" | "jpeg") => "image/jpeg",
@@ -652,18 +705,16 @@ fn percent_decode(s: &str) -> String {
     let mut i = 0;
     while i < b.len() {
         match b[i] {
-            b'%' if i + 2 < b.len() => {
-                match u8::from_str_radix(&s[i + 1..i + 3], 16) {
-                    Ok(v) => {
-                        out.push(v);
-                        i += 3;
-                    }
-                    Err(_) => {
-                        out.push(b[i]);
-                        i += 1;
-                    }
+            b'%' if i + 2 < b.len() => match u8::from_str_radix(&s[i + 1..i + 3], 16) {
+                Ok(v) => {
+                    out.push(v);
+                    i += 3;
                 }
-            }
+                Err(_) => {
+                    out.push(b[i]);
+                    i += 1;
+                }
+            },
             b'+' => {
                 out.push(b' ');
                 i += 1;
@@ -755,7 +806,12 @@ struct InspectRequest {
 fn list_from_text(text: &str, name: &str) -> Result<PathBuf> {
     let entries: Vec<&str> = text
         .lines()
-        .map(|l| l.trim().trim_start_matches('\u{feff}').trim().trim_matches('"'))
+        .map(|l| {
+            l.trim()
+                .trim_start_matches('\u{feff}')
+                .trim()
+                .trim_matches('"')
+        })
         .filter(|l| !l.is_empty() && !l.starts_with('#'))
         .collect();
     if entries.is_empty() {
@@ -768,17 +824,36 @@ fn list_from_text(text: &str, name: &str) -> Result<PathBuf> {
              type the path to the list instead, or use a list of absolute paths."
         ));
     }
-    let stem = Path::new(name).file_stem().and_then(|s| s.to_str()).unwrap_or("dropped");
-    let stem: String = stem.chars().filter(|c|c.is_ascii_alphanumeric() || *c=='-').take(40).collect();
+    let stem = Path::new(name)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("dropped");
+    let stem: String = stem
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || *c == '-')
+        .take(40)
+        .collect();
     static NEXT_LIST: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     for _ in 0..64 {
-        let unique=NEXT_LIST.fetch_add(1,Ordering::Relaxed);
-        let stamp=std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_nanos();
-        let target=std::env::temp_dir().join(format!("smokstak-{stem}-{}-{stamp}-{unique}.txt",std::process::id()));
-        match std::fs::OpenOptions::new().write(true).create_new(true).open(&target) {
-            Ok(mut file)=> { file.write_all(format!("{}\n",entries.join("\n")).as_bytes())?; return Ok(target); }
-            Err(e) if e.kind()==std::io::ErrorKind::AlreadyExists => continue,
-            Err(e)=>return Err(e.into()),
+        let unique = NEXT_LIST.fetch_add(1, Ordering::Relaxed);
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)?
+            .as_nanos();
+        let target = std::env::temp_dir().join(format!(
+            "smokstak-{stem}-{}-{stamp}-{unique}.txt",
+            std::process::id()
+        ));
+        match std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&target)
+        {
+            Ok(mut file) => {
+                file.write_all(format!("{}\n", entries.join("\n")).as_bytes())?;
+                return Ok(target);
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(e) => return Err(e.into()),
         }
     }
     Err(anyhow!("Cannot reserve a unique frame list"))
@@ -795,7 +870,9 @@ fn resolve_input(req: &InspectRequest) -> Result<PathBuf> {
     if !req.text.trim().is_empty() {
         return list_from_text(&req.text, &req.name);
     }
-    Err(anyhow!("nothing to read: drop a list, paste one, or type a path"))
+    Err(anyhow!(
+        "nothing to read: drop a list, paste one, or type a path"
+    ))
 }
 
 /// The frames of a burst, gathered by the filter they were taken through.
@@ -904,7 +981,10 @@ fn total_memory() -> Option<u64> {
     }
     #[cfg(target_os = "macos")]
     {
-        let out = Command::new("sysctl").args(["-n", "hw.memsize"]).output().ok()?;
+        let out = Command::new("sysctl")
+            .args(["-n", "hw.memsize"])
+            .output()
+            .ok()?;
         String::from_utf8_lossy(&out.stdout).trim().parse().ok()
     }
     #[cfg(all(unix, not(target_os = "macos")))]
@@ -976,7 +1056,9 @@ fn inspect(body: &str, exe: &Path) -> Result<String> {
     // How many frames there are, from the directory rather than from decoding
     // them. This is the number the memory projection multiplies, and asking for
     // it costs a listing.
-    let total = sr_raw::collect_files(&input, None).map(|v| v.len()).unwrap_or(0);
+    let total = sr_raw::collect_files(&input, None)
+        .map(|v| v.len())
+        .unwrap_or(0);
 
     // What one of them costs. One frame is decoded to find out, which is what
     // the run itself does before committing to the rest.
@@ -993,7 +1075,9 @@ fn inspect(body: &str, exe: &Path) -> Result<String> {
     let per_frame = per_frame_bytes(&probe_log);
     let needed = per_frame.map(|b| b * total.max(1) as u64);
     let memory = total_memory();
-    let affordable = memory.map(|m| (m as f64 * OF_MEMORY) as u64).unwrap_or(HEAVY);
+    let affordable = memory
+        .map(|m| (m as f64 * OF_MEMORY) as u64)
+        .unwrap_or(HEAVY);
 
     // The filters, and how much the largest of them would need. A set is
     // stacked one filter at a time whether or not it fits, so this — and not
@@ -1033,8 +1117,10 @@ fn inspect(body: &str, exe: &Path) -> Result<String> {
         let target = if unreadable.is_empty() {
             input.clone()
         } else {
-            let names: Vec<String> =
-                unreadable.iter().map(|p| p.to_string_lossy().into_owned()).collect();
+            let names: Vec<String> = unreadable
+                .iter()
+                .map(|p| p.to_string_lossy().into_owned())
+                .collect();
             without(&input.to_string_lossy(), &names)?.0
         };
         let mut cmd = Command::new(exe);
@@ -1060,10 +1146,11 @@ fn inspect(body: &str, exe: &Path) -> Result<String> {
 
     let mut fields: HashMap<String, String> = HashMap::new();
     for line in text.lines() {
-        if let Some((k, v)) = line.split_once(':') {
-            if !k.starts_with(' ') && !k.contains('[') {
-                fields.insert(k.trim().to_string(), v.trim().to_string());
-            }
+        if let Some((k, v)) = line.split_once(':')
+            && !k.starts_with(' ')
+            && !k.contains('[')
+        {
+            fields.insert(k.trim().to_string(), v.trim().to_string());
         }
     }
     let read_count = text
@@ -1100,7 +1187,10 @@ fn inspect(body: &str, exe: &Path) -> Result<String> {
         })
         .collect();
     for p in &unreadable {
-        let name = p.file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+        let name = p
+            .file_name()
+            .map(|s| s.to_string_lossy().into_owned())
+            .unwrap_or_default();
         notes.push(serde_json::json!({
             "level": "warning",
             "text": format!("{name} could not be read, so it is left out of this report and of the stack"),
@@ -1117,7 +1207,10 @@ fn inspect(body: &str, exe: &Path) -> Result<String> {
     //
     // This is only a suggestion; the box says where it will go and the page
     // remembers wherever it was last pointed instead.
-    let stem = input.file_stem().and_then(|s| s.to_str()).unwrap_or("stack");
+    let stem = input
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("stack");
     let dir = input
         .parent()
         .filter(|p| !p.as_os_str().is_empty())
@@ -1232,8 +1325,11 @@ fn results_in_the_way(output: &Path, split_by_filter: bool) -> Vec<PathBuf> {
     ) else {
         return found;
     };
-    let Ok(entries) = std::fs::read_dir(if dir.as_os_str().is_empty() { Path::new(".") } else { dir })
-    else {
+    let Ok(entries) = std::fs::read_dir(if dir.as_os_str().is_empty() {
+        Path::new(".")
+    } else {
+        dir
+    }) else {
         return found;
     };
     for e in entries.flatten() {
@@ -1245,13 +1341,12 @@ fn results_in_the_way(output: &Path, split_by_filter: bool) -> Vec<PathBuf> {
         // between the stem and the extension has to be a filter and nothing
         // else — `m45_H.linear.tif` leaves `H.linear`, which is the linear copy
         // of one, not a second master.
-        if let Some(rest) = name.strip_prefix(&format!("{stem}_")) {
-            if rest
+        if let Some(rest) = name.strip_prefix(&format!("{stem}_"))
+            && rest
                 .strip_suffix(&format!(".{ext}"))
                 .is_some_and(|f| !f.is_empty() && !f.contains('.'))
-            {
-                found.push(e.path());
-            }
+        {
+            found.push(e.path());
         }
     }
     found.sort();
@@ -1261,7 +1356,9 @@ fn results_in_the_way(output: &Path, split_by_filter: bool) -> Vec<PathBuf> {
 fn results_with_exports(output: &Path, split: bool, fits: bool, xisf: bool) -> Vec<PathBuf> {
     let mut found = results_in_the_way(output, split);
     for (enabled, extension) in [(fits, "fits"), (xisf, "xisf")] {
-        if enabled { found.extend(results_in_the_way(&output.with_extension(extension), split)); }
+        if enabled {
+            found.extend(results_in_the_way(&output.with_extension(extension), split));
+        }
     }
     found.sort();
     found.dedup();
@@ -1315,15 +1412,29 @@ fn plan_runs(req: &StartRequest, exe: &Path, how: &[String]) -> Result<Vec<Plann
     // All selected frames share production decisions. Private disk-backed
     // buffers replace the former independently rejected batch accumulators.
     let scratch = if req.scratch_dir.trim().is_empty() {
-        output.parent().unwrap_or(Path::new(".")).join(".smokstak-scratch")
-    } else { PathBuf::from(req.scratch_dir.trim()) };
-    simple.extend(["--scratch-dir".into(), scratch.to_string_lossy().into_owned()]);
+        output
+            .parent()
+            .unwrap_or(Path::new("."))
+            .join(".smokstak-scratch")
+    } else {
+        PathBuf::from(req.scratch_dir.trim())
+    };
+    simple.extend([
+        "--scratch-dir".into(),
+        scratch.to_string_lossy().into_owned(),
+    ]);
     if req.diagnostics {
         let stem = output.file_stem().unwrap_or_default().to_string_lossy();
-        let dir = workflows::unique_child(output.parent().unwrap_or(Path::new(".")), &format!("{stem}-review"));
+        let dir = workflows::unique_child(
+            output.parent().unwrap_or(Path::new(".")),
+            &format!("{stem}-review"),
+        );
         simple.extend(["--diagnostics".into(), dir.to_string_lossy().into_owned()]);
     }
-    Ok(vec![one(simple, "All selected frames; disk-backed storage".into())])
+    Ok(vec![one(
+        simple,
+        "All selected frames; disk-backed storage".into(),
+    )])
 }
 
 fn start(body: &str, exe: &Path, job: &Arc<Mutex<Job>>) -> Result<String> {
@@ -1345,7 +1456,12 @@ fn start(body: &str, exe: &Path, job: &Arc<Mutex<Job>>) -> Result<String> {
         return Err(anyhow!("both an input and an output are needed"));
     }
     if !req.overwrite {
-        let in_the_way = results_with_exports(Path::new(req.output.trim()), req.split_by_filter, req.fits, req.xisf);
+        let in_the_way = results_with_exports(
+            Path::new(req.output.trim()),
+            req.split_by_filter,
+            req.fits,
+            req.xisf,
+        );
         if !in_the_way.is_empty() {
             // Answered by the page rather than refused outright: writing over
             // last night's stack is a perfectly ordinary thing to want, and
@@ -1382,9 +1498,17 @@ fn start(body: &str, exe: &Path, job: &Arc<Mutex<Job>>) -> Result<String> {
     if req.flatten_background {
         how.push("--flatten-background".into());
     }
-    how.push(if req.sky_field { "--sky-field".into() } else { "--no-sky-field".into() });
-    if req.fits { how.push("--fits".into()); }
-    if req.xisf { how.push("--xisf".into()); }
+    how.push(if req.sky_field {
+        "--sky-field".into()
+    } else {
+        "--no-sky-field".into()
+    });
+    if req.fits {
+        how.push("--fits".into());
+    }
+    if req.xisf {
+        how.push("--xisf".into());
+    }
     if req.float_tiff {
         how.push("--float-tiff".into());
     }
@@ -1395,10 +1519,12 @@ fn start(body: &str, exe: &Path, job: &Arc<Mutex<Job>>) -> Result<String> {
     // What tells this run from the last one, for the list of past runs. The
     // input's name, then only what was not left at its default: a list of runs
     // that all say "1x, deep" distinguishes nothing.
-    let mut what = vec![Path::new(req.input.trim())
-        .file_name()
-        .map(|s| s.to_string_lossy().into_owned())
-        .unwrap_or_else(|| req.input.trim().to_string())];
+    let mut what = vec![
+        Path::new(req.input.trim())
+            .file_name()
+            .map(|s| s.to_string_lossy().into_owned())
+            .unwrap_or_else(|| req.input.trim().to_string()),
+    ];
 
     // Frames left out become a list of the rest, which every plan already
     // knows how to read — including one stacked a filter or a batch at a time.
@@ -1450,7 +1576,10 @@ fn start_plan(
     let first = queue.pop_front().ok_or_else(|| anyhow!("nothing to run"))?;
     {
         let mut j = job.lock().unwrap();
-        anyhow::ensure!(!j.progress.running && !j.survey.running, "another run or survey is still going");
+        anyhow::ensure!(
+            !j.progress.running && !j.survey.running,
+            "another run or survey is still going"
+        );
         j.progress = begin(&mut j, &first, queue.len() + 1, title, of)?;
         j.queue = queue;
         j.began = Some(Instant::now());
@@ -1490,7 +1619,11 @@ fn begin(
     let Some(id) = of.filter(|_| extends_a_stack(first.kind)) else {
         j.palette_dir = None;
         j.next_id += 1;
-        return Ok(Progress { id: j.next_id, title, ..fresh });
+        return Ok(Progress {
+            id: j.next_id,
+            title,
+            ..fresh
+        });
     };
     // The kept copy first: the progress in front of us may be a combine of the
     // same stack that failed part way. An id of 0 is a page that did not say.
@@ -1507,7 +1640,11 @@ fn begin(
     let mut colour = base.colour;
     let mut palettes = base.palettes;
     if first.kind == "composite" {
-        colour.push(ColourImage { title, files: Vec::new(), mapping: String::new() });
+        colour.push(ColourImage {
+            title,
+            files: Vec::new(),
+            mapping: String::new(),
+        });
     } else {
         palettes.clear();
     }
@@ -1539,8 +1676,7 @@ fn settle(j: &mut Job, ok: bool, stopped: bool, elapsed: f64, last_stage: usize)
         j.progress.message = "Stopped.".into();
     } else {
         j.progress.failed = true;
-        j.progress.message =
-            "The run did not finish. The log below says what it was doing.".into();
+        j.progress.message = "The run did not finish. The log below says what it was doing.".into();
     }
 
     if j.progress.extends {
@@ -1603,7 +1739,8 @@ pub(crate) fn data_dir() -> Option<PathBuf> {
     #[cfg(windows)]
     let base = std::env::var_os("APPDATA").map(PathBuf::from);
     #[cfg(target_os = "macos")]
-    let base = std::env::var_os("HOME").map(|h| PathBuf::from(h).join("Library/Application Support"));
+    let base =
+        std::env::var_os("HOME").map(|h| PathBuf::from(h).join("Library/Application Support"));
     #[cfg(all(unix, not(target_os = "macos")))]
     let base = std::env::var_os("XDG_DATA_HOME")
         .map(PathBuf::from)
@@ -1616,9 +1753,14 @@ pub(crate) fn data_dir() -> Option<PathBuf> {
 /// A list that cannot be read is started again rather than refused: it is a
 /// convenience, and a page that will not open because of one is not.
 fn load_history(path: &Path) -> Vec<Progress> {
-    let Ok(text) = std::fs::read_to_string(path) else { return Vec::new() };
+    let Ok(text) = std::fs::read_to_string(path) else {
+        return Vec::new();
+    };
     serde_json::from_str(&text).unwrap_or_else(|e| {
-        log::warn!("{} could not be read ({e}); starting a new list", path.display());
+        log::warn!(
+            "{} could not be read ({e}); starting a new list",
+            path.display()
+        );
         Vec::new()
     })
 }
@@ -1639,7 +1781,10 @@ fn save_history(j: &Job) {
         Ok(())
     };
     if let Err(e) = write() {
-        log::warn!("the list of earlier runs could not be kept in {}: {e}", path.display());
+        log::warn!(
+            "the list of earlier runs could not be kept in {}: {e}",
+            path.display()
+        );
     }
 }
 
@@ -1654,7 +1799,10 @@ fn restore(j: &mut Job, past: Vec<Progress>) {
     let is_image = |p: &Path| {
         p.is_file()
             && matches!(
-                p.extension().and_then(|e| e.to_str()).map(str::to_ascii_lowercase).as_deref(),
+                p.extension()
+                    .and_then(|e| e.to_str())
+                    .map(str::to_ascii_lowercase)
+                    .as_deref(),
                 Some("png" | "tif" | "tiff" | "fits" | "xisf")
             )
     };
@@ -1677,12 +1825,20 @@ fn restore(j: &mut Job, past: Vec<Progress>) {
             let path = PathBuf::from(f);
             if p.kind == "mosaic" {
                 j.mosaic_outputs.insert(path.clone());
-                j.mosaic_outputs.insert(std::fs::canonicalize(&path).unwrap_or_else(|_| path.clone()));
+                j.mosaic_outputs
+                    .insert(std::fs::canonicalize(&path).unwrap_or_else(|_| path.clone()));
             }
-            if is_image(&path) || workflows::is_report(&path)
-                || (p.kind == "mosaic" && path.is_file()
-                    && matches!(path.file_name().and_then(|n| n.to_str()), Some("plan.json" | "result.json"))) {
-                j.served.insert(std::fs::canonicalize(&path).unwrap_or(path));
+            if is_image(&path)
+                || workflows::is_report(&path)
+                || (p.kind == "mosaic"
+                    && path.is_file()
+                    && matches!(
+                        path.file_name().and_then(|n| n.to_str()),
+                        Some("plan.json" | "result.json")
+                    ))
+            {
+                j.served
+                    .insert(std::fs::canonicalize(&path).unwrap_or(path));
             }
         }
         j.past.push(p);
@@ -1698,15 +1854,27 @@ fn restore(j: &mut Job, past: Vec<Progress>) {
 fn without(input: &str, exclude: &[String]) -> Result<(PathBuf, usize)> {
     let all = sr_raw::collect_files(Path::new(input.trim()), None)?;
     let out: std::collections::HashSet<&str> = exclude.iter().map(|s| s.as_str()).collect();
-    let kept: Vec<&PathBuf> =
-        all.iter().filter(|p| !out.contains(p.to_string_lossy().as_ref())).collect();
+    let kept: Vec<&PathBuf> = all
+        .iter()
+        .filter(|p| !out.contains(p.to_string_lossy().as_ref()))
+        .collect();
     anyhow::ensure!(!kept.is_empty(), "every frame was left out");
     // The list lives in a temporary folder, and a relative path in a list is
     // read against the list's own folder.
     let here = std::env::current_dir()?;
     let text: String = kept
         .iter()
-        .map(|p| format!("{}\n", if p.is_absolute() { p.to_path_buf() } else { here.join(p) }.display()))
+        .map(|p| {
+            format!(
+                "{}\n",
+                if p.is_absolute() {
+                    p.to_path_buf()
+                } else {
+                    here.join(p)
+                }
+                .display()
+            )
+        })
         .collect();
     let list = list_from_text(&text, "kept.txt")?;
     Ok((list, all.len() - kept.len()))
@@ -1726,10 +1894,12 @@ fn survey(body: &str, exe: &Path, job: &Arc<Mutex<Job>>) -> Result<String> {
     let req: SurveyRequest = serde_json::from_str(body)?;
     let input = req.input.trim().to_string();
     anyhow::ensure!(!input.is_empty(), "nothing to measure");
-    let gen = {
+    let generation = {
         let mut j = job.lock().unwrap();
         if j.progress.running {
-            return Err(anyhow!("a run is going; measure the frames once it has finished"));
+            return Err(anyhow!(
+                "a run is going; measure the frames once it has finished"
+            ));
         }
         if j.survey.running && j.survey.input == input {
             return Ok(serde_json::json!({ "ok": true }).to_string());
@@ -1740,11 +1910,17 @@ fn survey(body: &str, exe: &Path, job: &Arc<Mutex<Job>>) -> Result<String> {
             let _ = c.wait();
         }
         j.survey_gen += 1;
-        j.survey = SurveyState { running: true, input: input.clone(), ..Default::default() };
+        j.survey = SurveyState {
+            running: true,
+            input: input.clone(),
+            ..Default::default()
+        };
         j.survey_gen
     };
-    let out = std::env::temp_dir()
-        .join(format!("smokstak-survey-{}-{gen}.json", std::process::id()));
+    let out = std::env::temp_dir().join(format!(
+        "smokstak-survey-{}-{generation}.json",
+        std::process::id()
+    ));
     let spawned = Command::new(exe)
         .arg("survey")
         .arg(&input)
@@ -1773,14 +1949,20 @@ fn survey(body: &str, exe: &Path, job: &Arc<Mutex<Job>>) -> Result<String> {
         std::thread::spawn(move || {
             for line in BufReader::new(stdout).lines().map_while(Result::ok) {
                 let mut j = job.lock().unwrap();
-                if j.survey_gen != gen {
+                if j.survey_gen != generation {
                     return;
                 }
-                if let Some(n) = line.strip_prefix("surveying ").and_then(|r| r.strip_suffix(" frames")) {
+                if let Some(n) = line
+                    .strip_prefix("surveying ")
+                    .and_then(|r| r.strip_suffix(" frames"))
+                {
                     j.survey.total = n.trim().parse().unwrap_or(0);
                 }
                 // Written from every worker at once, so not always in order.
-                if let Some((n, m)) = line.strip_prefix("surveyed ").and_then(|r| r.split_once(" of ")) {
+                if let Some((n, m)) = line
+                    .strip_prefix("surveyed ")
+                    .and_then(|r| r.split_once(" of "))
+                {
                     j.survey.done = j.survey.done.max(n.trim().parse().unwrap_or(0));
                     j.survey.total = m.trim().parse().unwrap_or(j.survey.total);
                 }
@@ -1788,7 +1970,10 @@ fn survey(body: &str, exe: &Path, job: &Arc<Mutex<Job>>) -> Result<String> {
         })
     };
     let complaints = std::thread::spawn(move || {
-        BufReader::new(stderr).lines().map_while(Result::ok).collect::<Vec<_>>()
+        BufReader::new(stderr)
+            .lines()
+            .map_while(Result::ok)
+            .collect::<Vec<_>>()
     });
 
     let job = Arc::clone(job);
@@ -1797,7 +1982,7 @@ fn survey(body: &str, exe: &Path, job: &Arc<Mutex<Job>>) -> Result<String> {
         let status = loop {
             let done = {
                 let mut j = job.lock().unwrap();
-                if j.survey_gen != gen {
+                if j.survey_gen != generation {
                     return;
                 }
                 match j.survey_child.as_mut() {
@@ -1814,7 +1999,7 @@ fn survey(body: &str, exe: &Path, job: &Arc<Mutex<Job>>) -> Result<String> {
         let _ = counter.join();
         let said = complaints.join().unwrap_or_default();
         let mut j = job.lock().unwrap();
-        if j.survey_gen != gen {
+        if j.survey_gen != generation {
             return;
         }
         j.survey_child = None;
@@ -1865,12 +2050,48 @@ struct Candidate {
 /// conventions for making structure visible, which is exactly why the choice
 /// wants to be made by looking rather than by reading a list of names.
 const CANDIDATES: [Candidate; 6] = [
-    Candidate { id: "sho", label: "SHO — the Hubble palette", palette: "sho", luminance: "", needs: &["S", "H", "O"] },
-    Candidate { id: "hso", label: "HSO — hydrogen red, sulphur green", palette: "hso", luminance: "", needs: &["S", "H", "O"] },
-    Candidate { id: "hoo", label: "HOO — hydrogen red, oxygen green and blue", palette: "hoo", luminance: "", needs: &["H", "O"] },
-    Candidate { id: "ohh", label: "OHH — oxygen red, hydrogen green and blue", palette: "ohh", luminance: "", needs: &["H", "O"] },
-    Candidate { id: "rgb", label: "RGB — the colours as measured", palette: "rgb", luminance: "", needs: &["R", "G", "B"] },
-    Candidate { id: "lrgb", label: "LRGB — colour from RGB, detail from L", palette: "rgb", luminance: "L", needs: &["R", "G", "B", "L"] },
+    Candidate {
+        id: "sho",
+        label: "SHO — the Hubble palette",
+        palette: "sho",
+        luminance: "",
+        needs: &["S", "H", "O"],
+    },
+    Candidate {
+        id: "hso",
+        label: "HSO — hydrogen red, sulphur green",
+        palette: "hso",
+        luminance: "",
+        needs: &["S", "H", "O"],
+    },
+    Candidate {
+        id: "hoo",
+        label: "HOO — hydrogen red, oxygen green and blue",
+        palette: "hoo",
+        luminance: "",
+        needs: &["H", "O"],
+    },
+    Candidate {
+        id: "ohh",
+        label: "OHH — oxygen red, hydrogen green and blue",
+        palette: "ohh",
+        luminance: "",
+        needs: &["H", "O"],
+    },
+    Candidate {
+        id: "rgb",
+        label: "RGB — the colours as measured",
+        palette: "rgb",
+        luminance: "",
+        needs: &["R", "G", "B"],
+    },
+    Candidate {
+        id: "lrgb",
+        label: "LRGB — colour from RGB, detail from L",
+        palette: "rgb",
+        luminance: "L",
+        needs: &["R", "G", "B", "L"],
+    },
 ];
 
 fn candidates_for(channels: &[String]) -> Vec<&'static Candidate> {
@@ -1929,9 +2150,12 @@ fn palettes(body: &str, exe: &Path, job: &Arc<Mutex<Job>>) -> Result<String> {
 
     // One folder per stack, so that trying palettes on one does not delete the
     // pictures another is still showing in the list of earlier runs.
-    let id = if req.of == 0 { job.lock().unwrap().progress.id } else { req.of };
-    let dir = std::env::temp_dir()
-        .join(format!("smokstak-palettes-{}-{id}", std::process::id()));
+    let id = if req.of == 0 {
+        job.lock().unwrap().progress.id
+    } else {
+        req.of
+    };
+    let dir = std::env::temp_dir().join(format!("smokstak-palettes-{}-{id}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir)?;
 
@@ -1941,7 +2165,11 @@ fn palettes(body: &str, exe: &Path, job: &Arc<Mutex<Job>>) -> Result<String> {
             let mut args = vec!["composite".to_string()];
             args.extend(req.channels.iter().cloned());
             args.push("--output".into());
-            args.push(dir.join(format!("{}.tif", c.id)).to_string_lossy().into_owned());
+            args.push(
+                dir.join(format!("{}.tif", c.id))
+                    .to_string_lossy()
+                    .into_owned(),
+            );
             args.push("--palette".into());
             args.push(c.palette.to_string());
             args.push("--preview".into());
@@ -1972,7 +2200,12 @@ fn palettes(body: &str, exe: &Path, job: &Arc<Mutex<Job>>) -> Result<String> {
         let mut j = job.lock().unwrap();
         j.palette_dir = Some(dir);
     }
-    start_plan(plan, job, format!("{} palettes", wanted.len()), Some(req.of))
+    start_plan(
+        plan,
+        job,
+        format!("{} palettes", wanted.len()),
+        Some(req.of),
+    )
 }
 
 /// What the page sends to combine separately stacked filters into one image.
@@ -2026,7 +2259,8 @@ fn composite(body: &str, exe: &Path, job: &Arc<Mutex<Job>>) -> Result<String> {
         return Err(anyhow!("the combined image needs a name"));
     }
     if !req.overwrite {
-        let in_the_way = results_with_exports(Path::new(req.output.trim()), false, req.fits, req.xisf);
+        let in_the_way =
+            results_with_exports(Path::new(req.output.trim()), false, req.fits, req.xisf);
         if !in_the_way.is_empty() {
             return Ok(serde_json::json!({
                 "ok": false,
@@ -2059,11 +2293,13 @@ fn composite(body: &str, exe: &Path, job: &Arc<Mutex<Job>>) -> Result<String> {
     // palette: LRGB is the RGB palette with the detail taken from L. The
     // mapping lives with the choices rather than in the page.
     let chosen = CANDIDATES.iter().find(|c| c.id == req.palette);
-    let palette = chosen.map(|c| c.palette).unwrap_or(if req.palette.is_empty() {
-        "sho"
-    } else {
-        &req.palette
-    });
+    let palette = chosen
+        .map(|c| c.palette)
+        .unwrap_or(if req.palette.is_empty() {
+            "sho"
+        } else {
+            &req.palette
+        });
     let luminance = match chosen {
         Some(c) if !c.luminance.is_empty() => c.luminance,
         _ => req.luminance.trim(),
@@ -2075,8 +2311,12 @@ fn composite(body: &str, exe: &Path, job: &Arc<Mutex<Job>>) -> Result<String> {
         .arg("--preview")
         .arg("--log")
         .arg("info");
-    if req.fits { cmd.arg("--fits"); }
-    if req.xisf { cmd.arg("--xisf"); }
+    if req.fits {
+        cmd.arg("--fits");
+    }
+    if req.xisf {
+        cmd.arg("--xisf");
+    }
     if req.stretch_channels {
         cmd.arg("--stretch-channels");
     }
@@ -2087,13 +2327,20 @@ fn composite(body: &str, exe: &Path, job: &Arc<Mutex<Job>>) -> Result<String> {
         cmd.arg("--luminance").arg(luminance);
     }
 
-    let channels: Vec<&str> =
-        req.channels.iter().filter_map(|c| c.split('=').next()).collect();
+    let channels: Vec<&str> = req
+        .channels
+        .iter()
+        .filter_map(|c| c.split('=').next())
+        .collect();
     let title = format!(
         "{} · {}{}",
         channels.join(""),
         chosen.map(|c| c.id).unwrap_or(palette),
-        if req.stretch_channels { " · stretched" } else { "" }
+        if req.stretch_channels {
+            " · stretched"
+        } else {
+            ""
+        }
     );
     let args: Vec<String> = cmd
         .get_args()
@@ -2174,7 +2421,9 @@ fn spawn_next(planned: Planned, job: &Arc<Mutex<Job>>) -> Result<String> {
                 // The run names each file it wrote as it writes it. The
                 // preview announces itself differently from the rest, which is
                 // how it came to be missing from the finished list.
-                if kind != "mosaic" && kind != "mosaic_prepare" { workflows::record_outputs(&mut j, &line, kind); }
+                if kind != "mosaic" && kind != "mosaic_prepare" {
+                    workflows::record_outputs(&mut j, &line, kind);
+                }
                 // A per-filter run says which filter it has reached, and
                 // everything after that line belongs to that filter.
                 if let Some(rest) = line.strip_prefix("=== filter ") {
@@ -2184,14 +2433,18 @@ fn spawn_next(planned: Planned, job: &Arc<Mutex<Job>>) -> Result<String> {
                 // made from it afterwards has its own "Wrote" and would replace
                 // them.
                 if j.progress.extends {
-                    if let Some(rest) = line.strip_prefix("Palette: ") {
-                        if let Some(c) = j.progress.colour.last_mut() {
-                            c.mapping = rest.trim().to_string();
-                        }
+                    if let Some(rest) = line.strip_prefix("Palette: ")
+                        && let Some(c) = j.progress.colour.last_mut()
+                    {
+                        c.mapping = rest.trim().to_string();
                     }
                 } else if let Some((label, text)) = finding_of(&line) {
                     let group = j.progress.group.clone();
-                    j.progress.findings.push(Finding { group, label: label.into(), text });
+                    j.progress.findings.push(Finding {
+                        group,
+                        label: label.into(),
+                        text,
+                    });
                 }
                 j.progress.elapsed = began.elapsed().as_secs_f64();
                 j.progress.log.push(line);
@@ -2227,7 +2480,9 @@ fn spawn_next(planned: Planned, job: &Arc<Mutex<Job>>) -> Result<String> {
                     Err(e) => break Some(Err(e)),
                 }
             };
-            for reader in readers { let _ = reader.join(); }
+            for reader in readers {
+                let _ = reader.join();
+            }
             job.lock().unwrap().child = None;
             let mut j = job.lock().unwrap();
             let mut ok = matches!(&status, Some(Ok(s)) if s.success());
@@ -2235,17 +2490,21 @@ fn spawn_next(planned: Planned, job: &Arc<Mutex<Job>>) -> Result<String> {
             if ok && !stopped {
                 if kind == "mosaic" {
                     if let Err(e) = mosaic::completed(&mut j, &completed_args) {
-                        j.progress.log.push(format!("Mosaic publication failed: {e:#}"));
+                        j.progress
+                            .log
+                            .push(format!("Mosaic publication failed: {e:#}"));
                         ok = false;
                     }
-                }
-                else if kind == "mosaic_prepare" {
+                } else if kind == "mosaic_prepare" {
                     if let Err(e) = mosaic::preparation_completed(&mut j, &completed_args) {
-                        j.progress.log.push(format!("Mosaic preparation publication failed: {e:#}"));
+                        j.progress
+                            .log
+                            .push(format!("Mosaic preparation publication failed: {e:#}"));
                         ok = false;
                     }
+                } else {
+                    workflows::completed(&mut j, kind, &completed_args);
                 }
-                else { workflows::completed(&mut j, kind, &completed_args); }
             }
 
             // More to do, and reason to do it: the next run of the plan.
@@ -2264,7 +2523,13 @@ fn spawn_next(planned: Planned, job: &Arc<Mutex<Job>>) -> Result<String> {
                 return;
             }
 
-            settle(&mut j, ok, stopped, began.elapsed().as_secs_f64(), last_stage);
+            settle(
+                &mut j,
+                ok,
+                stopped,
+                began.elapsed().as_secs_f64(),
+                last_stage,
+            );
         });
     }
 
@@ -2324,7 +2589,9 @@ fn pick_folder() -> Result<String> {
 /// newline: folder names have spaces at the ends about as often as they have
 /// spaces in the middle, which is to say it happens.
 fn folder_from(stdout: &[u8]) -> String {
-    String::from_utf8_lossy(stdout).trim_matches(['\r', '\n']).to_string()
+    String::from_utf8_lossy(stdout)
+        .trim_matches(['\r', '\n'])
+        .to_string()
 }
 
 /// The prompt every chooser puts above its tree.
@@ -2370,8 +2637,18 @@ fn folder_chooser() -> Result<Command> {
         // rather than running one to see whether it exists: running zenity to
         // find out puts a dialog on the screen before we know we want it.
         for (exe, args) in [
-            ("zenity", vec!["--file-selection".into(), "--directory".into(), format!("--title={CHOOSE}")]),
-            ("kdialog", vec!["--getexistingdirectory".into(), ".".to_string()]),
+            (
+                "zenity",
+                vec![
+                    "--file-selection".into(),
+                    "--directory".into(),
+                    format!("--title={CHOOSE}"),
+                ],
+            ),
+            (
+                "kdialog",
+                vec!["--getexistingdirectory".into(), ".".to_string()],
+            ),
         ] {
             if which(exe) {
                 let mut c = Command::new(exe);
@@ -2394,10 +2671,8 @@ fn which(exe: &str) -> bool {
 
 /// The stage list, for the page to draw. Kept here so there is one definition.
 fn stages_json() -> String {
-    serde_json::to_string(
-        &STAGES.iter().map(|(_, label)| *label).collect::<Vec<_>>(),
-    )
-    .unwrap_or_else(|_| "[]".into())
+    serde_json::to_string(&STAGES.iter().map(|(_, label)| *label).collect::<Vec<_>>())
+        .unwrap_or_else(|_| "[]".into())
 }
 
 #[cfg(test)]
@@ -2406,12 +2681,19 @@ mod tests {
 
     #[test]
     fn scientific_exports_are_included_in_overwrite_checks() {
-        let dir=std::env::temp_dir().join(format!("smokstak-export-check-{}",std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("smokstak-export-check-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(dir.join("master.fits"),b"existing").unwrap();
-        std::fs::write(dir.join("master_H.xisf"),b"existing").unwrap();
-        assert_eq!(results_with_exports(&dir.join("master.tif"),false,true,true),vec![dir.join("master.fits")]);
-        assert_eq!(results_with_exports(&dir.join("master.tif"),true,true,true),vec![dir.join("master_H.xisf")]);
+        std::fs::write(dir.join("master.fits"), b"existing").unwrap();
+        std::fs::write(dir.join("master_H.xisf"), b"existing").unwrap();
+        assert_eq!(
+            results_with_exports(&dir.join("master.tif"), false, true, true),
+            vec![dir.join("master.fits")]
+        );
+        assert_eq!(
+            results_with_exports(&dir.join("master.tif"), true, true, true),
+            vec![dir.join("master_H.xisf")]
+        );
         std::fs::remove_file(dir.join("master.fits")).unwrap();
         std::fs::remove_file(dir.join("master_H.xisf")).unwrap();
         std::fs::remove_dir(dir).unwrap();
@@ -2419,9 +2701,12 @@ mod tests {
 
     #[test]
     fn sky_matching_defaults_on_and_preserves_an_explicit_opt_out() {
-        let default: StartRequest = serde_json::from_str(r#"{"input":"lights","output":"stack.tif"}"#).unwrap();
+        let default: StartRequest =
+            serde_json::from_str(r#"{"input":"lights","output":"stack.tif"}"#).unwrap();
         assert!(default.sky_field);
-        let disabled: StartRequest = serde_json::from_str(r#"{"input":"lights","output":"stack.tif","sky_field":false}"#).unwrap();
+        let disabled: StartRequest =
+            serde_json::from_str(r#"{"input":"lights","output":"stack.tif","sky_field":false}"#)
+                .unwrap();
         assert!(!disabled.sky_field);
     }
 
@@ -2430,8 +2715,14 @@ mod tests {
         assert_eq!(stage_of("m45.txt: 96 frames listed"), Some(0));
         assert_eq!(stage_of("decoding 96 frames from m45.txt"), Some(1));
         assert_eq!(stage_of("global registration in 31.17s"), Some(2));
-        assert_eq!(stage_of("robustness: 4.34% of the burst suppressed"), Some(4));
-        assert_eq!(stage_of("merging 96 frames with the burst-sr backend"), Some(5));
+        assert_eq!(
+            stage_of("robustness: 4.34% of the burst suppressed"),
+            Some(4)
+        );
+        assert_eq!(
+            stage_of("merging 96 frames with the burst-sr backend"),
+            Some(5)
+        );
         assert_eq!(stage_of("Wrote m45.tif (6248 x 4176)"), Some(7));
         assert_eq!(stage_of("something else entirely"), None);
     }
@@ -2476,12 +2767,18 @@ mod tests {
             Some(r"C:\out\approved_lights (10)-stacked.preview_O.png")
         );
         // Nothing said after it, so the parentheses are the name's.
-        assert_eq!(output_of(r"Wrote C:\out\m45 (2).tif").as_deref(), Some(r"C:\out\m45 (2).tif"));
+        assert_eq!(
+            output_of(r"Wrote C:\out\m45 (2).tif").as_deref(),
+            Some(r"C:\out\m45 (2).tif")
+        );
         assert_eq!(
             output_of("Wrote C:/out/m45 (2)/batch_1.acc (weights (and values))").as_deref(),
             Some("C:/out/m45 (2)/batch_1.acc")
         );
-        assert_eq!(output_of("Wrote m45.tif (6248 x 4176)").as_deref(), Some("m45.tif"));
+        assert_eq!(
+            output_of("Wrote m45.tif (6248 x 4176)").as_deref(),
+            Some("m45.tif")
+        );
         assert_eq!(
             output_of("Wrote m45.linear.tif (32-bit float, linear, unrestored)").as_deref(),
             Some("m45.linear.tif")
@@ -2497,8 +2794,13 @@ mod tests {
     #[test]
     fn the_lines_worth_reading_are_the_ones_lifted_out() {
         assert_eq!(
-            finding_of("[..INFO  smokstak::pipeline] kernel: 4 contributing frames out of 12 loaded"),
-            Some(("Frames used", "4 contributing frames out of 12 loaded".to_string()))
+            finding_of(
+                "[..INFO  smokstak::pipeline] kernel: 4 contributing frames out of 12 loaded"
+            ),
+            Some((
+                "Frames used",
+                "4 contributing frames out of 12 loaded".to_string()
+            ))
         );
         // The same prefix, a different line, and not the frame count. Without
         // the guard this one arrived under the heading "Frames used".
@@ -2508,7 +2810,10 @@ mod tests {
         );
         assert_eq!(
             finding_of("[..] robustness: 0.04% of the burst suppressed on average"),
-            Some(("Outliers", "0.04% of the burst suppressed on average".to_string()))
+            Some((
+                "Outliers",
+                "0.04% of the burst suppressed on average".to_string()
+            ))
         );
         // The same prefix again, and a different fact. Under one heading the
         // later of the two quietly replaced the earlier.
@@ -2530,15 +2835,24 @@ mod tests {
         );
         assert_eq!(
             finding_of("Samples:           107498809 examined, 105559565 merged, 1982 masked"),
-            Some(("Samples", "107498809 examined, 105559565 merged, 1982 masked".to_string()))
+            Some((
+                "Samples",
+                "107498809 examined, 105559565 merged, 1982 masked".to_string()
+            ))
         );
-        assert_eq!(finding_of("merging 12 frames with the burst-sr backend"), None);
+        assert_eq!(
+            finding_of("merging 12 frames with the burst-sr backend"),
+            None
+        );
     }
 
     /// The rule `inspect` suggests an output with, held on its own so that it
     /// cannot drift back to writing among somebody's frames.
     fn suggested_output(input: &Path) -> PathBuf {
-        let stem = input.file_stem().and_then(|s| s.to_str()).unwrap_or("stack");
+        let stem = input
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("stack");
         let dir = input
             .parent()
             .filter(|p| !p.as_os_str().is_empty())
@@ -2602,9 +2916,15 @@ mod tests {
             r#"{"input":"G:/data/m45","output":"G:/out/m45.tif","split_by_filter":true}"#,
         ));
         assert_eq!(plan.len(), 1, "nothing to split into: {plan:?}");
-        assert!(plan[0].contains(&"--split-by-filter".to_string()), "{plan:?}");
+        assert!(
+            plan[0].contains(&"--split-by-filter".to_string()),
+            "{plan:?}"
+        );
         // And no reference is imposed: one run picks its own, as it always did.
-        assert!(!plan[0].contains(&"--reference-file".to_string()), "{plan:?}");
+        assert!(
+            !plan[0].contains(&"--reference-file".to_string()),
+            "{plan:?}"
+        );
     }
 
     #[test]
@@ -2621,15 +2941,25 @@ mod tests {
 
     #[test]
     fn large_sets_keep_global_decisions_and_report_the_masks() {
-        let req = request(r#"{"input":"frames.txt","output":"out/master.tif",
-            "whole_set":true,"per_frame":100,"affordable":200,"scratch_dir":"fast disk/scratch"}"#);
+        let req = request(
+            r#"{"input":"frames.txt","output":"out/master.tif",
+            "whole_set":true,"per_frame":100,"affordable":200,"scratch_dir":"fast disk/scratch"}"#,
+        );
         let plan = plan_of(&req);
         assert_eq!(plan.len(), 1);
         assert!(!plan[0].contains(&"--accumulate".into()));
-        assert!(plan[0].windows(2).any(|a| a == ["--scratch-dir", "fast disk/scratch"]));
+        assert!(
+            plan[0]
+                .windows(2)
+                .any(|a| a == ["--scratch-dir", "fast disk/scratch"])
+        );
         assert!(plan[0].contains(&"--diagnostics".into()));
-        assert!(!plan_of(&request(r#"{"input":"a","output":"b.tif","diagnostics":false}"#))[0]
-            .contains(&"--diagnostics".into()));
+        assert!(
+            !plan_of(&request(
+                r#"{"input":"a","output":"b.tif","diagnostics":false}"#
+            ))[0]
+                .contains(&"--diagnostics".into())
+        );
     }
 
     #[test]
@@ -2637,7 +2967,10 @@ mod tests {
         // A directory of frames gets a result beside it, not inside it.
         let frames = Path::new("Z:/site1/2026-07-23/LIGHT/WR 134");
         let out = suggested_output(frames);
-        assert_eq!(out.parent().unwrap(), Path::new("Z:/site1/2026-07-23/LIGHT"));
+        assert_eq!(
+            out.parent().unwrap(),
+            Path::new("Z:/site1/2026-07-23/LIGHT")
+        );
         assert_ne!(out.parent().unwrap(), frames, "not among the frames");
 
         // A list gets one beside the list, and never beside what it names:
@@ -2656,10 +2989,16 @@ mod tests {
         let line = "[2026-09-08T06:48:57.168Z INFO  smokstak::pipeline] decoding 1 frames from \
                     G:/data (about 107.8 MiB resident, 107.8 MiB per frame: 49.8 MiB of samples \
                     and 58.1 MiB of guide and pyramid)";
-        assert_eq!(per_frame_bytes(line), Some((107.8 * 1024.0 * 1024.0) as u64));
+        assert_eq!(
+            per_frame_bytes(line),
+            Some((107.8 * 1024.0 * 1024.0) as u64)
+        );
         // 634 of those is the set that could not be read at all.
         let each = per_frame_bytes(line).unwrap();
-        assert!(each * 634 > 60 * 1024 * 1024 * 1024, "a night of them is tens of gigabytes");
+        assert!(
+            each * 634 > 60 * 1024 * 1024 * 1024,
+            "a night of them is tens of gigabytes"
+        );
         assert_eq!(per_frame_bytes("nothing about memory here"), None);
     }
 
@@ -2670,13 +3009,21 @@ mod tests {
                      memory allocation of 61171488 bytes failed\n\
                      note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace";
         let said = readable_failure(abort);
-        assert!(said.contains("156.5 GiB"), "the load, not the last straw: {said}");
+        assert!(
+            said.contains("156.5 GiB"),
+            "the load, not the last straw: {said}"
+        );
         assert!(said.contains("fewer"), "{said}");
-        assert!(!said.contains("RUST_BACKTRACE"), "not the reader's program to debug: {said}");
+        assert!(
+            !said.contains("RUST_BACKTRACE"),
+            "not the reader's program to debug: {said}"
+        );
         assert!(!said.contains("61171488"), "{said}");
         // Anything else is passed through as it was written.
-        assert_eq!(readable_failure("no frames in G:\\data were readable"),
-                   "no frames in G:\\data were readable");
+        assert_eq!(
+            readable_failure("no frames in G:\\data were readable"),
+            "no frames in G:\\data were readable"
+        );
     }
 
     #[test]
@@ -2686,7 +3033,10 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let out = dir.join("m45.tif");
 
-        assert!(results_in_the_way(&out, false).is_empty(), "nothing written yet");
+        assert!(
+            results_in_the_way(&out, false).is_empty(),
+            "nothing written yet"
+        );
         std::fs::write(&out, b"x").unwrap();
         assert_eq!(results_in_the_way(&out, false), vec![out.clone()]);
 
@@ -2702,10 +3052,15 @@ mod tests {
         // Somebody else's stack of the same object.
         std::fs::write(dir.join("m45-old.tif"), b"x").unwrap();
 
-        assert!(results_in_the_way(&out, false).is_empty(), "the given name is still free");
+        assert!(
+            results_in_the_way(&out, false).is_empty(),
+            "the given name is still free"
+        );
         let found = results_in_the_way(&out, true);
-        let names: Vec<String> =
-            found.iter().map(|p| p.file_name().unwrap().to_string_lossy().into_owned()).collect();
+        let names: Vec<String> = found
+            .iter()
+            .map(|p| p.file_name().unwrap().to_string_lossy().into_owned())
+            .collect();
         assert_eq!(names, ["m45_H.tif", "m45_O.tif", "m45_S.tif"], "{names:?}");
 
         let _ = std::fs::remove_dir_all(&dir);
@@ -2731,16 +3086,30 @@ mod tests {
 
     #[test]
     fn the_chooser_is_the_one_this_platform_has() {
-        let c = folder_chooser().expect("this platform has a chooser, or says so");
+        let c = match folder_chooser() {
+            Ok(c) => c,
+            // A Linux desktop may have neither helper installed — a headless
+            // CI runner never does — and then it has to say so.
+            Err(e) if cfg!(all(unix, not(target_os = "macos"))) => {
+                assert!(e.to_string().contains("zenity"), "{e}");
+                return;
+            }
+            Err(e) => panic!("this platform has a chooser: {e}"),
+        };
         let exe = c.get_program().to_string_lossy().into_owned();
-        let args: Vec<String> =
-            c.get_args().map(|a| a.to_string_lossy().into_owned()).collect();
+        let args: Vec<String> = c
+            .get_args()
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect();
         if cfg!(windows) {
             assert_eq!(exe, "powershell");
             // -STA is not decoration: the shell dialog cannot be shown from a
             // multi-threaded apartment, which is what powershell uses by default.
             assert!(args.iter().any(|a| a == "-STA"), "{args:?}");
-            assert!(args.iter().any(|a| a.contains("FolderBrowserDialog")), "{args:?}");
+            assert!(
+                args.iter().any(|a| a.contains("FolderBrowserDialog")),
+                "{args:?}"
+            );
         } else if cfg!(target_os = "macos") {
             assert_eq!(exe, "osascript");
         } else {
@@ -2772,7 +3141,10 @@ mod tests {
         assert!(host_is_loopback("localhost:7878"));
         assert!(host_is_loopback("LocalHost"));
         assert!(host_is_loopback("[::1]:7878"));
-        assert!(host_is_loopback(""), "a client that sends no Host is not a browser");
+        assert!(
+            host_is_loopback(""),
+            "a client that sends no Host is not a browser"
+        );
         assert!(!host_is_loopback("stack.example.com"));
         assert!(!host_is_loopback("stack.example.com:7878"));
         assert!(!host_is_loopback("localhost.example.com"));
@@ -2811,7 +3183,9 @@ mod tests {
         std::fs::write(&mine, b"\x89PNG\r\n\x1a\n").unwrap();
         std::fs::write(&theirs, b"\x89PNG\r\n\x1a\n").unwrap();
 
-        job.lock().unwrap().announce(mine.to_string_lossy().into_owned());
+        job.lock()
+            .unwrap()
+            .announce(mine.to_string_lossy().into_owned());
 
         let q = |p: &Path| format!("path={}", p.to_string_lossy().replace('\\', "%5C"));
         let (kind, bytes) = serve_file(&q(&mine), &job).expect("a file this run wrote");
@@ -2863,14 +3237,22 @@ mod tests {
 
     #[test]
     fn pasted_lists_are_isolated_and_accept_windows_copy_as_path() {
-        let a=std::env::temp_dir().join("frame-a.fit");
-        let b=std::env::temp_dir().join("frame-b.fit");
-        let first=list_from_text(&format!("\u{feff}\"{}\"\n",a.display()),"same-list.txt").unwrap();
-        let second=list_from_text(&format!("\"{}\"\n",b.display()),"same-list.txt").unwrap();
-        assert_ne!(first,second);
-        assert_eq!(std::fs::read_to_string(&first).unwrap(),format!("{}\n",a.display()));
-        assert_eq!(std::fs::read_to_string(&second).unwrap(),format!("{}\n",b.display()));
-        std::fs::remove_file(first).unwrap(); std::fs::remove_file(second).unwrap();
+        let a = std::env::temp_dir().join("frame-a.fit");
+        let b = std::env::temp_dir().join("frame-b.fit");
+        let first =
+            list_from_text(&format!("\u{feff}\"{}\"\n", a.display()), "same-list.txt").unwrap();
+        let second = list_from_text(&format!("\"{}\"\n", b.display()), "same-list.txt").unwrap();
+        assert_ne!(first, second);
+        assert_eq!(
+            std::fs::read_to_string(&first).unwrap(),
+            format!("{}\n", a.display())
+        );
+        assert_eq!(
+            std::fs::read_to_string(&second).unwrap(),
+            format!("{}\n", b.display())
+        );
+        std::fs::remove_file(first).unwrap();
+        std::fs::remove_file(second).unwrap();
     }
 
     fn planned(kind: &'static str) -> Planned {
@@ -2902,34 +3284,82 @@ mod tests {
         let mut j = Job::default();
         let id = stacked(&mut j, "m42");
 
-        j.progress = begin(&mut j, &planned("composite"), 1, "HO · hoo".into(), Some(id)).unwrap();
+        j.progress = begin(
+            &mut j,
+            &planned("composite"),
+            1,
+            "HO · hoo".into(),
+            Some(id),
+        )
+        .unwrap();
         j.announce("G:/out/m42-hoo.tif".into());
         j.announce("G:/out/m42-hoo.preview.png".into());
         settle(&mut j, true, false, 4.0, 0);
 
-        assert_eq!(j.progress.outputs, ["G:/out/m42_H.tif", "G:/out/m42_O.tif"],
-                   "a colour image is not a master to combine next time");
-        assert_eq!(j.progress.findings.len(), 1, "what the stack said about itself is still there");
-        assert_eq!(j.progress.took, 3600.0, "the stack took an hour, not the seconds combining did");
+        assert_eq!(
+            j.progress.outputs,
+            ["G:/out/m42_H.tif", "G:/out/m42_O.tif"],
+            "a colour image is not a master to combine next time"
+        );
+        assert_eq!(
+            j.progress.findings.len(),
+            1,
+            "what the stack said about itself is still there"
+        );
+        assert_eq!(
+            j.progress.took, 3600.0,
+            "the stack took an hour, not the seconds combining did"
+        );
         assert_eq!(j.progress.colour.len(), 1);
-        assert_eq!(j.progress.colour[0].files, ["G:/out/m42-hoo.tif", "G:/out/m42-hoo.preview.png"]);
+        assert_eq!(
+            j.progress.colour[0].files,
+            ["G:/out/m42-hoo.tif", "G:/out/m42-hoo.preview.png"]
+        );
         assert_eq!(j.past.len(), 1, "one stack combined is one piece of work");
 
         // A second palette, and then one that fails.
-        j.progress = begin(&mut j, &planned("composite"), 1, "HO · ohh".into(), Some(id)).unwrap();
+        j.progress = begin(
+            &mut j,
+            &planned("composite"),
+            1,
+            "HO · ohh".into(),
+            Some(id),
+        )
+        .unwrap();
         j.announce("G:/out/m42-ohh.tif".into());
         settle(&mut j, true, false, 4.0, 0);
-        j.progress = begin(&mut j, &planned("composite"), 1, "HO · sho".into(), Some(id)).unwrap();
+        j.progress = begin(
+            &mut j,
+            &planned("composite"),
+            1,
+            "HO · sho".into(),
+            Some(id),
+        )
+        .unwrap();
         settle(&mut j, false, false, 1.0, 0);
 
         assert!(j.progress.failed);
-        assert_eq!(j.progress.colour.len(), 2, "a colour image never written is not shown");
+        assert_eq!(
+            j.progress.colour.len(),
+            2,
+            "a colour image never written is not shown"
+        );
         assert_eq!(j.past.len(), 1);
         assert_eq!(j.past[0].colour.len(), 2, "both made, both kept");
-        assert!(!j.past[0].failed, "a combine that failed did not fail the stack");
+        assert!(
+            !j.past[0].failed,
+            "a combine that failed did not fail the stack"
+        );
 
         // And the next one starts from the kept stack, not from the failure.
-        j.progress = begin(&mut j, &planned("composite"), 1, "HO · hoo".into(), Some(id)).unwrap();
+        j.progress = begin(
+            &mut j,
+            &planned("composite"),
+            1,
+            "HO · hoo".into(),
+            Some(id),
+        )
+        .unwrap();
         assert!(!j.progress.failed);
         assert_eq!(j.progress.colour.len(), 3);
     }
@@ -2941,9 +3371,19 @@ mod tests {
         let second = stacked(&mut j, "m45");
         assert_ne!(first, second);
 
-        j.progress = begin(&mut j, &planned("composite"), 1, "HO · hoo".into(), Some(first)).unwrap();
-        assert_eq!(j.progress.outputs, ["G:/out/m42_H.tif", "G:/out/m42_O.tif"],
-                   "the stack the page was showing, not the one that ran last");
+        j.progress = begin(
+            &mut j,
+            &planned("composite"),
+            1,
+            "HO · hoo".into(),
+            Some(first),
+        )
+        .unwrap();
+        assert_eq!(
+            j.progress.outputs,
+            ["G:/out/m42_H.tif", "G:/out/m42_O.tif"],
+            "the stack the page was showing, not the one that ran last"
+        );
         j.announce("G:/out/m42-hoo.tif".into());
         settle(&mut j, true, false, 4.0, 0);
         assert_eq!(j.past.len(), 2);
@@ -2962,7 +3402,11 @@ mod tests {
         j.announce("G:/out/m42.tif".into());
         settle(&mut j, true, false, 7200.0, 0);
 
-        assert_eq!(j.progress.outputs, ["G:/out/m42.tif"], "the sum is the master, not a colour image");
+        assert_eq!(
+            j.progress.outputs,
+            ["G:/out/m42.tif"],
+            "the sum is the master, not a colour image"
+        );
         assert_eq!(j.progress.took, 7200.0);
         assert_eq!(j.past.len(), 1);
     }
@@ -2979,7 +3423,10 @@ mod tests {
         std::fs::write(&note, b"x").unwrap();
         let file = dir.join("history.json");
 
-        let mut before = Job { history: Some(file.clone()), ..Default::default() };
+        let mut before = Job {
+            history: Some(file.clone()),
+            ..Default::default()
+        };
         let id = stacked(&mut before, "m42");
         before.past[0].outputs = [&master, &note, &gone]
             .iter()
@@ -2996,10 +3443,25 @@ mod tests {
         restore(&mut after, load_history(&file));
         assert_eq!(after.past.len(), 1);
         assert_eq!(after.past[0].id, id);
-        assert_eq!(after.past[0].findings.len(), 1, "what the stack said about itself came back");
-        assert_eq!(after.past[0].outputs.len(), 3, "the record is kept as it was");
-        assert!(after.past[0].palettes.is_empty(), "a thumbnail that is gone is not offered");
-        let served = |p: &Path| after.served.contains(&std::fs::canonicalize(p).unwrap_or(p.to_path_buf()));
+        assert_eq!(
+            after.past[0].findings.len(),
+            1,
+            "what the stack said about itself came back"
+        );
+        assert_eq!(
+            after.past[0].outputs.len(),
+            3,
+            "the record is kept as it was"
+        );
+        assert!(
+            after.past[0].palettes.is_empty(),
+            "a thumbnail that is gone is not offered"
+        );
+        let served = |p: &Path| {
+            after
+                .served
+                .contains(&std::fs::canonicalize(p).unwrap_or(p.to_path_buf()))
+        };
         assert!(served(&master));
         assert!(!served(&note), "not an image, so not the page's business");
         assert!(!served(&gone));
@@ -3023,8 +3485,15 @@ mod tests {
         ];
         let said = r"Error: input error: G:\data\f10.fit: data unit is short of the 512x512 the header declares";
         assert_eq!(unreadable_in(said, &all, &[]), Some(all[1].clone()));
-        assert_eq!(unreadable_in(said, &all, &[all[1].clone()]), None, "named once, not again");
-        assert_eq!(unreadable_in("memory allocation of 61171488 bytes failed", &all, &[]), None);
+        assert_eq!(
+            unreadable_in(said, &all, &[all[1].clone()]),
+            None,
+            "named once, not again"
+        );
+        assert_eq!(
+            unreadable_in("memory allocation of 61171488 bytes failed", &all, &[]),
+            None
+        );
     }
 
     #[test]
@@ -3044,10 +3513,20 @@ mod tests {
         let text = std::fs::read_to_string(&list).unwrap();
         assert_eq!(text.lines().count(), 3);
         assert!(!text.contains("f2.fits"), "{text}");
-        assert_eq!(sr_raw::collect_files(&list, None).unwrap().len(), 3, "and the stacker reads it");
+        assert_eq!(
+            sr_raw::collect_files(&list, None).unwrap().len(),
+            3,
+            "and the stacker reads it"
+        );
 
-        let every: Vec<String> = all.iter().map(|p| p.to_string_lossy().into_owned()).collect();
-        assert!(without(&dir.to_string_lossy(), &every).is_err(), "nothing left to stack");
+        let every: Vec<String> = all
+            .iter()
+            .map(|p| p.to_string_lossy().into_owned())
+            .collect();
+        assert!(
+            without(&dir.to_string_lossy(), &every).is_err(),
+            "nothing left to stack"
+        );
 
         let _ = std::fs::remove_file(list);
         let _ = std::fs::remove_dir_all(&dir);

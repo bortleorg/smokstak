@@ -29,18 +29,24 @@ jobs:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
-      - name: Install stable Rust
+      # The toolchain is pinned in rust-toolchain.toml; tests and lints run
+      # in ci.yml on every platform, so this workflow only builds and packages.
+      - name: Install Rust
         run: |
-          rustup toolchain install stable --profile minimal --component clippy
+          rustup toolchain install
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          rustup target add x86_64-pc-windows-msvc --toolchain stable
+          rustup target add x86_64-pc-windows-msvc
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Test workspace
-        run: cargo test --locked --workspace --target x86_64-pc-windows-msvc
-      - name: Lint workspace
-        run: cargo clippy --locked --workspace --all-targets --target x86_64-pc-windows-msvc -- -D warnings
       - name: Build portable executable
         run: cargo build --locked --release -p sr-cli --target x86_64-pc-windows-msvc
+      # Generated from Cargo.lock on every build, against about.toml's list of
+      # accepted licences, so it cannot drift from what is actually linked.
+      - name: Third-party notices
+        run: |
+          cargo install --locked cargo-about --version 0.9.2 --features cli
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo about generate --locked --manifest-path crates/sr-cli/Cargo.toml about.hbs -o THIRD_PARTY_NOTICES.txt
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Package
         run: |
           $package = 'dist/smokstak-windows-x64'

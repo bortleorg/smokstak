@@ -1,5 +1,5 @@
 [workspace]
-resolver = "2"
+resolver = "3"
 members = [
     "crates/sr-core",
     "crates/sr-raw",
@@ -18,13 +18,13 @@ members = [
 
 [workspace.package]
 version = "0.1.0"
-edition = "2021"
-rust-version = "1.85"
-license = "MIT OR Apache-2.0"
+edition = "2024"
+rust-version = "1.89"
+license = "MIT"
 
 [workspace.dependencies]
 sr-core = { path = "crates/sr-core" }
-sr-raw = { path = "crates/sr-raw" }
+sr-raw = { path = "crates/sr-raw", default-features = false }
 sr-noise = { path = "crates/sr-noise" }
 sr-quality = { path = "crates/sr-quality" }
 sr-register = { path = "crates/sr-register" }

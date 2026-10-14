@@ -13,8 +13,8 @@ use std::{
     ops::{Deref, DerefMut},
     path::{Path, PathBuf},
     sync::{
-        atomic::{AtomicU64, Ordering},
         Arc,
+        atomic::{AtomicU64, Ordering},
     },
 };
 
@@ -160,7 +160,7 @@ impl<T: Primitive> Buffer<T> {
         // sharing mode prevents third-party writers; on Unix unlink below
         // makes it inaccessible by name for the mapping's lifetime.
         let map = unsafe { memmap2::MmapOptions::new().len(bytes).map(&*file)? };
-        if map.len() != bytes || (map.as_ptr() as usize) % align_of::<T>() != 0 {
+        if map.len() != bytes || !(map.as_ptr() as usize).is_multiple_of(align_of::<T>()) {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
                 "invalid spill mapping layout",
@@ -192,7 +192,9 @@ impl<T> FromIterator<T> for Buffer<T> {
     }
 }
 impl<T> AsRef<[T]> for Buffer<T> {
-    fn as_ref(&self) -> &[T] { self.as_slice() }
+    fn as_ref(&self) -> &[T] {
+        self.as_slice()
+    }
 }
 impl<T: PartialEq> PartialEq<Vec<T>> for Buffer<T> {
     fn eq(&self, other: &Vec<T>) -> bool {

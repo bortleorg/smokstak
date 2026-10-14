@@ -1,2 +1,7 @@
+# Pinned so clippy's lint set, rustfmt's output and the compiler are the same
+# locally and in CI. A new stable release adds lints; take it deliberately, as
+# its own change, rather than finding out from a red build.
 [toolchain]
-channel = "stable"
+channel = "1.98.0"
+components = ["clippy", "rustfmt"]
+profile = "minimal"

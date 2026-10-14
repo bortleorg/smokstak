@@ -16,6 +16,18 @@ impl Scratch {
             std::process::id()
         ));
         fs::create_dir(&p).unwrap();
+        // The test runs one analysis by a path relative to the working
+        // directory and one by the absolute path, and expects the same report.
+        // On macOS the temporary directory is reached through a symlink
+        // (/var -> /private/var) and the working directory comes back
+        // resolved, so the two spellings would differ. Windows is left alone:
+        // canonicalising there produces a \\?\ path the working directory
+        // never has.
+        let p = if cfg!(unix) {
+            fs::canonicalize(&p).unwrap()
+        } else {
+            p
+        };
         Self(p)
     }
 }
@@ -43,7 +55,7 @@ fn fits(path: &Path, index: usize, filter: &str, exposure: Option<u32>) {
         header.push_str(&format!("{:<8}= {:<70}", "EXPTIME", e));
     }
     header.push_str(&format!("{:<80}", "END"));
-    while header.len() % 2880 != 0 {
+    while !header.len().is_multiple_of(2880) {
         header.push(' ');
     }
     let mut bytes = header.into_bytes();
@@ -75,7 +87,7 @@ fn fits(path: &Path, index: usize, filter: &str, exposure: Option<u32>) {
             bytes.extend((value + noise * 0.003).to_be_bytes());
         }
     }
-    while bytes.len() % 2880 != 0 {
+    while !bytes.len().is_multiple_of(2880) {
         bytes.push(0);
     }
     fs::write(path, bytes).unwrap();
@@ -115,9 +127,13 @@ fn filters_order_exposure_cache_and_offline_report() {
     }
     fs::write(lights.join("bad.fit"), "not fits").unwrap();
     let cold = run(dir, Path::new("lights"), &[]);
-    assert!(cold["frames"].as_array().unwrap().iter().all(|frame| {
-        Path::new(frame["path"].as_str().unwrap()).is_absolute()
-    }));
+    assert!(
+        cold["frames"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|frame| { Path::new(frame["path"].as_str().unwrap()).is_absolute() })
+    );
     assert_eq!(cold["schema_version"], 3);
     assert_eq!(cold["summary"]["input_frames"], 7);
     assert_eq!(cold["summary"]["cache_hits"], 0);

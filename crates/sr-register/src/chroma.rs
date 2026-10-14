@@ -72,7 +72,11 @@ impl ChromaticAberration {
     /// worth claiming.
     pub fn is_significant(&self) -> bool {
         self.corner_shift.iter().any(|&s| s > 0.33)
-            && self.probes.iter().enumerate().all(|(c, &p)| c == 1 || p >= 12)
+            && self
+                .probes
+                .iter()
+                .enumerate()
+                .all(|(c, &p)| c == 1 || p >= 12)
     }
 
     /// The correction to apply during the merge, in sensor coordinates.
@@ -124,7 +128,9 @@ fn bayer_lattice_offset(guide_is_rggb: bool) -> [(f32, f32); 3] {
 /// onto radius before fitting aliases them into the lens model when probes are
 /// unevenly distributed around the optical axis.
 fn fit_radial_displacements(obs: &[[f32; 5]], radius: f32) -> Option<([f32; 4], f32)> {
-    if obs.len() < 8 { return None; }
+    if obs.len() < 8 {
+        return None;
+    }
     let norm = radius.max(1.0) as f64;
     let mut weights: Vec<f64> = obs.iter().map(|o| o[4].max(1e-3) as f64).collect();
     let mut solution = [0.0f64; 4];
@@ -134,31 +140,51 @@ fn fit_radial_displacements(obs: &[[f32; 5]], radius: f32) -> Option<([f32; 4], 
         let mut rhs = [0.0f64; 4];
         for (o, &weight) in obs.iter().zip(&weights) {
             let (x, y) = (o[0] as f64 / norm, o[1] as f64 / norm);
-            let r2 = x*x+y*y;
-            for (basis, value) in [([1.0,0.0,-x,-x*r2], o[2]), ([0.0,1.0,-y,-y*r2], o[3])] {
+            let r2 = x * x + y * y;
+            for (basis, value) in [
+                ([1.0, 0.0, -x, -x * r2], o[2]),
+                ([0.0, 1.0, -y, -y * r2], o[3]),
+            ] {
                 for i in 0..4 {
-                    rhs[i] += weight*basis[i]*value as f64;
-                    for j in 0..4 { normal[i*4+j] += weight*basis[i]*basis[j]; }
+                    rhs[i] += weight * basis[i] * value as f64;
+                    for j in 0..4 {
+                        normal[i * 4 + j] += weight * basis[i] * basis[j];
+                    }
                 }
             }
         }
-        if !cholesky_solve(&mut normal, &mut rhs, 4) { return None; }
+        if !cholesky_solve(&mut normal, &mut rhs, 4) {
+            return None;
+        }
         solution = rhs;
-        residuals = obs.iter().map(|o| {
-            let (x, y) = (o[0] as f64/norm, o[1] as f64/norm);
-            let k = solution[2] + solution[3]*(x*x+y*y);
-            ((o[2] as f64 - solution[0] + k*x).hypot(o[3] as f64 - solution[1] + k*y)) as f32
-        }).collect();
+        residuals = obs
+            .iter()
+            .map(|o| {
+                let (x, y) = (o[0] as f64 / norm, o[1] as f64 / norm);
+                let k = solution[2] + solution[3] * (x * x + y * y);
+                ((o[2] as f64 - solution[0] + k * x).hypot(o[3] as f64 - solution[1] + k * y))
+                    as f32
+            })
+            .collect();
         if pass < 5 {
             let spread = mad_sigma(&residuals).max(median(&residuals)).max(1e-4);
             for ((w, o), &r) in weights.iter_mut().zip(obs).zip(&residuals) {
-                *w = o[4].max(1e-3) as f64 * tukey_weight(r, 4.0*spread) as f64;
+                *w = o[4].max(1e-3) as f64 * tukey_weight(r, 4.0 * spread) as f64;
             }
         }
     }
-    if solution.iter().any(|v| !v.is_finite()) { return None; }
-    Some(([solution[0] as f32, solution[1] as f32,
-           (solution[2]/norm) as f32, (solution[3]/norm) as f32], median(&residuals)))
+    if solution.iter().any(|v| !v.is_finite()) {
+        return None;
+    }
+    Some((
+        [
+            solution[0] as f32,
+            solution[1] as f32,
+            (solution[2] / norm) as f32,
+            (solution[3] / norm) as f32,
+        ],
+        median(&residuals),
+    ))
 }
 
 /// Estimate lateral chromatic aberration from one frame's guide image.
@@ -268,7 +294,9 @@ pub fn estimate_about(
             obs.push([rx, ry, sh.dx * 2.0, sh.dy * 2.0, weight]);
         }
 
-        let Some(([tx, ty, k1, k2], residual)) = fit_radial_displacements(&obs, corner_radius_sensor) else {
+        let Some(([tx, ty, k1, k2], residual)) =
+            fit_radial_displacements(&obs, corner_radius_sensor)
+        else {
             continue;
         };
         out.probes[c] = obs.len();
@@ -278,7 +306,6 @@ pub fn estimate_about(
         out.corner_shift[c] = (mag_corner - 1.0).abs() * corner_radius_sensor;
         out.residual[c] = residual;
         out.centre_offset[c] = (tx - lattice[c].0, ty - lattice[c].1);
-
     }
 
     out
@@ -305,8 +332,7 @@ pub fn combine(estimates: &[ChromaticAberration]) -> ChromaticAberration {
         }
         out.magnification[c] = median(&mags);
         out.probes[c] = estimates.iter().map(|e| e.probes[c]).sum::<usize>() / estimates.len();
-        out.residual[c] =
-            median(&estimates.iter().map(|e| e.residual[c]).collect::<Vec<_>>());
+        out.residual[c] = median(&estimates.iter().map(|e| e.residual[c]).collect::<Vec<_>>());
         let ox: Vec<f32> = estimates.iter().map(|e| e.centre_offset[c].0).collect();
         let oy: Vec<f32> = estimates.iter().map(|e| e.centre_offset[c].1).collect();
         out.centre_offset[c] = (median(&ox), median(&oy));
@@ -348,18 +374,22 @@ mod tests {
             // magnification. Also recover a real radial distortion alongside it.
             for y in [80.0f32, 140.0, 220.0, 310.0] {
                 for x in [70.0f32, 160.0, 250.0, 350.0] {
-                    let k = k1 + k2*(x*x+y*y)/(500.0*500.0);
-                    obs.push([x, y, -0.5-k*x, -0.5-k*y, 1.0]);
+                    let k = k1 + k2 * (x * x + y * y) / (500.0 * 500.0);
+                    obs.push([x, y, -0.5 - k * x, -0.5 - k * y, 1.0]);
                 }
             }
             let (fit, residual) = fit_radial_displacements(&obs, 500.0).unwrap();
-            assert!((fit[0]+0.5).abs() < 1e-5 && (fit[1]+0.5).abs() < 1e-5);
-            assert!((fit[2]-k1).abs() < 1e-7 && (fit[3]-k2).abs() < 1e-7,
-                "lattice offset leaked into radial coefficients: {fit:?}");
+            assert!((fit[0] + 0.5).abs() < 1e-5 && (fit[1] + 0.5).abs() < 1e-5);
+            assert!(
+                (fit[2] - k1).abs() < 1e-7 && (fit[3] - k2).abs() < 1e-7,
+                "lattice offset leaked into radial coefficients: {fit:?}"
+            );
             assert!(residual < 1e-5);
         }
-        assert!(fit_radial_displacements(&[[100.0,0.0,0.0,0.0,1.0]; 16], 500.0).is_none(),
-            "a single radius cannot identify two radial terms");
+        assert!(
+            fit_radial_displacements(&[[100.0, 0.0, 0.0, 0.0, 1.0]; 16], 500.0).is_none(),
+            "a single radius cannot identify two radial terms"
+        );
     }
 
     /// A guide image whose red and blue planes are magnified copies of green,
@@ -367,7 +397,9 @@ mod tests {
     fn synthetic_guide(n: usize, mag_r: f32, mag_b: f32) -> GuideImage {
         let mut seed = 0x9E37u64;
         let mut next = || {
-            seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            seed = seed
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
             ((seed >> 33) as f32 / (1u32 << 31) as f32) - 0.5
         };
         let comps: Vec<(f32, f32, f32, f32)> = (0..96)
@@ -414,7 +446,11 @@ mod tests {
         // this size, which is a visible fringe.
         let guide = synthetic_guide(512, 1.001, 0.9992);
         let ca = estimate(&guide, 64, 10, 1.10, true);
-        assert!(ca.probes[0] > 12 && ca.probes[2] > 12, "probes {:?}", ca.probes);
+        assert!(
+            ca.probes[0] > 12 && ca.probes[2] > 12,
+            "probes {:?}",
+            ca.probes
+        );
         assert!(
             (ca.magnification[0] - 1.001).abs() < 1.5e-4,
             "red magnification {}",
@@ -433,8 +469,16 @@ mod tests {
     fn reports_nothing_when_channels_agree() {
         let guide = synthetic_guide(512, 1.0, 1.0);
         let ca = estimate(&guide, 64, 10, 1.10, true);
-        assert!(ca.corner_shift[0] < 0.33, "corner shift {}", ca.corner_shift[0]);
-        assert!(ca.corner_shift[2] < 0.33, "corner shift {}", ca.corner_shift[2]);
+        assert!(
+            ca.corner_shift[0] < 0.33,
+            "corner shift {}",
+            ca.corner_shift[0]
+        );
+        assert!(
+            ca.corner_shift[2] < 0.33,
+            "corner shift {}",
+            ca.corner_shift[2]
+        );
         assert!(!ca.is_significant(), "{}", ca.describe());
     }
 
@@ -466,7 +510,9 @@ mod tests {
         let n = 512;
         let mut seed = 0x5150u64;
         let mut next = || {
-            seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            seed = seed
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
             ((seed >> 33) as f32 / (1u32 << 31) as f32) - 0.5
         };
         let comps: Vec<(f32, f32, f32, f32)> = (0..96)

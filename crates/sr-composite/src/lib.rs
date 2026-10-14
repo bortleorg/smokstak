@@ -118,7 +118,11 @@ fn block_medians(p: &Plane<f32>) -> Vec<Option<f32>> {
                 }
                 y += sy;
             }
-            out.push(if buf.len() >= 16 { Some(math::median(&buf)) } else { None });
+            out.push(if buf.len() >= 16 {
+                Some(math::median(&buf))
+            } else {
+                None
+            });
         }
     }
     out
@@ -144,7 +148,7 @@ fn fit_line(pairs: &[(f32, f32)], mode: Fit) -> (f32, f32, usize) {
             let d: Vec<f32> = pairs
                 .iter()
                 .zip(&w)
-                .filter(|(_, &wi)| wi > 0.0)
+                .filter(|&(_, &wi)| wi > 0.0)
                 .map(|(p, _)| p.1 - p.0)
                 .collect();
             if d.is_empty() {
@@ -173,7 +177,10 @@ fn fit_line(pairs: &[(f32, f32)], mode: Fit) -> (f32, f32, usize) {
         if pass == 2 {
             break;
         }
-        let resid: Vec<f32> = pairs.iter().map(|&(x, y)| y - (gain * x + offset)).collect();
+        let resid: Vec<f32> = pairs
+            .iter()
+            .map(|&(x, y)| y - (gain * x + offset))
+            .collect();
         let sigma = math::mad_sigma(&resid).max(1e-9);
         for (i, r) in resid.iter().enumerate() {
             w[i] = math::tukey_weight(*r, 3.0 * sigma);
@@ -216,12 +223,12 @@ pub fn fit_channels(channels: &mut [Channel], reference: usize, mode: Fit) -> Ve
         // A gain far from one is a fit that failed rather than a filter that
         // differs: even the widest disparity between narrowband filters is well
         // inside this, and beyond it the pairing has gone wrong.
-        let (gain, offset) = if gain.is_finite() && offset.is_finite() && (0.02..50.0).contains(&gain)
-        {
-            (gain, offset)
-        } else {
-            (1.0, 0.0)
-        };
+        let (gain, offset) =
+            if gain.is_finite() && offset.is_finite() && (0.02..50.0).contains(&gain) {
+                (gain, offset)
+            } else {
+                (1.0, 0.0)
+            };
         for v in channels[i].image.data.iter_mut() {
             *v = gain * *v + offset;
         }
@@ -254,7 +261,10 @@ pub fn align_channels(
         return Vec::new();
     }
     let reference = reference.min(channels.len() - 1);
-    let (w, h) = (channels[reference].image.width, channels[reference].image.height);
+    let (w, h) = (
+        channels[reference].image.width,
+        channels[reference].image.height,
+    );
     let ref_pyr = RegistrationImage::build(&channels[reference].image, cfg.pyramid_levels);
     let mut cache = sr_register::correlate::CorrelatorCache::new();
     let mut out = Vec::with_capacity(channels.len());
@@ -403,7 +413,11 @@ pub fn apply_luminance(rgb: &mut [Plane<f32>; 3], luminance: &Plane<f32>, streng
         // Where the colour data has nothing, there is no hue to preserve and
         // the ratio is meaningless; the luminance stands on its own.
         let k = if own > 1e-5 { want / own } else { 0.0 };
-        let k = if k.is_finite() { k.clamp(0.0, 64.0) } else { 0.0 };
+        let k = if k.is_finite() {
+            k.clamp(0.0, 64.0)
+        } else {
+            0.0
+        };
         if own > 1e-5 {
             for c in rgb.iter_mut() {
                 c.data[i] *= k;
@@ -480,8 +494,8 @@ fn find_stars(p: &Plane<f32>, limit: usize) -> Vec<sr_core::star::Star> {
                 continue;
             }
             // A local maximum, or it is the shoulder of one already counted.
-            let peak = (y - 1..=y + 1)
-                .all(|j| (x - 1..=x + 1).all(|i| p.data[j * p.width + i] <= v));
+            let peak =
+                (y - 1..=y + 1).all(|j| (x - 1..=x + 1).all(|i| p.data[j * p.width + i] <= v));
             if peak {
                 best[cell] = Some((v, x, y));
             }
@@ -511,7 +525,11 @@ fn find_stars(p: &Plane<f32>, limit: usize) -> Vec<sr_core::star::Star> {
             })
         })
         .collect();
-    out.sort_by(|a, b| b.flux.partial_cmp(&a.flux).unwrap_or(std::cmp::Ordering::Equal));
+    out.sort_by(|a, b| {
+        b.flux
+            .partial_cmp(&a.flux)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     out.truncate(limit);
     out
 }
@@ -551,7 +569,9 @@ mod tests {
             let mut p = Plane::filled(n, n, 0.05);
             let mut seed = 0xA57E_u64;
             let mut next = || {
-                seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+                seed = seed
+                    .wrapping_mul(6364136223846793005)
+                    .wrapping_add(1442695040888963407);
                 (seed >> 33) as f32 / (1u32 << 31) as f32
             };
             let th = deg.to_radians();
@@ -579,8 +599,14 @@ mod tests {
         };
 
         let mut channels = vec![
-            Channel { name: "L".into(), image: field(0.0, 0.0, 0.0) },
-            Channel { name: "R".into(), image: field(6.0, -4.0, 12.0) },
+            Channel {
+                name: "L".into(),
+                image: field(0.0, 0.0, 0.0),
+            },
+            Channel {
+                name: "R".into(),
+                image: field(6.0, -4.0, 12.0),
+            },
         ];
         let cfg = sr_core::config::RegistrationConfig::default();
         let a = align_channels(&mut channels, 0, &cfg);
@@ -613,7 +639,11 @@ mod tests {
         for i in [5usize, 500, 2000] {
             let out = [rgb[0].data[i], rgb[1].data[i], rgb[2].data[i]];
             let y = 0.2126 * out[0] + 0.7152 * out[1] + 0.0722 * out[2];
-            assert!((y - lum.data[i]).abs() < 1e-4, "luminance {y} wanted {}", lum.data[i]);
+            assert!(
+                (y - lum.data[i]).abs() < 1e-4,
+                "luminance {y} wanted {}",
+                lum.data[i]
+            );
             // Hue is the ratio between primaries, and it must not have moved.
             assert!(
                 (out[0] / out[1] - before[0] / before[1]).abs() < 1e-3,
@@ -684,8 +714,14 @@ mod tests {
 
     fn channels(shift: (f32, f32), gain: f32, offset: f32) -> Vec<Channel> {
         vec![
-            Channel { name: "H".into(), image: scene(192, 160, 1.0, 0.0, 0.0, 0.0) },
-            Channel { name: "O".into(), image: scene(192, 160, gain, offset, shift.0, shift.1) },
+            Channel {
+                name: "H".into(),
+                image: scene(192, 160, 1.0, 0.0, 0.0, 0.0),
+            },
+            Channel {
+                name: "O".into(),
+                image: scene(192, 160, gain, offset, shift.0, shift.1),
+            },
         ]
     }
 
@@ -744,8 +780,7 @@ mod tests {
         let mut worst = 0.0f32;
         for y in 12..h - 12 {
             for x in 12..w - 12 {
-                worst = worst
-                    .max((c[0].image.data[y * w + x] - c[1].image.data[y * w + x]).abs());
+                worst = worst.max((c[0].image.data[y * w + x] - c[1].image.data[y * w + x]).abs());
             }
         }
         assert!(worst < 0.06, "aligned channels still differ by {worst}");

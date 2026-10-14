@@ -3,15 +3,15 @@
 mod analyze;
 mod cache;
 mod catalog;
-mod gui;
 mod frame_review;
-mod pipeline;
-mod project;
+mod gui;
 mod mosaic;
-mod mosaic_source;
 mod mosaic_prepare;
 mod mosaic_prepare_geometry;
 mod mosaic_prepare_photometry;
+mod mosaic_source;
+mod pipeline;
+mod project;
 mod selftest;
 
 use std::path::{Path, PathBuf};
@@ -223,7 +223,9 @@ impl InputArgs {
             pattern: self.pattern.as_deref(),
             max_frames: self.max_frames,
             select: self.select.into(),
-            read: sr_raw::ReadOptions { fits_row_order: row },
+            read: sr_raw::ReadOptions {
+                fits_row_order: row,
+            },
             star_metrics: !self.no_star_metrics,
             filter: self.filter.as_deref(),
             cache_dir: self.cache.then_some(self.cache_dir.as_path()),
@@ -665,15 +667,30 @@ struct StackArgs {
 
 impl StackArgs {
     fn selected_clipped_fit(&self) -> Option<bool> {
-        if self.no_clipped_fit { Some(false) }
-        else if self.fit_clipped { Some(true) } else { None }
+        if self.no_clipped_fit {
+            Some(false)
+        } else if self.fit_clipped {
+            Some(true)
+        } else {
+            None
+        }
     }
 
     fn selected_mono_variance(&self) -> Option<f32> {
-        if let Some(v) = self.mono_kernel_variance { return Some(v); }
-        if self.adaptive_mono_kernel || self.k_detail.is_some() || self.k_denoise.is_some()
-            || self.k_stretch.is_some() || self.k_shrink.is_some() || self.detail_snr.is_some()
-            || self.no_detail_scaling || self.no_denoise_scaling { return None; }
+        if let Some(v) = self.mono_kernel_variance {
+            return Some(v);
+        }
+        if self.adaptive_mono_kernel
+            || self.k_detail.is_some()
+            || self.k_denoise.is_some()
+            || self.k_stretch.is_some()
+            || self.k_shrink.is_some()
+            || self.detail_snr.is_some()
+            || self.no_detail_scaling
+            || self.no_denoise_scaling
+        {
+            return None;
+        }
         sr_core::config::KernelConfig::default().mono_kernel_variance
     }
 }
@@ -836,7 +853,10 @@ fn main() -> Result<()> {
         .init();
 
     if let Some(t) = cli.threads {
-        rayon::ThreadPoolBuilder::new().num_threads(t).build_global().ok();
+        rayon::ThreadPoolBuilder::new()
+            .num_threads(t)
+            .build_global()
+            .ok();
     }
 
     match cli.command {
@@ -861,8 +881,10 @@ fn main() -> Result<()> {
                 ..Default::default()
             };
             if let Some(v) = a.mono_kernel_variance {
-                anyhow::ensure!(v.is_finite() && v >= 0.03,
-                    "mono kernel variance must be finite and at least 0.03");
+                anyhow::ensure!(
+                    v.is_finite() && v >= 0.03,
+                    "mono kernel variance must be finite and at least 0.03"
+                );
                 kernel.mono_kernel_variance = Some(v);
             }
             if let Some(v) = a.k_detail {
@@ -890,8 +912,13 @@ fn main() -> Result<()> {
             kernel.scale_detail_with_frames = !a.no_detail_scaling;
             kernel.debias_deposit = !a.no_plane_fit;
             kernel.fit_clipped = a.selected_clipped_fit();
-            kernel.fit_curvature = if a.no_curvature { Some(false) }
-                else if a.fit_curvature { Some(true) } else { None };
+            kernel.fit_curvature = if a.no_curvature {
+                Some(false)
+            } else if a.fit_curvature {
+                Some(true)
+            } else {
+                None
+            };
             let cfg = ReconstructionConfig {
                 scale: a.scale,
                 photometric_match: !a.no_photometric_match,
@@ -921,8 +948,8 @@ fn main() -> Result<()> {
                 preview_path(a.preview, &a.output).as_deref(),
                 a.preview_size,
                 a.float_tiff,
-            a.fits,
-            a.xisf,
+                a.fits,
+                a.xisf,
                 a.accumulate.as_deref(),
                 a.force,
                 !a.no_ca,
@@ -1014,7 +1041,8 @@ mod cli_tests {
     #[test]
     fn clipped_fit_is_automatic_with_explicit_overrides() {
         for (flags, expected) in [
-            (vec![], None), (vec!["--fit-clipped"], Some(true)),
+            (vec![], None),
+            (vec!["--fit-clipped"], Some(true)),
             (vec!["--no-clipped-fit"], Some(false)),
         ] {
             let mut args = vec!["smokstak", "stack", "lights", "--output", "stack.tif"];
@@ -1024,15 +1052,26 @@ mod cli_tests {
             };
             assert_eq!(parsed.selected_clipped_fit(), expected);
         }
-        assert!(Cli::try_parse_from(["smokstak", "stack", "lights", "--output", "stack.tif",
-            "--fit-clipped", "--no-clipped-fit"]).is_err());
+        assert!(
+            Cli::try_parse_from([
+                "smokstak",
+                "stack",
+                "lights",
+                "--output",
+                "stack.tif",
+                "--fit-clipped",
+                "--no-clipped-fit"
+            ])
+            .is_err()
+        );
         let mut saved = serde_json::to_value(sr_core::config::KernelConfig::default()).unwrap();
         saved.as_object_mut().unwrap().remove("fit_clipped");
         let loaded: sr_core::config::KernelConfig = serde_json::from_value(saved.clone()).unwrap();
         assert_eq!(loaded.fit_clipped, None);
         for value in [true, false] {
             saved["fit_clipped"] = value.into();
-            let loaded: sr_core::config::KernelConfig = serde_json::from_value(saved.clone()).unwrap();
+            let loaded: sr_core::config::KernelConfig =
+                serde_json::from_value(saved.clone()).unwrap();
             assert_eq!(loaded.fit_clipped, Some(value));
         }
     }
@@ -1045,7 +1084,10 @@ mod cli_tests {
             (vec!["--k-detail", "0.2"], None),
             (vec!["--no-denoise-scaling"], None),
             (vec!["--mono-kernel-variance", "0.2"], Some(0.2)),
-            (vec!["--k-detail", "0.3", "--mono-kernel-variance", "0.2"], Some(0.2)),
+            (
+                vec!["--k-detail", "0.3", "--mono-kernel-variance", "0.2"],
+                Some(0.2),
+            ),
         ] {
             let mut args = vec!["smokstak", "stack", "lights", "--output", "stack.tif"];
             args.extend(flags);
@@ -1055,7 +1097,10 @@ mod cli_tests {
             assert_eq!(parsed.selected_mono_variance(), expected);
         }
         let mut saved = serde_json::to_value(sr_core::config::KernelConfig::default()).unwrap();
-        saved.as_object_mut().unwrap().remove("mono_kernel_variance");
+        saved
+            .as_object_mut()
+            .unwrap()
+            .remove("mono_kernel_variance");
         let loaded: sr_core::config::KernelConfig = serde_json::from_value(saved.clone()).unwrap();
         assert_eq!(loaded.mono_kernel_variance, Some(0.125));
         saved["mono_kernel_variance"] = serde_json::Value::Null;
@@ -1077,9 +1122,17 @@ mod cli_tests {
             };
             assert_eq!(parsed.sky_field || !parsed.no_sky_field, expected);
         }
-        assert!(Cli::try_parse_from([
-            "smokstak", "stack", "lights", "--output", "stack.tif",
-            "--sky-field", "--no-sky-field",
-        ]).is_err());
+        assert!(
+            Cli::try_parse_from([
+                "smokstak",
+                "stack",
+                "lights",
+                "--output",
+                "stack.tif",
+                "--sky-field",
+                "--no-sky-field",
+            ])
+            .is_err()
+        );
     }
 }

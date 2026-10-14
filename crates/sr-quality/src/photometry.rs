@@ -177,32 +177,67 @@ impl PhotometricMatch {
     /// Local multiplicative correction, evaluated analytically without clipping.
     #[inline]
     pub fn gain_at(&self, channel: usize, u: f32, v: f32) -> f32 {
-        let c=channel.min(2);
-        let Some(field)=&self.log_gain else { return self.gain[c]; };
-        let [constant,x,y,xx,xy,yy]=field[c].map(f64::from);
-        let (u,v)=(f64::from(u),f64::from(v));
-        (f64::from(self.gain[c]) * (constant+x*u+y*v+xx*u*u+xy*u*v+yy*v*v).exp()) as f32
+        let c = channel.min(2);
+        let Some(field) = &self.log_gain else {
+            return self.gain[c];
+        };
+        let [constant, x, y, xx, xy, yy] = field[c].map(f64::from);
+        let (u, v) = (f64::from(u), f64::from(v));
+        (f64::from(self.gain[c])
+            * (constant + x * u + y * v + xx * u * u + xy * u * v + yy * v * v).exp())
+            as f32
     }
 
     /// Conservative positive finite gain range on a rectangle. Interval bounds
     /// also cover interior quadratic extrema; corner samples alone do not.
-    pub fn gain_bounds(&self, channel:usize, u:[f32;2], v:[f32;2]) -> Option<(f32,f32)> {
-        let c=channel.min(2);let gain=self.gain[c];
-        if !gain.is_finite() || gain<=0. || u.iter().chain(&v).any(|x|!x.is_finite())
-            || u[0]>u[1] || v[0]>v[1] { return None; }
-        let Some(field)=&self.log_gain else {return Some((gain,gain));};
-        let coefficients=field[c].map(f64::from);
-        if coefficients.iter().any(|x|!x.is_finite()) {return None;}
-        let u=u.map(f64::from);let v=v.map(f64::from);
-        let square=|a:[f64;2]| [if a[0]<=0. && a[1]>=0. {0.} else {a[0].powi(2).min(a[1].powi(2))},a[0].powi(2).max(a[1].powi(2))];
-        let products=[u[0]*v[0],u[0]*v[1],u[1]*v[0],u[1]*v[1]];
-        let cross=[products.into_iter().fold(f64::INFINITY,f64::min),products.into_iter().fold(f64::NEG_INFINITY,f64::max)];
-        let mut range=[0.;2];
-        for (coefficient,basis) in coefficients.into_iter().zip([[1.,1.],u,v,square(u),cross,square(v)]) {
-            let a=coefficient*basis[0];let b=coefficient*basis[1];range[0]+=a.min(b);range[1]+=a.max(b);
+    pub fn gain_bounds(&self, channel: usize, u: [f32; 2], v: [f32; 2]) -> Option<(f32, f32)> {
+        let c = channel.min(2);
+        let gain = self.gain[c];
+        if !gain.is_finite()
+            || gain <= 0.
+            || u.iter().chain(&v).any(|x| !x.is_finite())
+            || u[0] > u[1]
+            || v[0] > v[1]
+        {
+            return None;
         }
-        let bounds=range.map(|x|(f64::from(gain)*x.exp()) as f32);
-        (bounds.iter().all(|g|g.is_finite() && *g>0.)).then_some((bounds[0],bounds[1]))
+        let Some(field) = &self.log_gain else {
+            return Some((gain, gain));
+        };
+        let coefficients = field[c].map(f64::from);
+        if coefficients.iter().any(|x| !x.is_finite()) {
+            return None;
+        }
+        let u = u.map(f64::from);
+        let v = v.map(f64::from);
+        let square = |a: [f64; 2]| {
+            [
+                if a[0] <= 0. && a[1] >= 0. {
+                    0.
+                } else {
+                    a[0].powi(2).min(a[1].powi(2))
+                },
+                a[0].powi(2).max(a[1].powi(2)),
+            ]
+        };
+        let products = [u[0] * v[0], u[0] * v[1], u[1] * v[0], u[1] * v[1]];
+        let cross = [
+            products.into_iter().fold(f64::INFINITY, f64::min),
+            products.into_iter().fold(f64::NEG_INFINITY, f64::max),
+        ];
+        let mut range = [0.; 2];
+        for (coefficient, basis) in
+            coefficients
+                .into_iter()
+                .zip([[1., 1.], u, v, square(u), cross, square(v)])
+        {
+            let a = coefficient * basis[0];
+            let b = coefficient * basis[1];
+            range[0] += a.min(b);
+            range[1] += a.max(b);
+        }
+        let bounds = range.map(|x| (f64::from(gain) * x.exp()) as f32);
+        (bounds.iter().all(|g| g.is_finite() && *g > 0.)).then_some((bounds[0], bounds[1]))
     }
 
     /// The additive field at a place, read bilinearly.
@@ -227,7 +262,9 @@ impl PhotometricMatch {
     #[inline]
     pub fn varies_across_frame(&self) -> bool {
         self.field.iter().flatten().flatten().any(|v| *v != 0.0)
-            || self.log_gain.is_some_and(|f|f.iter().any(|c|c[1..].iter().any(|v|*v!=0.)))
+            || self
+                .log_gain
+                .is_some_and(|f| f.iter().any(|c| c[1..].iter().any(|v| *v != 0.)))
     }
 
     /// Largest correction the field applies anywhere in the frame, for
@@ -240,7 +277,11 @@ impl PhotometricMatch {
             lo = lo.min(*v);
             hi = hi.max(*v);
         }
-        if lo.is_finite() && hi.is_finite() { hi - lo } else { 0.0 }
+        if lo.is_finite() && hi.is_finite() {
+            hi - lo
+        } else {
+            0.0
+        }
     }
 
     #[inline]
@@ -252,7 +293,9 @@ impl PhotometricMatch {
     /// other way round. `None` when a gain has collapsed.
     pub fn inverse(&self) -> Option<PhotometricMatch> {
         // Dividing the additive field by an exponential is outside this model.
-        if self.log_gain.is_some() { return None; }
+        if self.log_gain.is_some() {
+            return None;
+        }
         let mut out = PhotometricMatch::IDENTITY;
         out.blocked = self.blocked;
         for c in 0..3 {
@@ -274,10 +317,16 @@ impl PhotometricMatch {
     /// of spatial gains with additive fields is not closed in this model.
     /// Panics when either map has an experimental log-gain field.
     pub fn compose(&self, other: &PhotometricMatch) -> PhotometricMatch {
-        assert!(self.log_gain.is_none() && other.log_gain.is_none(),
-            "PhotometricMatch::compose does not support spatial log gain");
+        assert!(
+            self.log_gain.is_none() && other.log_gain.is_none(),
+            "PhotometricMatch::compose does not support spatial log gain"
+        );
         let mut out = PhotometricMatch::IDENTITY;
-        for (row, (a, b)) in out.blocked.iter_mut().zip(self.blocked.iter().zip(other.blocked.iter())) {
+        for (row, (a, b)) in out
+            .blocked
+            .iter_mut()
+            .zip(self.blocked.iter().zip(other.blocked.iter()))
+        {
             for (cell, (x, y)) in row.iter_mut().zip(a.iter().zip(b.iter())) {
                 *cell = *x || *y;
             }
@@ -289,8 +338,7 @@ impl PhotometricMatch {
             // map scales whatever the inner one produced.
             for y in 0..FIELD {
                 for x in 0..FIELD {
-                    out.field[c][y][x] =
-                        self.gain[c] * other.field[c][y][x] + self.field[c][y][x];
+                    out.field[c][y][x] = self.gain[c] * other.field[c][y][x] + self.field[c][y][x];
                 }
             }
         }
@@ -399,8 +447,7 @@ fn block_medians(frame: &RawFrame, offset: &[(i32, i32)]) -> BlockMedians {
     let grid_w = (frame.width / BLOCK).clamp(MIN_BLOCKS, MAX_BLOCKS);
     let grid_h = (frame.height / BLOCK).clamp(MIN_BLOCKS, MAX_BLOCKS);
     let n = grid_w * grid_h;
-    let mut values: [Vec<Option<f32>>; 3] =
-        [vec![None; n], vec![None; n], vec![None; n]];
+    let mut values: [Vec<Option<f32>>; 3] = [vec![None; n], vec![None; n], vec![None; n]];
     let mut counts = [0usize; 3];
     let mut partial = vec![false; n];
 
@@ -417,8 +464,8 @@ fn block_medians(frame: &RawFrame, offset: &[(i32, i32)]) -> BlockMedians {
             // scene footprints. Their median difference is not a change in
             // illumination, so neither partial nor absent blocks enter the fit.
             if rx0 < 0 || ry0 < 0 || rx1 > frame.width as i32 || ry1 > frame.height as i32 {
-                partial[idx0] = rx1 > 0 && ry1 > 0
-                    && rx0 < frame.width as i32 && ry0 < frame.height as i32;
+                partial[idx0] =
+                    rx1 > 0 && ry1 > 0 && rx0 < frame.width as i32 && ry0 < frame.height as i32;
                 continue;
             }
             let x0 = rx0.max(0) as usize;
@@ -464,19 +511,32 @@ fn block_medians(frame: &RawFrame, offset: &[(i32, i32)]) -> BlockMedians {
             }
         }
     }
-    BlockMedians { grid_w, grid_h, values, samples_per_block: counts, partial }
+    BlockMedians {
+        grid_w,
+        grid_h,
+        values,
+        samples_per_block: counts,
+        partial,
+    }
 }
 
 /// Read all colour phases near the same sky position, without interpolating
 /// different CFA colours. The robust comparisons below tolerate the small
 /// position differences within a mosaic cell; stars do not define a sky block.
 fn sky_sample(frame: &RawFrame, warp: Option<&WarpField>, rx: f32, ry: f32) -> [Option<f32>; 3] {
-    if frame.width < 2 || frame.height < 2 { return [None; 3]; }
+    if frame.width < 2 || frame.height < 2 {
+        return [None; 3];
+    }
     let Some((sx, sy)) = warp.map_or(Some((rx, ry)), |w| w.inverse_map(rx, ry)) else {
         return [None; 3];
     };
-    if !sx.is_finite() || !sy.is_finite() || sx < 0.0 || sy < 0.0
-        || sx >= (frame.width - 1) as f32 || sy >= (frame.height - 1) as f32 {
+    if !sx.is_finite()
+        || !sy.is_finite()
+        || sx < 0.0
+        || sy < 0.0
+        || sx >= (frame.width - 1) as f32
+        || sy >= (frame.height - 1) as f32
+    {
         return [None; 3];
     }
     let (x, y) = (sx as usize & !1, sy as usize & !1);
@@ -513,73 +573,97 @@ fn clipped_obstructions(
     let (width, height) = (frames[0].width, frames[0].height);
     let grid_w = (width / BLOCK).clamp(MIN_BLOCKS, MAX_BLOCKS);
     let grid_h = (height / BLOCK).clamp(MIN_BLOCKS, MAX_BLOCKS);
-    let candidates: Vec<_> = (0..grid_w * grid_h).filter(|&b| {
-        measured.iter().enumerate().any(|(i, &m)| m && blocks[i].partial[b])
-    }).collect();
-    candidates.into_par_iter().flat_map_iter(|b| {
-        let (bx, by) = (b % grid_w, b / grid_w);
-        let mut samples = vec![vec![[None; 3]; SIDE * SIDE]; frames.len()];
-        for py in 0..SIDE {
-            for px in 0..SIDE {
-                let rx = (bx as f32 + (px as f32 + 0.5) / SIDE as f32) * width as f32 / grid_w as f32;
-                let ry = (by as f32 + (py as f32 + 0.5) / SIDE as f32) * height as f32 / grid_h as f32;
-                for (i, &m) in measured.iter().enumerate() {
-                    if m {
-                        samples[i][py * SIDE + px] = sky_sample(frames[i], warps.get(i), rx, ry);
-                    }
-                }
-            }
-        }
-        let mut found = Vec::new();
-        for (i, &m) in measured.iter().enumerate() {
-            if !m || !blocks[i].partial[b] { continue; }
-            for c in 0..frames[i].channels() {
-                let n = samples[i].iter().filter(|s| s[c].is_some()).count();
-                if n < MIN_POINTS { continue; }
-                let mut peer_deficits = Vec::new();
-                let mut peer_levels = Vec::new();
-                let mut differences = Vec::new();
-                let mut levels = Vec::new();
-                let mut support = n;
-                for (j, &peer_measured) in measured.iter().enumerate() {
-                    if j == i || !peer_measured || exclude[j][b] { continue; }
-                    differences.clear();
-                    levels.clear();
-                    for (own, peer) in samples[i].iter().zip(&samples[j]) {
-                        if let (Some(a), Some(v)) = (own[c], peer[c]) {
-                            let own = maps[i].map.gain[c] * a + maps[i].map.offset[c];
-                            let peer = maps[j].map.gain[c] * v + maps[j].map.offset[c];
-                            differences.push(peer - own);
-                            levels.push(peer);
+    let candidates: Vec<_> = (0..grid_w * grid_h)
+        .filter(|&b| {
+            measured
+                .iter()
+                .enumerate()
+                .any(|(i, &m)| m && blocks[i].partial[b])
+        })
+        .collect();
+    candidates
+        .into_par_iter()
+        .flat_map_iter(|b| {
+            let (bx, by) = (b % grid_w, b / grid_w);
+            let mut samples = vec![vec![[None; 3]; SIDE * SIDE]; frames.len()];
+            for py in 0..SIDE {
+                for px in 0..SIDE {
+                    let rx = (bx as f32 + (px as f32 + 0.5) / SIDE as f32) * width as f32
+                        / grid_w as f32;
+                    let ry = (by as f32 + (py as f32 + 0.5) / SIDE as f32) * height as f32
+                        / grid_h as f32;
+                    for (i, &m) in measured.iter().enumerate() {
+                        if m {
+                            samples[i][py * SIDE + px] =
+                                sky_sample(frames[i], warps.get(i), rx, ry);
                         }
                     }
-                    // Each comparison covers nearly the whole candidate's
-                    // footprint, with identical sky positions in both frames.
-                    if differences.len() < MIN_POINTS || differences.len() * 5 < n * 4 { continue; }
-                    support = support.min(differences.len());
-                    peer_deficits.push(sr_core::math::median(&differences));
-                    peer_levels.push(sr_core::math::median(&levels));
-                }
-                if peer_deficits.len() < 3 { continue; }
-                let deficit = sr_core::math::median(&peer_deficits);
-                let expected = (sr_core::math::median(&peer_levels) - maps[i].map.offset[c]).max(0.0);
-                // The decision concerns a regional median. Compare its spread
-                // across frames, not single-pixel shot noise. Do not divide this
-                // scatter by sqrt(samples): coherent sky differences must remain
-                // a veto even when a block has many samples.
-                let scatter = sr_core::math::mad_sigma(&peer_deficits);
-                let gain = maps[i].map.gain[c];
-                let sigma = gain * frames[i].noise.std_dev(expected / gain) / (support as f32).sqrt();
-                if deficit > OBSTRUCTION_FRACTION * expected
-                    && deficit > OBSTRUCTION_SIGMAS * sigma.max(1e-9)
-                    && deficit > OBSTRUCTION_SIGMAS * scatter {
-                    found.push((i, b));
-                    break;
                 }
             }
-        }
-        found
-    }).collect()
+            let mut found = Vec::new();
+            for (i, &m) in measured.iter().enumerate() {
+                if !m || !blocks[i].partial[b] {
+                    continue;
+                }
+                for c in 0..frames[i].channels() {
+                    let n = samples[i].iter().filter(|s| s[c].is_some()).count();
+                    if n < MIN_POINTS {
+                        continue;
+                    }
+                    let mut peer_deficits = Vec::new();
+                    let mut peer_levels = Vec::new();
+                    let mut differences = Vec::new();
+                    let mut levels = Vec::new();
+                    let mut support = n;
+                    for (j, &peer_measured) in measured.iter().enumerate() {
+                        if j == i || !peer_measured || exclude[j][b] {
+                            continue;
+                        }
+                        differences.clear();
+                        levels.clear();
+                        for (own, peer) in samples[i].iter().zip(&samples[j]) {
+                            if let (Some(a), Some(v)) = (own[c], peer[c]) {
+                                let own = maps[i].map.gain[c] * a + maps[i].map.offset[c];
+                                let peer = maps[j].map.gain[c] * v + maps[j].map.offset[c];
+                                differences.push(peer - own);
+                                levels.push(peer);
+                            }
+                        }
+                        // Each comparison covers nearly the whole candidate's
+                        // footprint, with identical sky positions in both frames.
+                        if differences.len() < MIN_POINTS || differences.len() * 5 < n * 4 {
+                            continue;
+                        }
+                        support = support.min(differences.len());
+                        peer_deficits.push(sr_core::math::median(&differences));
+                        peer_levels.push(sr_core::math::median(&levels));
+                    }
+                    if peer_deficits.len() < 3 {
+                        continue;
+                    }
+                    let deficit = sr_core::math::median(&peer_deficits);
+                    let expected =
+                        (sr_core::math::median(&peer_levels) - maps[i].map.offset[c]).max(0.0);
+                    // The decision concerns a regional median. Compare its spread
+                    // across frames, not single-pixel shot noise. Do not divide this
+                    // scatter by sqrt(samples): coherent sky differences must remain
+                    // a veto even when a block has many samples.
+                    let scatter = sr_core::math::mad_sigma(&peer_deficits);
+                    let gain = maps[i].map.gain[c];
+                    let sigma =
+                        gain * frames[i].noise.std_dev(expected / gain) / (support as f32).sqrt();
+                    if deficit > OBSTRUCTION_FRACTION * expected
+                        && deficit > OBSTRUCTION_SIGMAS * sigma.max(1e-9)
+                        && deficit > OBSTRUCTION_SIGMAS * scatter
+                    {
+                        found.push((i, b));
+                        break;
+                    }
+                }
+            }
+            found
+        })
+        .collect()
 }
 
 /// Least-squares line through matched pairs, with two Tukey reweightings.
@@ -622,7 +706,11 @@ fn fit_line(pairs: &[(f32, f32)]) -> Option<(f32, f32)> {
         let cut = 4.0 * sigma;
         for (i, r) in resid.iter().enumerate() {
             let u = r / cut;
-            w[i] = if u.abs() < 1.0 { (1.0 - u * u).powi(2) } else { 0.0 };
+            w[i] = if u.abs() < 1.0 {
+                (1.0 - u * u).powi(2)
+            } else {
+                0.0
+            };
         }
     }
     best
@@ -835,9 +923,7 @@ pub fn match_with_star_refs(
                 };
             }
             let fallback = FramePhotometry {
-                map: PhotometricMatch::from_exposure(
-                    exposure_scale.get(i).copied().unwrap_or(1.0),
-                ),
+                map: PhotometricMatch::from_exposure(exposure_scale.get(i).copied().unwrap_or(1.0)),
                 source: PhotometrySource::Exposure,
             };
             let src = &blocks[i];
@@ -868,8 +954,7 @@ pub fn match_with_star_refs(
                         _ => None,
                     })
                     .collect();
-                let pairs: Vec<(f32, f32)> =
-                    placed.iter().map(|&(a, t, _, _)| (a, t)).collect();
+                let pairs: Vec<(f32, f32)> = placed.iter().map(|&(a, t, _, _)| (a, t)).collect();
                 if pairs.len() < 8 {
                     return fallback;
                 }
@@ -884,8 +969,7 @@ pub fn match_with_star_refs(
                 let level = median_of(&pairs, |p| p.0);
                 let median_sigma = frames[i].noise.std_dev(level)
                     / (src.samples_per_block[c].max(1) as f32).sqrt();
-                let identifiable =
-                    block_spread(&pairs) >= SPREAD_MARGIN * median_sigma.max(1e-9);
+                let identifiable = block_spread(&pairs) >= SPREAD_MARGIN * median_sigma.max(1e-9);
                 // The stars settle the gain where they can; the blocks are
                 // then asked only for the pedestal, which is what they can
                 // actually see.
@@ -902,7 +986,8 @@ pub fn match_with_star_refs(
                     Some((gain, offset))
                         if gain.is_finite()
                             && offset.is_finite()
-                            && (stellar.is_some() || (GAIN_LIMITS.0..=GAIN_LIMITS.1).contains(&gain)) =>
+                            && (stellar.is_some()
+                                || (GAIN_LIMITS.0..=GAIN_LIMITS.1).contains(&gain)) =>
                     {
                         map.gain[c] = gain;
                         map.offset[c] = offset;
@@ -924,8 +1009,11 @@ pub fn match_with_star_refs(
                     .iter()
                     .map(|&(a, t, u, w)| (u, w, t - (map.gain[c] * a + map.offset[c])))
                     .collect();
-                let fitted_field =
-                    if sky_field { fit_field(&residual, median_sigma) } else { None };
+                let fitted_field = if sky_field {
+                    fit_field(&residual, median_sigma)
+                } else {
+                    None
+                };
                 if let Some((field, constant)) = fitted_field {
                     map.field[c] = field;
                     map.offset[c] += constant;
@@ -972,7 +1060,11 @@ pub fn match_with_star_refs(
     for (b, (typ, sct)) in typical.iter_mut().zip(scatter.iter_mut()).enumerate() {
         for c in 0..channels {
             cell.clear();
-            cell.extend((0..frames.len()).filter(|&i| measured[i]).filter_map(|i| corrected(i, c, b)));
+            cell.extend(
+                (0..frames.len())
+                    .filter(|&i| measured[i])
+                    .filter_map(|i| corrected(i, c, b)),
+            );
             if cell.len() >= 3 {
                 typ[c] = sr_core::math::median(&cell);
                 sct[c] = sr_core::math::mad_sigma(&cell);
@@ -1016,7 +1108,11 @@ pub fn match_with_star_refs(
     for (i, b) in clipped_obstructions(frames, warps, &blocks, &out, &measured, &excluded) {
         excluded[i][b] = true;
     }
-    for (i, exclude) in excluded.into_iter().enumerate().filter(|(_, e)| e.iter().any(|&v| v)) {
+    for (i, exclude) in excluded
+        .into_iter()
+        .enumerate()
+        .filter(|(_, e)| e.iter().any(|&v| v))
+    {
         let mut blocked = no_blocks();
         for (b, &ex) in exclude.iter().enumerate() {
             if ex {
@@ -1104,10 +1200,10 @@ pub fn star_gains(
             let Some((j, second)) = grid.nearest_two(ax, ay, STAR_MATCH_RADIUS) else {
                 continue;
             };
-            if let Some(d2) = second {
-                if d2 < STAR_MATCH_MARGIN * STAR_MATCH_MARGIN * grid.last_distance2() {
-                    continue;
-                }
+            if let Some(d2) = second
+                && d2 < STAR_MATCH_MARGIN * STAR_MATCH_MARGIN * grid.last_distance2()
+            {
+                continue;
             }
             // One gain for the three channels, from the detector's own
             // achromatic flux.
@@ -1166,18 +1262,37 @@ const STAR_GAIN_MIN: usize = 30;
 /// limits, not formal confidence intervals. No camera gain setting is assumed
 /// proportional to detector response.
 fn supported_stellar_gain(ratios: &[f32]) -> Option<f32> {
-    let valid: Vec<f32> = ratios.iter().copied().filter(|r| r.is_finite() && *r > 0.0).collect();
-    if valid.len() < STAR_GAIN_MIN { return None; }
+    let valid: Vec<f32> = ratios
+        .iter()
+        .copied()
+        .filter(|r| r.is_finite() && *r > 0.0)
+        .collect();
+    if valid.len() < STAR_GAIN_MIN {
+        return None;
+    }
     let gain = sr_core::math::median(&valid);
     let squared = gain * gain;
-    if !squared.is_finite() || squared < f32::MIN_POSITIVE { return None; }
-    if (GAIN_LIMITS.0..=GAIN_LIMITS.1).contains(&gain) { return Some(gain); }
+    if !squared.is_finite() || squared < f32::MIN_POSITIVE {
+        return None;
+    }
+    if (GAIN_LIMITS.0..=GAIN_LIMITS.1).contains(&gain) {
+        return Some(gain);
+    }
     let deviations: Vec<f32> = valid.iter().map(|r| (r / gain - 1.0).abs()).collect();
     let mad = sr_core::math::median(&deviations);
     let agreement = deviations.iter().filter(|&&d| d <= 0.2).count();
     let supported = mad <= 0.1 && agreement * 5 >= valid.len() * 4;
-    log::info!("photometry: stellar gain {gain:.4} outside 0.5–2, {}/{} pairs agree within 20%, relative median deviation {:.1}%: {}",
-        agreement, valid.len(), mad * 100.0, if supported { "supported" } else { "unsupported" });
+    log::info!(
+        "photometry: stellar gain {gain:.4} outside 0.5–2, {}/{} pairs agree within 20%, relative median deviation {:.1}%: {}",
+        agreement,
+        valid.len(),
+        mad * 100.0,
+        if supported {
+            "supported"
+        } else {
+            "unsupported"
+        }
+    );
     supported.then_some(gain)
 }
 
@@ -1210,7 +1325,15 @@ impl<'a> StarGrid<'a> {
             let cy = ((s.y - y0) / cell) as usize;
             buckets[cy.min(rows - 1) * cols + cx.min(cols - 1)].push(i as u32);
         }
-        Self { stars, cell, origin: (x0, y0), cols, rows, buckets, last: std::cell::Cell::new(0.0) }
+        Self {
+            stars,
+            cell,
+            origin: (x0, y0),
+            cols,
+            rows,
+            buckets,
+            last: std::cell::Cell::new(0.0),
+        }
     }
 
     /// Index of the nearest star within `radius`, and the squared distance to
@@ -1249,7 +1372,14 @@ impl<'a> StarGrid<'a> {
             return None;
         }
         self.last.set(best_d2);
-        Some((best?, if second_d2.is_finite() { Some(second_d2) } else { None }))
+        Some((
+            best?,
+            if second_d2.is_finite() {
+                Some(second_d2)
+            } else {
+                None
+            },
+        ))
     }
 
     fn last_distance2(&self) -> f32 {
@@ -1297,8 +1427,20 @@ fn extend_blocked_to_the_edge(blocked: &mut [[bool; FIELD]; FIELD]) {
             }
             // The neighbour one step towards the interior on each edge axis,
             // and the diagonal for a corner.
-            let ix = if gx == 0 { 1 } else if gx == last { last - 1 } else { gx };
-            let iy = if gy == 0 { 1 } else if gy == last { last - 1 } else { gy };
+            let ix = if gx == 0 {
+                1
+            } else if gx == last {
+                last - 1
+            } else {
+                gx
+            };
+            let iy = if gy == 0 {
+                1
+            } else if gy == last {
+                last - 1
+            } else {
+                gy
+            };
             if before[iy][ix] || before[gy][ix] || before[iy][gx] {
                 blocked[gy][gx] = true;
             }
@@ -1328,7 +1470,9 @@ fn extend_blocked_to_the_edge(blocked: &mut [[bool; FIELD]; FIELD]) {
 fn take_the_burst_shape(maps: &mut [FramePhotometry], participates: &[bool]) {
     // Keep the contributors fixed across the field. Switching exposures at
     // an obstruction boundary can introduce a discontinuity into every map.
-    let clear: Vec<bool> = maps.iter().zip(participates)
+    let clear: Vec<bool> = maps
+        .iter()
+        .zip(participates)
         .map(|(m, &p)| p && m.map.blocked_fraction() == 0.0)
         .collect();
     let n = clear.iter().filter(|&&p| p).count();
@@ -1340,7 +1484,7 @@ fn take_the_burst_shape(maps: &mut [FramePhotometry], participates: &[bool]) {
         let fields: Vec<_> = maps
             .iter()
             .zip(&clear)
-            .filter(|(_, &p)| p)
+            .filter(|&(_, &p)| p)
             .map(|(m, _)| {
                 m.map.field[c]
                     .iter()
@@ -1357,31 +1501,51 @@ fn take_the_burst_shape(maps: &mut [FramePhotometry], participates: &[bool]) {
         let size = FIELD * FIELD;
         let mut centre = vec![0.0; size];
         for field in &fields {
-            for (v, f) in centre.iter_mut().zip(field) { *v += f / n as f64; }
+            for (v, f) in centre.iter_mut().zip(field) {
+                *v += f / n as f64;
+            }
         }
         for _ in 0..200 {
             let mut next = vec![0.0; size];
             let mut total = 0.0;
             for field in &fields {
-                let distance = (field.iter().zip(&centre).map(|(f, v)| (f-v).powi(2)).sum::<f64>()
-                    / size as f64).sqrt();
+                let distance = (field
+                    .iter()
+                    .zip(&centre)
+                    .map(|(f, v)| (f - v).powi(2))
+                    .sum::<f64>()
+                    / size as f64)
+                    .sqrt();
                 let weight = 1.0 / distance.max(1e-12);
                 total += weight;
-                for (v, f) in next.iter_mut().zip(field) { *v += weight * f; }
+                for (v, f) in next.iter_mut().zip(field) {
+                    *v += weight * f;
+                }
             }
-            for v in &mut next { *v /= total; }
-            let change = next.iter().zip(&centre).map(|(a, b)| (a-b).abs()).fold(0.0f64, f64::max);
+            for v in &mut next {
+                *v /= total;
+            }
+            let change = next
+                .iter()
+                .zip(&centre)
+                .map(|(a, b)| (a - b).abs())
+                .fold(0.0f64, f64::max);
             centre = next;
-            if change < 1e-10 { break; }
+            if change < 1e-10 {
+                break;
+            }
         }
         for (v, estimate) in plane.iter_mut().flatten().zip(centre) {
             *v = estimate as f32;
         }
     }
     for (c, plane) in common.iter().enumerate() {
-        let (lo, hi) = plane.iter().flatten().fold((f32::INFINITY, f32::NEG_INFINITY), |(lo, hi), &v| {
-            (lo.min(v), hi.max(v))
-        });
+        let (lo, hi) = plane
+            .iter()
+            .flatten()
+            .fold((f32::INFINITY, f32::NEG_INFINITY), |(lo, hi), &v| {
+                (lo.min(v), hi.max(v))
+            });
         log::info!(
             "photometry: the typical frame's sky differs from the reference's by {:.3}% of full \
              scale across the field in channel {c} ({n} frames measured)",
@@ -1524,9 +1688,16 @@ fn fit_field(points: &[(f32, f32, f32)], noise: f32) -> Option<([[f32; FIELD]; F
     // that a handful of bad blocks cannot make a useless field look good.
     // Measured through the field as it will actually be stored and read.
     let before = spread_of(points.iter().map(|p| p.2));
-    let probe = PhotometricMatch { gain: [1.0; 3], offset: [0.0; 3], field: [grid; 3], ..PhotometricMatch::IDENTITY };
+    let probe = PhotometricMatch {
+        gain: [1.0; 3],
+        offset: [0.0; 3],
+        field: [grid; 3],
+        ..PhotometricMatch::IDENTITY
+    };
     let after = spread_of(
-        points.iter().map(|&(u, v, r)| r - (mean + probe.field_at(0, u, v))),
+        points
+            .iter()
+            .map(|&(u, v, r)| r - (mean + probe.field_at(0, u, v))),
     );
 
     // Explaining *something* is not evidence. Fitting `k*k` free values to `n`
@@ -1535,8 +1706,7 @@ fn fit_field(points: &[(f32, f32, f32)], noise: f32) -> Option<([[f32; FIELD]; F
     // otherwise a fine grid on a flat pair of frames passes for having found a
     // gradient, and then imposes it. Without this a 4x4 field on two frames of
     // nothing but sky invented 54 codes of gradient across the frame.
-    let chance =
-        (1.0 - (k * k) as f32 / points.len() as f32).max(0.0).sqrt();
+    let chance = (1.0 - (k * k) as f32 / points.len() as f32).max(0.0).sqrt();
     if before <= 1e-9 || after > before * chance * FIELD_MUST_EXPLAIN {
         return None;
     }
@@ -1721,14 +1891,17 @@ mod tests {
             let offsets = vec![(dx, dy); reference.grid_w * reference.grid_h];
             let shifted = block_medians(&scene(dx, dy), &offsets);
             for c in 0..3 {
-                let differences: Vec<f32> = reference.values[c].iter()
+                let differences: Vec<f32> = reference.values[c]
+                    .iter()
                     .zip(&shifted.values[c])
                     .filter_map(|(a, b)| Some((a.as_ref()? - b.as_ref()?).abs() * 65535.0))
                     .collect();
                 assert!(differences.len() >= reference.values[c].len() / 2);
                 let worst = differences.into_iter().fold(0.0f32, f32::max);
-                assert!(worst < 1.0,
-                    "same scene acquired a {worst:.1}-code median difference at shift ({dx},{dy}), channel {c}");
+                assert!(
+                    worst < 1.0,
+                    "same scene acquired a {worst:.1}-code median difference at shift ({dx},{dy}), channel {c}"
+                );
             }
         }
     }
@@ -1776,26 +1949,45 @@ mod tests {
     fn coherent_stars_match_large_gain_changes_in_both_directions() {
         let reference = frame([1200, 1400, 1300], 1.0, 0xA11CE);
         let mut faint = reference.clone();
-        faint.samples = SamplePlane::from_normalised(reference.width, reference.height,
+        faint.samples = SamplePlane::from_normalised(
+            reference.width,
+            reference.height,
             (0..reference.width * reference.height)
                 .map(|i| reference.value(i % reference.width, i / reference.width) / 18.0 + 0.03)
-                .collect());
-        let field: Vec<Star> = (0..40).map(|k| Star {
-            x: 22.0 * (1 + k % 8) as f32 + 0.5,
-            y: 22.0 * (1 + k / 8) as f32 + 0.5, flux: 1.0,
-        }).collect();
-        let faint_stars: Vec<_> = field.iter().map(|s| Star { flux: s.flux / 18.0, ..*s }).collect();
+                .collect(),
+        );
+        let field: Vec<Star> = (0..40)
+            .map(|k| Star {
+                x: 22.0 * (1 + k % 8) as f32 + 0.5,
+                y: 22.0 * (1 + k / 8) as f32 + 0.5,
+                flux: 1.0,
+            })
+            .collect();
+        let faint_stars: Vec<_> = field
+            .iter()
+            .map(|s| Star {
+                flux: s.flux / 18.0,
+                ..*s
+            })
+            .collect();
         let frames = vec![reference, faint];
         let stars = vec![field, faint_stars];
         let warps = vec![WarpField::identity(); 2];
         for reference in [0, 1] {
             let target = 1 - reference;
             let expected = if reference == 0 { 18.0 } else { 1.0 / 18.0 };
-            let fits = match_with_stars(&frames, &warps, reference, &[1.0; 2], &[true; 2], &stars, false);
-            assert!((fits[target].map.gain[0] / expected - 1.0).abs() < 1e-5,
-                "valid gain became a level-only fallback: {}", fits[target].map.gain[0]);
+            let fits = match_with_stars(
+                &frames, &warps, reference, &[1.0; 2], &[true; 2], &stars, false,
+            );
+            assert!(
+                (fits[target].map.gain[0] / expected - 1.0).abs() < 1e-5,
+                "valid gain became a level-only fallback: {}",
+                fits[target].map.gain[0]
+            );
             for (x, y) in [(5, 5), (90, 90), (210, 170)] {
-                let mapped = fits[target].map.apply_at(0, frames[target].value(x, y), 0.0, 0.0);
+                let mapped = fits[target]
+                    .map
+                    .apply_at(0, frames[target].value(x, y), 0.0, 0.0);
                 assert!((mapped - frames[reference].value(x, y)).abs() < 2e-5);
             }
         }
@@ -1847,8 +2039,7 @@ mod tests {
             "the stars read the twilight as a gain of {seen:.3}"
         );
         // And the sky is still matched: the pedestal carries the whole of it.
-        let left = with_stars[1].map.apply_at(1, 2450.0 / 65535.0, 0.0, 0.0)
-            - 1400.0 / 65535.0;
+        let left = with_stars[1].map.apply_at(1, 2450.0 / 65535.0, 0.0, 0.0) - 1400.0 / 65535.0;
         assert!(
             left.abs() * 65535.0 < 400.0,
             "the sky is still {:.0} codes out after the match",
@@ -1864,8 +2055,10 @@ mod tests {
                 for obstructed in [false, true] {
                     for noise in [0.0_f32, 0.012] {
                         let (dx, dy) = match edge {
-                            0 => (-12.0, 0.0), 1 => (12.0, 0.0),
-                            2 => (0.0, -12.0), _ => (0.0, 12.0),
+                            0 => (-12.0, 0.0),
+                            1 => (12.0, 0.0),
+                            2 => (0.0, -12.0),
+                            _ => (0.0, 12.0),
                         };
                         let mut frames = Vec::new();
                         let mut warps = vec![WarpField::identity(); 4];
@@ -1874,7 +2067,9 @@ mod tests {
                         for (i, warp) in warps.iter().enumerate() {
                             let gain = if i == 3 { 0.06 } else { 1.0 };
                             let mut f = flat(1000, i as u64 + 1);
-                            f.width = size; f.height = size; f.cfa = cfa;
+                            f.width = size;
+                            f.height = size;
+                            f.cfa = cfa;
                             f.defects = DefectMask::none(size, size);
                             let mut values = Vec::new();
                             let mut rng = (i as u64 + 1) * 0x1234567;
@@ -1890,32 +2085,77 @@ mod tests {
                                     // The clipped/full medians differ even in the
                                     // clean case: a bright real feature straddles
                                     // the missing footprint. Compare common sky.
-                                    let scene = 0.02 + 0.002 * along / size as f32
+                                    let scene = 0.02
+                                        + 0.002 * along / size as f32
                                         + if distance < 32.0 { 0.01 } else { 0.0 };
-                                    let shadow = if i == 3 && obstructed && distance < 64.0 && along < 64.0 {
+                                    let shadow = if i == 3
+                                        && obstructed
+                                        && distance < 64.0
+                                        && along < 64.0
+                                    {
                                         0.012
-                                    } else { 0.0 };
-                                    rng ^= rng << 13; rng ^= rng >> 7; rng ^= rng << 17;
-                                    let random = (((rng >> 40) & 0xffff) as f32 / 32767.5 - 1.0) * noise;
-                                    values.push((scene - shadow + random) / gain + if i == 0 { 0.0078 } else { 0.0 });
+                                    } else {
+                                        0.0
+                                    };
+                                    rng ^= rng << 13;
+                                    rng ^= rng >> 7;
+                                    rng ^= rng << 17;
+                                    let random =
+                                        (((rng >> 40) & 0xffff) as f32 / 32767.5 - 1.0) * noise;
+                                    values.push(
+                                        (scene - shadow + random) / gain
+                                            + if i == 0 { 0.0078 } else { 0.0 },
+                                    );
                                 }
                             }
-                            f.noise = NoiseModel::new(0.0, (noise / gain).powi(2) / 3.0, sr_core::frame::NoiseSource::Manual);
+                            f.noise = NoiseModel::new(
+                                0.0,
+                                (noise / gain).powi(2) / 3.0,
+                                sr_core::frame::NoiseSource::Manual,
+                            );
                             f.samples = SamplePlane::from_normalised(size, size, values);
                             frames.push(f);
-                            stars.push((0..36).map(|s| {
-                                let (x, y) = warp.inverse_map(60.0 + (s % 6) as f32 * 60.0,
-                                    60.0 + (s / 6) as f32 * 60.0).unwrap();
-                                Star { x, y, flux: 100.0 / gain }
-                            }).collect());
+                            stars.push(
+                                (0..36)
+                                    .map(|s| {
+                                        let (x, y) = warp
+                                            .inverse_map(
+                                                60.0 + (s % 6) as f32 * 60.0,
+                                                60.0 + (s / 6) as f32 * 60.0,
+                                            )
+                                            .unwrap();
+                                        Star {
+                                            x,
+                                            y,
+                                            flux: 100.0 / gain,
+                                        }
+                                    })
+                                    .collect(),
+                            );
                         }
-                        let out = match_with_stars(&frames, &warps, 0, &[1.0; 4], &[], &stars, true);
-                        let (u, v) = match edge { 0 => (0.95, -0.95), 1 => (-0.95, -0.95),
-                            2 => (-0.95, 0.95), _ => (-0.95, -0.95) };
-                        assert_eq!(out[3].map.blocked_at(u, v), obstructed,
-                            "edge {edge}, CFA {cfa:?}, obstructed {obstructed}, noise {noise}");
-                        for m in &out[..3] { assert_eq!(m.map.blocked_fraction(), 0.0, "clean peer masked"); }
-                        if !obstructed { assert_eq!(out[3].map.blocked_fraction(), 0.0, "partial real feature masked"); }
+                        let out =
+                            match_with_stars(&frames, &warps, 0, &[1.0; 4], &[], &stars, true);
+                        let (u, v) = match edge {
+                            0 => (0.95, -0.95),
+                            1 => (-0.95, -0.95),
+                            2 => (-0.95, 0.95),
+                            _ => (-0.95, -0.95),
+                        };
+                        assert_eq!(
+                            out[3].map.blocked_at(u, v),
+                            obstructed,
+                            "edge {edge}, CFA {cfa:?}, obstructed {obstructed}, noise {noise}"
+                        );
+                        for m in &out[..3] {
+                            assert_eq!(m.map.blocked_fraction(), 0.0, "clean peer masked");
+                        }
+                        if !obstructed {
+                            assert_eq!(
+                                out[3].map.blocked_fraction(),
+                                0.0,
+                                "partial real feature masked"
+                            );
+                        }
                     }
                 }
             }
@@ -1928,19 +2168,34 @@ mod tests {
         // into convincing obstruction evidence. Only agreeing peers can.
         for spread in [0.0, 0.005] {
             let frames: Vec<_> = [0.02 - spread, 0.02, 0.02 + spread, 0.012]
-                .into_iter().enumerate().map(|(i, level)| {
+                .into_iter()
+                .enumerate()
+                .map(|(i, level)| {
                     let mut f = flat(1000, i as u64 + 1);
                     f.cfa = CfaPattern::MONO;
                     f.samples = SamplePlane::from_normalised(256, 256, vec![level; 256 * 256]);
                     f
-                }).collect();
+                })
+                .collect();
             let mut blocks: Vec<_> = frames.iter().map(|f| block_medians(f, &[])).collect();
             blocks[3].partial[7] = true;
-            let maps = vec![FramePhotometry { map: PhotometricMatch::IDENTITY, source: PhotometrySource::Measured }; 4];
+            let maps = vec![
+                FramePhotometry {
+                    map: PhotometricMatch::IDENTITY,
+                    source: PhotometrySource::Measured
+                };
+                4
+            ];
             let mut warps = vec![WarpField::identity(); 4];
             warps[3].global = GlobalTransform::translation(-12.0, 0.0);
-            let found = clipped_obstructions(&frames.iter().collect::<Vec<_>>(), &warps,
-                &blocks, &maps, &[true; 4], &vec![vec![false; 64]; 4]);
+            let found = clipped_obstructions(
+                &frames.iter().collect::<Vec<_>>(),
+                &warps,
+                &blocks,
+                &maps,
+                &[true; 4],
+                &vec![vec![false; 64]; 4],
+            );
             assert_eq!(found.contains(&(3, 7)), spread == 0.0);
         }
     }
@@ -1962,8 +2217,11 @@ mod tests {
                 frame.height = size;
                 frame.cfa = CfaPattern::MONO;
                 frame.defects = DefectMask::none(size, size);
-                frame.noise = NoiseModel::new(0.0, (0.000001 / gain).powi(2),
-                    sr_core::frame::NoiseSource::Manual);
+                frame.noise = NoiseModel::new(
+                    0.0,
+                    (0.000001 / gain).powi(2),
+                    sr_core::frame::NoiseSource::Manual,
+                );
                 let mut values = Vec::with_capacity(size * size);
                 for y in 0..size {
                     for x in 0..size {
@@ -1972,47 +2230,89 @@ mod tests {
                         // Shared diffuse emission and a dark cloud are real
                         // sky structure, and must remain unmasked.
                         let cloud = if u < 0.25 && v < 0.25 { -0.0003 } else { 0.0 };
-                        let scene = 0.0015 + cloud
+                        let scene = 0.0015
+                            + cloud
                             + 0.00015 * (-((u - 0.4).powi(2) + (v - 0.5).powi(2)) / 0.07).exp();
                         let gradient = if i == 3 { 0.00015 * (u - 0.5) } else { 0.0 };
-                        let shadow = if i == 4 && u > 0.65 && v > 0.65 { -0.0008 } else { 0.0 };
+                        let shadow = if i == 4 && u > 0.65 && v > 0.65 {
+                            -0.0008
+                        } else {
+                            0.0
+                        };
                         let noise = ((x * 17 + y * 31 + i * 13) % 11) as f32 * 0.0000002;
-                        values.push((scene + gradient + shadow + noise) / gain
-                            + if i == 0 { pedestal } else { 0.0 });
+                        values.push(
+                            (scene + gradient + shadow + noise) / gain
+                                + if i == 0 { pedestal } else { 0.0 },
+                        );
                     }
                 }
                 frame.samples = SamplePlane::from_normalised(size, size, values);
                 frames.push(frame);
-                stars.push((0..36).map(|s| Star {
-                    x: 40.0 + (s % 6) as f32 * 65.0,
-                    y: 40.0 + (s / 6) as f32 * 65.0,
-                    flux: 100.0 / gain,
-                }).collect());
+                stars.push(
+                    (0..36)
+                        .map(|s| Star {
+                            x: 40.0 + (s % 6) as f32 * 65.0,
+                            y: 40.0 + (s / 6) as f32 * 65.0,
+                            flux: 100.0 / gain,
+                        })
+                        .collect(),
+                );
             }
-            let maps = match_with_stars(&frames, &vec![WarpField::identity(); 5],
-                0, &[1.0; 5], &[], &stars, true);
+            let maps = match_with_stars(
+                &frames,
+                &vec![WarpField::identity(); 5],
+                0,
+                &[1.0; 5],
+                &[],
+                &stars,
+                true,
+            );
             let mask = maps[4].map.blocked;
-            assert!(maps[4].map.blocked_at(0.9, 0.9),
-                "shadow missed at reference pedestal {pedestal}");
-            assert!(!maps[4].map.blocked_at(-0.8, -0.8), "shared dark cloud was masked");
+            assert!(
+                maps[4].map.blocked_at(0.9, 0.9),
+                "shadow missed at reference pedestal {pedestal}"
+            );
+            assert!(
+                !maps[4].map.blocked_at(-0.8, -0.8),
+                "shared dark cloud was masked"
+            );
             for (i, m) in maps[..4].iter().enumerate() {
-                assert_eq!(m.map.blocked_fraction(), 0.0,
-                    "clean frame/gradient {i} masked at pedestal {pedestal}");
+                assert_eq!(
+                    m.map.blocked_fraction(),
+                    0.0,
+                    "clean frame/gradient {i} masked at pedestal {pedestal}"
+                );
             }
             if let Some(before) = previous {
-                assert_eq!(mask, before, "reference pedestal changed the obstruction mask");
+                assert_eq!(
+                    mask, before,
+                    "reference pedestal changed the obstruction mask"
+                );
             }
             previous = Some(mask);
             if pedestal == 0.0 {
                 // Even unanimous clean peers cannot make an uncertain source
                 // block precise. The per-frame median-noise floor must veto
                 // a deficit that is below that source's own uncertainty.
-                frames[4].noise = NoiseModel::new(0.0, (0.05_f32 / 0.06).powi(2),
-                    sr_core::frame::NoiseSource::Manual);
-                let uncertain = match_with_stars(&frames, &vec![WarpField::identity(); 5],
-                    0, &[1.0; 5], &[], &stars, true);
-                assert_eq!(uncertain[4].map.blocked_fraction(), 0.0,
-                    "a sub-noise source-block deficit became an obstruction veto");
+                frames[4].noise = NoiseModel::new(
+                    0.0,
+                    (0.05_f32 / 0.06).powi(2),
+                    sr_core::frame::NoiseSource::Manual,
+                );
+                let uncertain = match_with_stars(
+                    &frames,
+                    &vec![WarpField::identity(); 5],
+                    0,
+                    &[1.0; 5],
+                    &[],
+                    &stars,
+                    true,
+                );
+                assert_eq!(
+                    uncertain[4].map.blocked_fraction(),
+                    0.0,
+                    "a sub-noise source-block deficit became an obstruction veto"
+                );
             }
         }
     }
@@ -2030,9 +2330,15 @@ mod tests {
         let warps = vec![WarpField::identity(); 3];
         let out = match_burst(&frames, &warps, 0, &[1.0; 3]);
         let m = &out[2].map;
-        assert!(m.blocked_at(0.9, 0.9), "the corner under the tree was not marked");
+        assert!(
+            m.blocked_at(0.9, 0.9),
+            "the corner under the tree was not marked"
+        );
         assert!(!m.blocked_at(-0.9, -0.9), "the far corner was marked");
-        assert!(!m.blocked_at(-0.3, -0.3), "the clear side of the frame was marked");
+        assert!(
+            !m.blocked_at(-0.3, -0.3),
+            "the clear side of the frame was marked"
+        );
         let frac = m.blocked_fraction();
         assert!(
             (0.04..0.40).contains(&frac),
@@ -2042,7 +2348,10 @@ mod tests {
         // The field did not chase the tree: whatever it fitted is small.
         for c in 0..3 {
             let amp = m.field_amplitude(c) * 65535.0;
-            assert!(amp < 120.0, "channel {c} fitted {amp:.0} codes of field to a tree");
+            assert!(
+                amp < 120.0,
+                "channel {c} fitted {amp:.0} codes of field to a tree"
+            );
         }
         // And the clean frames are clean.
         assert_eq!(out[0].map.blocked_fraction(), 0.0);
@@ -2060,23 +2369,33 @@ mod tests {
             for c in 0..3 {
                 for y in 0..FIELD {
                     for x in 0..FIELD {
-                        map.field[c][y][x] = amplitude * (2.0 * x as f32 / (FIELD - 1) as f32 - 1.0);
+                        map.field[c][y][x] =
+                            amplitude * (2.0 * x as f32 / (FIELD - 1) as f32 - 1.0);
                     }
                 }
             }
-            if i >= 2 { map.blocked[FIELD - 1][FIELD - 1] = true; }
-            fits.push(FramePhotometry { map, source: PhotometrySource::Measured });
+            if i >= 2 {
+                map.blocked[FIELD - 1][FIELD - 1] = true;
+            }
+            fits.push(FramePhotometry {
+                map,
+                source: PhotometrySource::Measured,
+            });
         }
         take_the_burst_shape(&mut fits, &[true; 5]);
         let corner = fits[0].map.field[1][FIELD - 1][FIELD - 1];
-        assert!(corner.abs() <= 0.0021,
-            "obstructed fits imposed {corner} on the clean reference sky");
+        assert!(
+            corner.abs() <= 0.0021,
+            "obstructed fits imposed {corner} on the clean reference sky"
+        );
         // The input fields are planes; excluding a contributor at just one
         // node would create a kink at the obstruction boundary.
         for row in &fits[0].map.field[1] {
             for triple in row.windows(3) {
-                assert!((triple[0] - 2.0 * triple[1] + triple[2]).abs() < 1e-6,
-                    "common sky acquired a kink at an obstruction boundary");
+                assert!(
+                    (triple[0] - 2.0 * triple[1] + triple[2]).abs() < 1e-6,
+                    "common sky acquired a kink at an obstruction boundary"
+                );
             }
         }
     }
@@ -2094,20 +2413,28 @@ mod tests {
                     }
                 }
             }
-            fits.push(FramePhotometry { map, source: PhotometrySource::Measured });
+            fits.push(FramePhotometry {
+                map,
+                source: PhotometrySource::Measured,
+            });
         }
         let before = fits.clone();
         take_the_burst_shape(&mut fits, &[true; 3]);
         for plane in &fits[0].map.field {
-            for y in 1..FIELD-1 {
-                for x in 1..FIELD-1 {
-                    assert!((plane[y][x-1] - 2.0*plane[y][x] + plane[y][x+1]).abs() < 1e-8,
-                        "independent node medians introduced a horizontal ridge");
-                    assert!((plane[y-1][x] - 2.0*plane[y][x] + plane[y+1][x]).abs() < 1e-8,
-                        "independent node medians introduced a vertical ridge");
-                    let original_difference = before[0].map.field[1][y][x] - before[1].map.field[1][y][x];
+            for y in 1..FIELD - 1 {
+                for x in 1..FIELD - 1 {
+                    assert!(
+                        (plane[y][x - 1] - 2.0 * plane[y][x] + plane[y][x + 1]).abs() < 1e-8,
+                        "independent node medians introduced a horizontal ridge"
+                    );
+                    assert!(
+                        (plane[y - 1][x] - 2.0 * plane[y][x] + plane[y + 1][x]).abs() < 1e-8,
+                        "independent node medians introduced a vertical ridge"
+                    );
+                    let original_difference =
+                        before[0].map.field[1][y][x] - before[1].map.field[1][y][x];
                     let final_difference = fits[0].map.field[1][y][x] - fits[1].map.field[1][y][x];
-                    assert!((original_difference-final_difference).abs() < 1e-8);
+                    assert!((original_difference - final_difference).abs() < 1e-8);
                 }
             }
         }
@@ -2149,7 +2476,10 @@ mod tests {
         // Everyone still agrees.
         for u in [-1.0f32, 0.0, 1.0] {
             let d = disagreement(r, 1400.0, t, 1400.0 + glow(0.5 * (u + 1.0), 0.5), u, 0.0);
-            assert!(d.abs() < 0.25 * 900.0, "frames disagree by {d:.0} codes at u = {u}");
+            assert!(
+                d.abs() < 0.25 * 900.0,
+                "frames disagree by {d:.0} codes at u = {u}"
+            );
         }
     }
 
@@ -2252,9 +2582,8 @@ mod tests {
         for c in 0..3 {
             for y in 0..FIELD {
                 for x in 0..FIELD {
-                    m.field[c][y][x] =
-                        0.004 * ((c + 1) as f32) * ((x as f32) - 3.5) / 3.5
-                            - 0.002 * ((y as f32) - 3.5) / 3.5;
+                    m.field[c][y][x] = 0.004 * ((c + 1) as f32) * ((x as f32) - 3.5) / 3.5
+                        - 0.002 * ((y as f32) - 3.5) / 3.5;
                 }
             }
         }
@@ -2289,11 +2618,16 @@ mod tests {
                 }
             }
         }
-        let row: Vec<f32> = (0..29).map(|i| m.field_at(0, -1.0 + i as f32 / 14.0, 0.0)).collect();
+        let row: Vec<f32> = (0..29)
+            .map(|i| m.field_at(0, -1.0 + i as f32 / 14.0, 0.0))
+            .collect();
         let steps: Vec<f32> = row.windows(2).map(|w| w[1] - w[0]).collect();
         let smallest = steps.iter().cloned().fold(f32::INFINITY, f32::min);
         let largest = steps.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
-        assert!(smallest > 0.0, "the field is flat somewhere along a ramp: {row:?}");
+        assert!(
+            smallest > 0.0,
+            "the field is flat somewhere along a ramp: {row:?}"
+        );
         assert!(
             largest - smallest < 0.02 * largest,
             "the field arrives in steps of {smallest} to {largest}, which is a staircase"
@@ -2319,7 +2653,11 @@ mod tests {
             for x in 0..w {
                 let c = CfaPattern::RGGB.color_at(x, y).index();
                 let ramp = 1.0 + 0.6 * (x + y) as f32 / (w + h) as f32;
-                let star = if (x / 2) % 11 == 0 && (y / 2) % 11 == 0 { 6000.0 } else { 0.0 };
+                let star = if (x / 2) % 11 == 0 && (y / 2) % 11 == 0 {
+                    6000.0
+                } else {
+                    0.0
+                };
                 let v = (sky[c] as f32 * ramp + star) * gain + rnd() as f32 * 0.02;
                 data[y * w + x] = v.clamp(0.0, 65535.0) as u16;
             }
@@ -2428,12 +2766,23 @@ mod tests {
 
     #[test]
     fn identical_frames_need_no_correction() {
-        let frames = vec![frame([3700, 5300, 4900], 1.0, 1), frame([3700, 5300, 4900], 1.0, 2)];
+        let frames = vec![
+            frame([3700, 5300, 4900], 1.0, 1),
+            frame([3700, 5300, 4900], 1.0, 2),
+        ];
         let m = match_burst(&frames, &identity(2), 0, &[1.0, 1.0]);
         assert_eq!(m[1].source, PhotometrySource::Measured);
         for c in 0..3 {
-            assert!((m[1].map.gain[c] - 1.0).abs() < 0.01, "gain {}", m[1].map.gain[c]);
-            assert!(m[1].map.offset[c].abs() < 0.002, "offset {}", m[1].map.offset[c]);
+            assert!(
+                (m[1].map.gain[c] - 1.0).abs() < 0.01,
+                "gain {}",
+                m[1].map.gain[c]
+            );
+            assert!(
+                m[1].map.offset[c].abs() < 0.002,
+                "offset {}",
+                m[1].map.offset[c]
+            );
         }
     }
 
@@ -2509,7 +2858,10 @@ mod tests {
         // translation of +24: the convention is frame to reference.
         let warps = vec![
             WarpField::identity(),
-            WarpField { global: GlobalTransform::translation(shift, 0.0), local: None },
+            WarpField {
+                global: GlobalTransform::translation(shift, 0.0),
+                local: None,
+            },
         ];
         let aligned = match_burst(&[a.clone(), b.clone()], &warps, 0, &[1.0, 1.0]);
         let naive = match_burst(&[a, b], &identity(2), 0, &[1.0, 1.0]);
@@ -2526,7 +2878,10 @@ mod tests {
         let best = (0..3)
             .map(|c| (naive[1].map.gain[c] - want).abs())
             .fold(f32::MAX, f32::min);
-        assert!(best > 0.05, "sensor-paired fit was off by only {best}, so this proves nothing");
+        assert!(
+            best > 0.05,
+            "sensor-paired fit was off by only {best}, so this proves nothing"
+        );
     }
 
     #[test]
@@ -2535,7 +2890,10 @@ mod tests {
         // change of illumination explains within one burst, so the gain is
         // refused. Matching the level is still right, and still leaves the
         // frame in a state motion rejection can reason about locally.
-        let frames = vec![frame([3700, 5300, 4900], 1.0, 11), frame([3700, 5300, 4900], 10.0, 12)];
+        let frames = vec![
+            frame([3700, 5300, 4900], 1.0, 11),
+            frame([3700, 5300, 4900], 10.0, 12),
+        ];
         let m = match_burst(&frames, &identity(2), 0, &[1.0, 0.25]);
         assert_eq!(m[1].source, PhotometrySource::Level);
         assert_eq!(m[1].map.gain, [1.0; 3]);

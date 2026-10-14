@@ -244,7 +244,10 @@ mod tests {
         assert!((sel.fraction - 0.5).abs() < 1e-6);
         let total: f32 = (0..4).map(|f| sel.weight(f, 128.0, 128.0)).sum();
         assert!((total - 2.0).abs() < 1e-4, "kept {total} frames");
-        assert!(sel.weight(1, 128.0, 128.0) > 0.9, "sharpest frame was dropped");
+        assert!(
+            sel.weight(1, 128.0, 128.0) > 0.9,
+            "sharpest frame was dropped"
+        );
     }
 
     #[test]
@@ -291,14 +294,19 @@ mod tests {
             WarpField::global_only(GlobalTransform::IDENTITY),
         ];
         let sel = build(&[left, right], &warps, 128, 128, 2.0, 0.5);
-        assert!(sel.weight(0, 20.0, 64.0) > sel.weight(1, 20.0, 64.0), "left region");
-        assert!(sel.weight(1, 110.0, 64.0) > sel.weight(0, 110.0, 64.0), "right region");
+        assert!(
+            sel.weight(0, 20.0, 64.0) > sel.weight(1, 20.0, 64.0),
+            "left region"
+        );
+        assert!(
+            sel.weight(1, 110.0, 64.0) > sel.weight(0, 110.0, 64.0),
+            "right region"
+        );
     }
 
     #[test]
     fn seeing_variability_separates_steady_from_shimmering_bursts() {
-        let steady: Vec<LocalQualityMap> =
-            (0..8).map(|_| map_with(4, 32, &[1.0; 16])).collect();
+        let steady: Vec<LocalQualityMap> = (0..8).map(|_| map_with(4, 32, &[1.0; 16])).collect();
         assert!(seeing_variability(&steady) < 1.05);
 
         let shimmer: Vec<LocalQualityMap> = (0..8)
@@ -309,6 +317,10 @@ mod tests {
                 map_with(4, 32, &v)
             })
             .collect();
-        assert!(seeing_variability(&shimmer) > 1.5, "{}", seeing_variability(&shimmer));
+        assert!(
+            seeing_variability(&shimmer) > 1.5,
+            "{}",
+            seeing_variability(&shimmer)
+        );
     }
 }

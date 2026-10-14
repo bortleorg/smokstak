@@ -63,7 +63,11 @@ pub fn eig_sym2(a: f32, b: f32, c: f32) -> (f32, f32, [f32; 2]) {
         (0.0, 1.0)
     };
     let n = (ex * ex + ey * ey).sqrt();
-    let e = if n > 1e-20 { [ex / n, ey / n] } else { [1.0, 0.0] };
+    let e = if n > 1e-20 {
+        [ex / n, ey / n]
+    } else {
+        [1.0, 0.0]
+    };
     (l1, l2, e)
 }
 
@@ -89,10 +93,7 @@ pub fn median(v: &[f32]) -> f32 {
     }
     // The lower half is already partitioned below `mid`, so its maximum is the
     // other central value.
-    let lo = s[..mid]
-        .iter()
-        .copied()
-        .fold(f32::NEG_INFINITY, f32::max);
+    let lo = s[..mid].iter().copied().fold(f32::NEG_INFINITY, f32::max);
     0.5 * (lo + hi)
 }
 
@@ -108,11 +109,7 @@ pub fn mad_sigma(v: &[f32]) -> f32 {
 #[inline]
 pub fn huber_weight(r: f32, k: f32) -> f32 {
     let a = r.abs();
-    if a <= k {
-        1.0
-    } else {
-        k / a.max(1e-12)
-    }
+    if a <= k { 1.0 } else { k / a.max(1e-12) }
 }
 
 /// Tukey biweight, which fully rejects gross outliers rather than merely

@@ -1,7 +1,7 @@
 //! Bounded native stellar photometry and independently tested same-sky corrections.
 //! Does not flatten individual images: the anchor retains its complete scene.
 use crate::mosaic::FrameSpec;
-use anyhow::{ensure, Context, Result};
+use anyhow::{Context, Result, ensure};
 use sr_core::projection::FrameProjection;
 use sr_core::{NoiseModel, NoiseSource};
 use sr_raw::window::{FitsWindowReader, SampleUnits};
@@ -76,7 +76,8 @@ impl WindowCache {
             "invalid cached source window"
         );
         let mut result = vec![0.; w.checked_mul(h).context("cached window size overflow")?];
-        for by in (y / CACHE_BAND_ROWS..=(y + h - 1) / CACHE_BAND_ROWS).map(|b| b * CACHE_BAND_ROWS) {
+        for by in (y / CACHE_BAND_ROWS..=(y + h - 1) / CACHE_BAND_ROWS).map(|b| b * CACHE_BAND_ROWS)
+        {
             let band = self.band(by)?;
             let y0 = y.max(by);
             let y1 = (y + h).min(by + band.height);
@@ -122,7 +123,7 @@ fn median(values: &mut [f64]) -> Option<f64> {
     }
     values.sort_unstable_by(f64::total_cmp);
     let n = values.len();
-    Some(if n % 2 == 0 {
+    Some(if n.is_multiple_of(2) {
         (values[n / 2 - 1] + values[n / 2]) * 0.5
     } else {
         values[n / 2]
@@ -559,12 +560,16 @@ fn solve(rows: &[Row], n: usize, anchor: usize, dim: usize) -> Result<Vec<f64>> 
     for _ in 0..8 {
         let mut rhs = vec![0.; n * dim];
         let mut diagonal = vec![0.; n * dim];
-        let mut blocks:HashMap<(usize,usize),[[f64;6];6]>=HashMap::new();
+        let mut blocks: HashMap<(usize, usize), [[f64; 6]; 6]> = HashMap::new();
         for (r, &w) in rows.iter().zip(&weights).filter(|(r, _)| !r.test) {
             accumulate(r, w * r.value, &mut rhs, anchor, dim);
-            if dim==6 {
-                let block=blocks.entry((r.a,r.b)).or_insert([[0.;6];6]);
-                for (i,line) in block.iter_mut().enumerate(){for (j,v) in line.iter_mut().enumerate(){*v+=w*r.basis[i]*r.basis[j];}}
+            if dim == 6 {
+                let block = blocks.entry((r.a, r.b)).or_insert([[0.; 6]; 6]);
+                for (i, line) in block.iter_mut().enumerate() {
+                    for (j, v) in line.iter_mut().enumerate() {
+                        *v += w * r.basis[i] * r.basis[j];
+                    }
+                }
             }
             for k in 0..dim {
                 for f in [r.a, r.b] {
@@ -594,7 +599,8 @@ fn solve(rows: &[Row], n: usize, anchor: usize, dim: usize) -> Result<Vec<f64>> 
                 }
             }
         }
-        let identity: [[f64; 6]; 6] = std::array::from_fn(|i| std::array::from_fn(|j| f64::from(u8::from(i == j))));
+        let identity: [[f64; 6]; 6] =
+            std::array::from_fn(|i| std::array::from_fn(|j| f64::from(u8::from(i == j))));
         let inverse_blocks = frame_blocks
             .into_iter()
             .enumerate()
@@ -618,16 +624,20 @@ fn solve(rows: &[Row], n: usize, anchor: usize, dim: usize) -> Result<Vec<f64>> 
         };
         let apply = |v: &[f64]| {
             let mut out = vec![0.; n * dim];
-            if dim==6{
-                for (&(a,b),block) in &blocks {
+            if dim == 6 {
+                for (&(a, b), block) in &blocks {
                     let difference:Vec<_>=(0..6).map(|k|if b==anchor{0.}else{v[b*6+k]}-if a==anchor{0.}else{v[a*6+k]}).collect();
-                    for (i,line) in block.iter().enumerate(){
-                        let value=dot(line,&difference);
-                        if a!=anchor{out[a*6+i]-=value;}
-                        if b!=anchor{out[b*6+i]+=value;}
+                    for (i, line) in block.iter().enumerate() {
+                        let value = dot(line, &difference);
+                        if a != anchor {
+                            out[a * 6 + i] -= value;
+                        }
+                        if b != anchor {
+                            out[b * 6 + i] += value;
+                        }
                     }
                 }
-            }else{
+            } else {
                 for (r, &w) in rows.iter().zip(&weights).filter(|(r, _)| !r.test) {
                     accumulate(r, w * prediction(r, v, anchor, dim), &mut out, anchor, dim);
                 }
@@ -754,7 +764,11 @@ impl Normalization {
 /// polynomials, and a 3x3 lattice over the footprint determines a quadratic.
 /// Global coefficients of an off-centre frame are large and cancel, which
 /// makes interval bounds useless; local ones state the shape over the frame.
-fn reparameterization(global: Normalization, local: Normalization, bounds: [f64; 4]) -> Result<[[f64; 6]; 6]> {
+fn reparameterization(
+    global: Normalization,
+    local: Normalization,
+    bounds: [f64; 4],
+) -> Result<[[f64; 6]; 6]> {
     let mut normal = [[0.; 6]; 6];
     let mut cross = [[0.; 6]; 6];
     for iy in 0..3 {
@@ -777,7 +791,8 @@ fn reparameterization(global: Normalization, local: Normalization, bounds: [f64;
 fn solve6(mut a: [[f64; 6]; 6], mut b: [[f64; 6]; 6]) -> Option<[[f64; 6]; 6]> {
     let size = a.iter().flatten().fold(0_f64, |m, v| m.max(v.abs()));
     for column in 0..6 {
-        let pivot = (column..6).max_by(|&p, &q| a[p][column].abs().total_cmp(&a[q][column].abs()))?;
+        let pivot =
+            (column..6).max_by(|&p, &q| a[p][column].abs().total_cmp(&a[q][column].abs()))?;
         let magnitude = a[pivot][column].abs();
         if magnitude.is_nan() || magnitude <= 1e-12 * size.max(f64::MIN_POSITIVE) {
             return None;
@@ -828,7 +843,10 @@ fn gain_rows(
     let snr = |&(i, j): &(usize, usize)| aa[i].snr.min(bb[j].snr);
     let mut candidates: Vec<_> = matched.iter().filter(|m| m.1 % 5 == 0).collect();
     candidates.sort_by(|p, q| snr(q).total_cmp(&snr(p)).then(p.1.cmp(&q.1)));
-    let precise_count = candidates.iter().filter(|m| snr(m) >= VALIDATION_SNR).count();
+    let precise_count = candidates
+        .iter()
+        .filter(|m| snr(m) >= VALIDATION_SNR)
+        .count();
     let validating: std::collections::HashSet<usize> = candidates
         .iter()
         .take(precise_count.max(MIN_WITHHELD))
@@ -887,7 +905,13 @@ fn gain_rows(
 /// `noise_floor` applies to background planes only: the p90 that withheld
 /// patch differences would show from sampling noise alone. Below it, before and
 /// after cannot be told apart, so a correction is not rejected for getting there.
-fn validate(rows: &[Row], x: &[f64], anchor: usize, dim: usize, noise_floor: f64) -> Result<(f64, f64)> {
+fn validate(
+    rows: &[Row],
+    x: &[f64],
+    anchor: usize,
+    dim: usize,
+    noise_floor: f64,
+) -> Result<(f64, f64)> {
     let mut before: Vec<_> = rows
         .iter()
         .filter(|r| r.test)
@@ -906,12 +930,17 @@ fn validate(rows: &[Row], x: &[f64], anchor: usize, dim: usize, noise_floor: f64
     after.sort_by(f64::total_cmp);
     let (b, a) = (quantile(&before, 0.9), quantile(&after, 0.9));
     if dim == 1 || dim == 6 {
-        let median_absolute=median(&mut after).unwrap();
-        let mut signed:Vec<_>=rows.iter().filter(|r|r.test).map(|r|r.value-prediction(r,x,anchor,dim)).collect();
-        let bias=median(&mut signed).unwrap();
+        let median_absolute = median(&mut after).unwrap();
+        let mut signed: Vec<_> = rows
+            .iter()
+            .filter(|r| r.test)
+            .map(|r| r.value - prediction(r, x, anchor, dim))
+            .collect();
+        let bias = median(&mut signed).unwrap();
         ensure!(
             median_absolute <= 0.05 && a <= 0.2,
-            "{} withheld stellar fluxes reject gain: median absolute disagreement {median_absolute:.5} (limit 0.05000), p90 {a:.5} (limit 0.20000), signed median bias {bias:.5}",after.len()
+            "{} withheld stellar fluxes reject gain: median absolute disagreement {median_absolute:.5} (limit 0.05000), p90 {a:.5} (limit 0.20000), signed median bias {bias:.5}",
+            after.len()
         );
     } else {
         ensure!(
@@ -1115,7 +1144,10 @@ pub(crate) fn prepare(
     // result is restated over its own footprint. The weak prior acts on those
     // footprint-local shape terms and only keeps what no overlap constrains
     // from wandering; measured stars outweigh it wherever they exist.
-    let local: Vec<_> = frame_bounds.iter().map(|&b| Normalization::of_footprint(b)).collect();
+    let local: Vec<_> = frame_bounds
+        .iter()
+        .map(|&b| Normalization::of_footprint(b))
+        .collect();
     let to_local = frame_bounds
         .iter()
         .zip(&local)
@@ -1302,7 +1334,8 @@ pub(crate) fn prepare(
                     let median_noise = |f: &FrameSpec, gain: f64, count: f64| {
                         1.2533 * gain * f64::from(f.noise.variance(f.sky)).sqrt() / count.sqrt()
                     };
-                    let noise = median_noise(&frames[a], ga, av[1]).hypot(median_noise(&frames[b], gb, bv[1]));
+                    let noise = median_noise(&frames[a], ga, av[1])
+                        .hypot(median_noise(&frames[b], gb, bv[1]));
                     let test = (ix + iy) % 2 != 0;
                     if !test {
                         spreads.push(spread);
@@ -1311,7 +1344,14 @@ pub(crate) fn prepare(
                         Row {
                             a,
                             b,
-                            basis: [1., (x - center[0]) / scale, (y - center[1]) / scale, 0., 0., 0.],
+                            basis: [
+                                1.,
+                                (x - center[0]) / scale,
+                                (y - center[1]) / scale,
+                                0.,
+                                0.,
+                                0.,
+                            ],
                             value: ga * av[0] - gb * bv[0],
                             test,
                             precision_weight: 1.,
@@ -1327,8 +1367,15 @@ pub(crate) fn prepare(
         }
         spreads.sort_by(f64::total_cmp);
         let cutoff = quantile(&spreads, 0.75);
-        let samples: Vec<_> = samples.into_iter().filter(|(_, s, _)| *s <= cutoff).collect();
-        let mut test_noise: Vec<_> = samples.iter().filter(|(r, _, _)| r.test).map(|(_, _, n)| *n).collect();
+        let samples: Vec<_> = samples
+            .into_iter()
+            .filter(|(_, s, _)| *s <= cutoff)
+            .collect();
+        let mut test_noise: Vec<_> = samples
+            .iter()
+            .filter(|(r, _, _)| r.test)
+            .map(|(_, _, n)| *n)
+            .collect();
         let selected: Vec<_> = samples.into_iter().map(|(r, _, _)| r).collect();
         if selected.iter().filter(|r| r.test).count() < 8
             || selected.iter().filter(|r| !r.test).count() < 12
@@ -1527,9 +1574,11 @@ mod tests {
         }
         assert!((frames[0].psf_hfd - frames[1].psf_hfd).abs() < 0.8);
         assert!(frames.iter().all(|f| f.noise.beta > 0.));
-        assert!(notes
-            .iter()
-            .any(|note| note.contains("No individual-image flattening")));
+        assert!(
+            notes
+                .iter()
+                .any(|note| note.contains("No individual-image flattening"))
+        );
     }
     #[test]
     fn withheld_background_disagreement_is_not_clipped() {
@@ -1577,19 +1626,33 @@ mod tests {
         assert!(validate(&rows, &result, 0, 1, 0.).is_err());
     }
 
-    const UNIT: Normalization = Normalization { center: [25., 25.], scale: 25. };
+    const UNIT: Normalization = Normalization {
+        center: [25., 25.],
+        scale: 25.,
+    };
 
     /// A star field seen by two frames whose relative response differs by
     /// `log_ratio(u, v)`, with every star at the given SNR.
-    fn field(log_ratio: impl Fn(f64, f64) -> f64, snr: impl Fn(usize) -> f64) -> (Vec<Star>, Vec<Star>) {
+    fn field(
+        log_ratio: impl Fn(f64, f64) -> f64,
+        snr: impl Fn(usize) -> f64,
+    ) -> (Vec<Star>, Vec<Star>) {
         let aa: Vec<_> = (0..400)
-            .map(|i| Star { x: (i % 20) as f64 * 2.5, y: (i / 20) as f64 * 2.5, flux: 1., snr: snr(i) })
+            .map(|i| Star {
+                x: (i % 20) as f64 * 2.5,
+                y: (i / 20) as f64 * 2.5,
+                flux: 1.,
+                snr: snr(i),
+            })
             .collect();
         let bb = aa
             .iter()
             .map(|s| {
                 let [_, u, v, ..] = UNIT.basis(s.x, s.y);
-                Star { flux: s.flux * (-log_ratio(u, v)).exp(), ..*s }
+                Star {
+                    flux: s.flux * (-log_ratio(u, v)).exp(),
+                    ..*s
+                }
             })
             .collect();
         (aa, bb)
@@ -1599,13 +1662,21 @@ mod tests {
     fn a_frame_response_restated_over_its_footprint_is_the_same_surface() {
         // An off-centre frame on a wide canvas: large global terms that cancel
         // become small local ones, and the surface itself is unchanged.
-        let global = Normalization { center: [0., 0.], scale: 10_000. };
+        let global = Normalization {
+            center: [0., 0.],
+            scale: 10_000.,
+        };
         let bounds = [6_000., -2_500., 9_000., -500.];
         let local = Normalization::of_footprint(bounds);
         let map = reparameterization(global, local, bounds).unwrap();
         let x = [0.4, -3.1, 1.7, 2.2, -0.9, 1.3];
         let y: [f64; 6] = std::array::from_fn(|k| dot(&map[k], &x));
-        for (px, py) in [(6_000., -2_500.), (7_123., -1_111.), (9_000., -500.), (8_500., -2_400.)] {
+        for (px, py) in [
+            (6_000., -2_500.),
+            (7_123., -1_111.),
+            (9_000., -500.),
+            (8_500., -2_400.),
+        ] {
             let a = dot(&global.basis(px, py), &x);
             let b = dot(&local.basis(px, py), &y);
             assert!((a - b).abs() < 1e-9, "{a} vs {b}");
@@ -1629,7 +1700,10 @@ mod tests {
         let plane = [0., 0., 0., 4e-5, 0., 0.];
         assert!(validate(&rows, &plane, 0, 3, 0.).is_err());
         assert!(validate(&rows, &plane, 0, 3, 2e-4).is_ok());
-        assert!(validate(&rows, &plane, 0, 3, 1.2e-4).is_err(), "the floor does not excuse a worse-than-noise fit");
+        assert!(
+            validate(&rows, &plane, 0, 3, 1.2e-4).is_err(),
+            "the floor does not excuse a worse-than-noise fit"
+        );
     }
 
     #[test]
@@ -1658,24 +1732,53 @@ mod tests {
         // of 0.3 in log flux at the corners of the shared field.
         let truth = [0.05, 0.02, -0.03, 0.15, 0.01, 0.15];
         let (aa, bb) = field(
-            |u, v| truth[0] + truth[1] * u + truth[2] * v + truth[3] * u * u + truth[4] * u * v + truth[5] * v * v,
+            |u, v| {
+                truth[0]
+                    + truth[1] * u
+                    + truth[2] * v
+                    + truth[3] * u * u
+                    + truth[4] * u * v
+                    + truth[5] * v * v
+            },
             |_| 200.,
         );
         let (mut rows, _) = gain_rows(0, 1, &aa, &bb, UNIT).unwrap();
         let mut medians: Vec<_> = rows.iter().filter(|r| !r.test).map(|r| r.value).collect();
-        let scalar_row = Row { a: 0, b: 1, basis: [1., 0., 0., 0., 0., 0.], value: median(&mut medians).unwrap(), test: false, precision_weight: 1. };
+        let scalar_row = Row {
+            a: 0,
+            b: 1,
+            basis: [1., 0., 0., 0., 0., 0.],
+            value: median(&mut medians).unwrap(),
+            test: false,
+            precision_weight: 1.,
+        };
         let scalar = solve(&[scalar_row], 2, 0, 1).unwrap();
-        assert!(validate(&rows, &scalar, 0, 1, 0.).is_err(), "a scalar cannot absorb a 0.3 bowl");
+        assert!(
+            validate(&rows, &scalar, 0, 1, 0.).is_err(),
+            "a scalar cannot absorb a 0.3 bowl"
+        );
         let training = rows.len();
         for k in 1..6 {
             let mut basis = [0.; 6];
             basis[k] = 1.;
-            rows.push(Row { a: 0, b: 1, basis, value: 0., test: false, precision_weight: 1. / RESPONSE_PRIOR.powi(2) });
+            rows.push(Row {
+                a: 0,
+                b: 1,
+                basis,
+                value: 0.,
+                test: false,
+                precision_weight: 1. / RESPONSE_PRIOR.powi(2),
+            });
         }
         let fit = solve(&rows, 2, 0, 6).unwrap();
         rows.truncate(training);
         for k in 0..6 {
-            assert!((fit[6 + k] - truth[k]).abs() < 2e-3, "term {k}: {} vs {}", fit[6 + k], truth[k]);
+            assert!(
+                (fit[6 + k] - truth[k]).abs() < 2e-3,
+                "term {k}: {} vs {}",
+                fit[6 + k],
+                truth[k]
+            );
         }
         validate(&rows, &fit, 0, 6, 0.).unwrap();
     }

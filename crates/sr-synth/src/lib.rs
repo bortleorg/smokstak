@@ -211,7 +211,10 @@ pub fn generate(cfg: &SynthConfig) -> SynthBurst {
     let true_warps: Vec<WarpField> = transforms
         .iter()
         .zip(locals.iter())
-        .map(|(t, l)| WarpField { global: *t, local: l.clone() })
+        .map(|(t, l)| WarpField {
+            global: *t,
+            local: l.clone(),
+        })
         .collect();
 
     // Hot pixels are a property of the sensor, so they sit at the same sites in
@@ -222,7 +225,11 @@ pub fn generate(cfg: &SynthConfig) -> SynthBurst {
         hot.push(rng.gen_range(0..cfg.sensor * cfg.sensor));
     }
 
-    let cfa = if cfg.mono { CfaPattern::MONO } else { CfaPattern::RGGB };
+    let cfa = if cfg.mono {
+        CfaPattern::MONO
+    } else {
+        CfaPattern::RGGB
+    };
     let frames: Vec<RawFrame> = (0..cfg.frames)
         .into_par_iter()
         .map(|i| {
@@ -246,7 +253,11 @@ pub fn generate(cfg: &SynthConfig) -> SynthBurst {
             // A moving object crossing the frame in later exposures.
             let obj = if cfg.moving_object && i >= cfg.frames / 2 {
                 let t = (i - cfg.frames / 2) as f32 / (cfg.frames as f32 * 0.5).max(1.0);
-                Some((n as f32 * (0.15 + 0.6 * t), n as f32 * 0.55, n as f32 * 0.06))
+                Some((
+                    n as f32 * (0.15 + 0.6 * t),
+                    n as f32 * 0.55,
+                    n as f32 * 0.06,
+                ))
             } else {
                 None
             };
@@ -355,7 +366,11 @@ mod tests {
 
     #[test]
     fn generated_frames_have_the_requested_geometry() {
-        let cfg = SynthConfig { sensor: 128, frames: 6, ..Default::default() };
+        let cfg = SynthConfig {
+            sensor: 128,
+            frames: 6,
+            ..Default::default()
+        };
         let b = generate(&cfg);
         assert_eq!(b.frames.len(), 6);
         assert_eq!(b.frames[0].width, 128);
@@ -365,14 +380,23 @@ mod tests {
 
     #[test]
     fn frame_zero_is_the_anchor() {
-        let b = generate(&SynthConfig { sensor: 64, frames: 4, ..Default::default() });
+        let b = generate(&SynthConfig {
+            sensor: 64,
+            frames: 4,
+            ..Default::default()
+        });
         let (x, y) = b.true_warps[0].map(10.0, 20.0);
         assert!((x - 10.0).abs() < 1e-6 && (y - 20.0).abs() < 1e-6);
     }
 
     #[test]
     fn frames_actually_differ_by_the_requested_shifts() {
-        let cfg = SynthConfig { sensor: 64, frames: 8, shift_sigma: 2.0, ..Default::default() };
+        let cfg = SynthConfig {
+            sensor: 64,
+            frames: 8,
+            shift_sigma: 2.0,
+            ..Default::default()
+        };
         let b = generate(&cfg);
         let shifts: Vec<f32> = b
             .true_warps
@@ -382,8 +406,14 @@ mod tests {
                 (dx * dx + dy * dy).sqrt()
             })
             .collect();
-        assert!(shifts[1..].iter().any(|&s| s > 0.3), "no motion generated: {shifts:?}");
-        assert!(shifts.iter().all(|&s| s < 4.0), "motion exceeded the request: {shifts:?}");
+        assert!(
+            shifts[1..].iter().any(|&s| s > 0.3),
+            "no motion generated: {shifts:?}"
+        );
+        assert!(
+            shifts.iter().all(|&s| s < 4.0),
+            "motion exceeded the request: {shifts:?}"
+        );
     }
 
     #[test]
@@ -413,7 +443,11 @@ mod tests {
 
     #[test]
     fn a_monochrome_sensor_samples_every_site() {
-        let colour = generate(&SynthConfig { sensor: 64, frames: 2, ..Default::default() });
+        let colour = generate(&SynthConfig {
+            sensor: 64,
+            frames: 2,
+            ..Default::default()
+        });
         let mono = generate(&SynthConfig {
             sensor: 64,
             frames: 2,
@@ -436,7 +470,12 @@ mod tests {
 
     #[test]
     fn hot_pixels_read_high_at_the_same_sites_in_every_frame() {
-        let cfg = SynthConfig { sensor: 64, frames: 3, hot_pixels: 10, ..Default::default() };
+        let cfg = SynthConfig {
+            sensor: 64,
+            frames: 3,
+            hot_pixels: 10,
+            ..Default::default()
+        };
         let b = generate(&cfg);
         assert!(!b.hot_pixels.is_empty());
         // The frames must not advertise them: the point of the fixture is that
@@ -451,7 +490,10 @@ mod tests {
                         + f.value((x + 2).min(63), y)
                         + f.value(x, y.saturating_sub(2))
                         + f.value(x, (y + 2).min(63)));
-                assert!(v > n + 0.2, "site {i} reads {v} against a neighbourhood of {n}");
+                assert!(
+                    v > n + 0.2,
+                    "site {i} reads {v} against a neighbourhood of {n}"
+                );
             }
         }
     }

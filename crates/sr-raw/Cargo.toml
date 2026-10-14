@@ -5,9 +5,15 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 
+[features]
+# Camera RAW (NEF, CR2, ARW, DNG, ...) through `rawler`, which is LGPL-2.1.
+# Off by default so FITS/XISF users of this crate link no copyleft code; the
+# smokstak binary turns it on.
+camera-raw = ["dep:rawler"]
+
 [dependencies]
 sr-core = { workspace = true }
-rawler = { workspace = true }
+rawler = { workspace = true, optional = true }
 rayon = { workspace = true }
 serde = { workspace = true }
 log = { workspace = true }

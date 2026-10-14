@@ -18,7 +18,7 @@ use sr_core::config::{LocalWarpMode, ReconstructionConfig, WarpConfig};
 use sr_core::geometry::{DeformationField, GlobalTransform, WarpField};
 use sr_register::correlate::Correlator;
 use sr_register::global::GlobalRegistration;
-use sr_register::pyramid::{extract_patch, extract_patch_warped, RegistrationImage};
+use sr_register::pyramid::{RegistrationImage, extract_patch, extract_patch_warped};
 
 /// Estimate the residual displacement field for one frame, in proxy
 /// coordinates, given its global transform.
@@ -92,7 +92,13 @@ pub fn refine_frame(
         let nodes: Vec<(usize, [f32; 2], f32)> = (0..gw * gh)
             .into_par_iter()
             .map_init(
-                || (Correlator::new(patch), vec![0.0f32; patch * patch], vec![0.0f32; patch * patch]),
+                || {
+                    (
+                        Correlator::new(patch),
+                        vec![0.0f32; patch * patch],
+                        vec![0.0f32; patch * patch],
+                    )
+                },
                 |(corr, buf_ref, buf_tgt), idx| {
                     let gx = idx % gw;
                     let gy = idx / gw;
@@ -114,10 +120,8 @@ pub fn refine_frame(
                     // the global inverse after removing the local offset. The
                     // offset is treated as constant across one patch, which is
                     // the same smoothness assumption the field itself encodes.
-                    let inv_node = inv_l.compose(&GlobalTransform::translation(
-                        -prior_l[0],
-                        -prior_l[1],
-                    ));
+                    let inv_node =
+                        inv_l.compose(&GlobalTransform::translation(-prior_l[0], -prior_l[1]));
                     if !extract_patch_warped(tgt_img, &inv_node, px, py, patch, buf_tgt) {
                         return (idx, prior, 0.0);
                     }
@@ -143,7 +147,12 @@ pub fn refine_frame(
             next.conf[idx] = conf;
         }
 
-        regularise(&mut next, cfg.min_confidence, cfg.smooth_iters, cfg.smooth_lambda);
+        regularise(
+            &mut next,
+            cfg.min_confidence,
+            cfg.smooth_iters,
+            cfg.smooth_lambda,
+        );
         field = Some(next);
     }
 
@@ -246,12 +255,7 @@ pub fn node_spacing(level_width: usize, level_height: usize, cfg: &WarpConfig) -
 /// Nodes below `min_confidence` contribute nothing of their own and are pulled
 /// toward their neighbours, so an unmeasurable patch of sky inherits the motion
 /// around it instead of inventing a displacement.
-fn regularise(
-    field: &mut DeformationField,
-    min_confidence: f32,
-    iters: usize,
-    lambda: f32,
-) {
+fn regularise(field: &mut DeformationField, min_confidence: f32, iters: usize, lambda: f32) {
     let (gw, gh) = (field.grid_w, field.grid_h);
     if gw == 0 || gh == 0 {
         return;
@@ -390,7 +394,8 @@ pub fn maybe_refine(
     // A validated stellar field already accounts for the residual geometry.
     // Correlation must not overwrite it or fit the same displacement twice.
     let others: Vec<usize> = (0..proxies.len())
-        .filter(|&i| i != reference && warps[i].local.is_none()).collect();
+        .filter(|&i| i != reference && warps[i].local.is_none())
+        .collect();
     if others.is_empty() {
         return false;
     }
@@ -403,19 +408,8 @@ pub fn maybe_refine(
         // The stars may have polished the global transform since correlation.
         // Fit and validate relative to the transform used for deposition.
         let global = warps[i].global.rescale(0.5);
-        let f = refine_frame(
-            &proxies[reference],
-            &proxies[i],
-            &global,
-            &cfg.warp,
-        );
-        let gain = field_improvement(
-            &proxies[reference],
-            &proxies[i],
-            &global,
-            &f,
-            &cfg.warp,
-        );
+        let f = refine_frame(&proxies[reference], &proxies[i], &global, &cfg.warp);
+        let gain = field_improvement(&proxies[reference], &proxies[i], &global, &f, &cfg.warp);
         (f, gain)
     };
 
@@ -454,7 +448,11 @@ pub fn maybe_refine(
     // The burst does deform, so fit the rest. The per-frame bar is lower than
     // the bar for the burst as a whole: once deformation is established, a
     // frame that shows less of it is ordinary, not suspicious.
-    let per_frame_bar = if forced { f32::NEG_INFINITY } else { cfg.warp.min_improvement * 0.5 };
+    let per_frame_bar = if forced {
+        f32::NEG_INFINITY
+    } else {
+        cfg.warp.min_improvement * 0.5
+    };
     let mut fields: Vec<Option<DeformationField>> = vec![None; proxies.len()];
     let mut accepted = 0usize;
     for (i, f, g) in probe {
@@ -509,7 +507,9 @@ mod tests {
         let mut p = Plane::new(w, h);
         let mut seed = 0x51EEDu64;
         let mut next = || {
-            seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            seed = seed
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
             ((seed >> 33) as f32 / (1u32 << 31) as f32) - 0.5
         };
         let comps: Vec<(f32, f32, f32, f32)> = (0..96)
@@ -556,8 +556,16 @@ mod tests {
         // Sample the recovered field where the planted displacement is largest
         // and check that it points the right way with roughly the right size.
         let (ux, _uy) = f.sample(192.0, (std::f32::consts::FRAC_PI_2 * 100.0).min(380.0));
-        assert!(f.max_magnitude() > 0.8, "max magnitude {}", f.max_magnitude());
-        assert!(f.max_magnitude() < 6.0, "field ran away: {}", f.max_magnitude());
+        assert!(
+            f.max_magnitude() > 0.8,
+            "max magnitude {}",
+            f.max_magnitude()
+        );
+        assert!(
+            f.max_magnitude() < 6.0,
+            "field ran away: {}",
+            f.max_magnitude()
+        );
         let _ = ux;
 
         // The mean magnitude should be well below the peak: a smooth field, not
@@ -574,11 +582,21 @@ mod tests {
     fn node_grid_is_dense_enough_on_a_small_frame() {
         // A small proxy must still produce a grid that can describe a smooth
         // field, not a two-by-two mesh.
-        let cfg = WarpConfig { patch: 64, spacing: 32, levels: 2, ..Default::default() };
+        let cfg = WarpConfig {
+            patch: 64,
+            spacing: 32,
+            levels: 2,
+            ..Default::default()
+        };
         let reference = RegistrationImage::build(&warped_scene(256, 256, 0.0, 80.0), 3);
         let target = RegistrationImage::build(&warped_scene(256, 256, 1.5, 80.0), 3);
         let f = refine_frame(&reference, &target, &GlobalTransform::IDENTITY, &cfg);
-        assert!(f.grid_w >= 6 && f.grid_h >= 6, "grid {}x{}", f.grid_w, f.grid_h);
+        assert!(
+            f.grid_w >= 6 && f.grid_h >= 6,
+            "grid {}x{}",
+            f.grid_w,
+            f.grid_h
+        );
         let measured = f.conf.iter().filter(|&&c| c > 0.0).count();
         assert!(
             measured * 3 >= f.conf.len(),
@@ -593,7 +611,12 @@ mod tests {
         // shape. A grid too coarse for the deformation, or a regulariser too
         // strong, both produce a plausible-looking field at a fraction of the
         // true amplitude, which silently leaves most of the misalignment in.
-        let cfg = WarpConfig { patch: 48, spacing: 24, levels: 2, ..Default::default() };
+        let cfg = WarpConfig {
+            patch: 48,
+            spacing: 24,
+            levels: 2,
+            ..Default::default()
+        };
         let amp = 2.0f32;
         let reference = RegistrationImage::build(&warped_scene(384, 384, 0.0, 60.0), 3);
         let target = RegistrationImage::build(&warped_scene(384, 384, amp, 60.0), 3);
@@ -607,7 +630,12 @@ mod tests {
 
     #[test]
     fn identical_frames_yield_a_near_zero_field() {
-        let cfg = WarpConfig { patch: 48, spacing: 24, levels: 2, ..Default::default() };
+        let cfg = WarpConfig {
+            patch: 48,
+            spacing: 24,
+            levels: 2,
+            ..Default::default()
+        };
         let img = RegistrationImage::build(&warped_scene(384, 384, 0.0, 100.0), 3);
         let f = refine_frame(&img, &img, &GlobalTransform::IDENTITY, &cfg);
         assert!(
@@ -636,7 +664,10 @@ mod tests {
         for (b, u) in before.iter().zip(&f.u) {
             worst = worst.max((b[0] - u[0]).abs());
         }
-        assert!(worst < 0.12, "regulariser flattened a measured field by {worst}");
+        assert!(
+            worst < 0.12,
+            "regulariser flattened a measured field by {worst}"
+        );
     }
 
     #[test]
@@ -645,12 +676,18 @@ mod tests {
         // be measured rather than merely trusted.
         let cfg = ReconstructionConfig {
             local_warp: LocalWarpMode::On,
-            warp: WarpConfig { patch: 48, spacing: 24, levels: 1, ..Default::default() },
+            warp: WarpConfig {
+                patch: 48,
+                spacing: 24,
+                levels: 1,
+                ..Default::default()
+            },
             ..Default::default()
         };
         let scene = warped_scene(384, 384, 0.0, 60.0);
-        let proxies: Vec<RegistrationImage> =
-            (0..3).map(|_| RegistrationImage::build(&scene, 3)).collect();
+        let proxies: Vec<RegistrationImage> = (0..3)
+            .map(|_| RegistrationImage::build(&scene, 3))
+            .collect();
         let regs: Vec<GlobalRegistration> = (0..3).map(GlobalRegistration::identity).collect();
         let mut warps: Vec<WarpField> = (0..3).map(|_| WarpField::identity()).collect();
         assert!(maybe_refine(&proxies, 0, &regs, &cfg, &mut warps));
@@ -663,12 +700,18 @@ mod tests {
         // field the fit happens to produce.
         let cfg = ReconstructionConfig {
             local_warp: LocalWarpMode::Auto,
-            warp: WarpConfig { patch: 48, spacing: 24, levels: 2, ..Default::default() },
+            warp: WarpConfig {
+                patch: 48,
+                spacing: 24,
+                levels: 2,
+                ..Default::default()
+            },
             ..Default::default()
         };
         let scene = warped_scene(384, 384, 0.0, 60.0);
-        let proxies: Vec<RegistrationImage> =
-            (0..4).map(|_| RegistrationImage::build(&scene, 3)).collect();
+        let proxies: Vec<RegistrationImage> = (0..4)
+            .map(|_| RegistrationImage::build(&scene, 3))
+            .collect();
         let regs: Vec<GlobalRegistration> = (0..4).map(GlobalRegistration::identity).collect();
         let mut warps: Vec<WarpField> = (0..4).map(|_| WarpField::identity()).collect();
         let applied = maybe_refine(&proxies, 0, &regs, &cfg, &mut warps);
@@ -680,26 +723,41 @@ mod tests {
     fn refinement_uses_the_polished_global_and_preserves_stellar_fields() {
         let cfg = ReconstructionConfig {
             local_warp: LocalWarpMode::On,
-            warp: WarpConfig { patch: 48, spacing: 24, levels: 1, ..Default::default() },
+            warp: WarpConfig {
+                patch: 48,
+                spacing: 24,
+                levels: 1,
+                ..Default::default()
+            },
             ..Default::default()
         };
-        let scene = warped_scene(384,384,0.,60.);
-        let proxies: Vec<_> = (0..3).map(|_| RegistrationImage::build(&scene,3)).collect();
+        let scene = warped_scene(384, 384, 0., 60.);
+        let proxies: Vec<_> = (0..3)
+            .map(|_| RegistrationImage::build(&scene, 3))
+            .collect();
         let mut regs: Vec<_> = (0..3).map(GlobalRegistration::identity).collect();
-        regs[1].transform = GlobalTransform::translation(2.,-1.);
-        let mut warps = vec![WarpField::identity();3];
-        let mut stellar = DeformationField::zeros((0.,0.),384.,3,3);
-        stellar.u.fill([1.,0.]);
+        regs[1].transform = GlobalTransform::translation(2., -1.);
+        let mut warps = vec![WarpField::identity(); 3];
+        let mut stellar = DeformationField::zeros((0., 0.), 384., 3, 3);
+        stellar.u.fill([1., 0.]);
         stellar.conf.fill(1.);
         warps[2].local = Some(stellar.clone());
-        assert!(maybe_refine(&proxies,0,&regs,&cfg,&mut warps));
-        assert!(warps[1].max_local()<0.05, "must not apply the stale global offset again");
-        assert_eq!(warps[2].local.as_ref().unwrap().u,stellar.u);
+        assert!(maybe_refine(&proxies, 0, &regs, &cfg, &mut warps));
+        assert!(
+            warps[1].max_local() < 0.05,
+            "must not apply the stale global offset again"
+        );
+        assert_eq!(warps[2].local.as_ref().unwrap().u, stellar.u);
     }
 
     #[test]
     fn improvement_is_large_for_a_real_deformation() {
-        let cfg = WarpConfig { patch: 48, spacing: 24, levels: 2, ..Default::default() };
+        let cfg = WarpConfig {
+            patch: 48,
+            spacing: 24,
+            levels: 2,
+            ..Default::default()
+        };
         let reference = RegistrationImage::build(&warped_scene(384, 384, 0.0, 60.0), 3);
         let target = RegistrationImage::build(&warped_scene(384, 384, 2.0, 60.0), 3);
         let f = refine_frame(&reference, &target, &GlobalTransform::IDENTITY, &cfg);
@@ -711,7 +769,12 @@ mod tests {
     fn improvement_is_negligible_for_aligned_frames() {
         // Two identical frames leave nothing for a field to fix, so whatever
         // field is fitted must fail to justify itself.
-        let cfg = WarpConfig { patch: 48, spacing: 24, levels: 2, ..Default::default() };
+        let cfg = WarpConfig {
+            patch: 48,
+            spacing: 24,
+            levels: 2,
+            ..Default::default()
+        };
         let img = RegistrationImage::build(&warped_scene(384, 384, 0.0, 60.0), 3);
         let f = refine_frame(&img, &img, &GlobalTransform::IDENTITY, &cfg);
         let gain = field_improvement(&img, &img, &GlobalTransform::IDENTITY, &f, &cfg);
@@ -723,7 +786,12 @@ mod tests {
 
     #[test]
     fn featureless_frames_produce_no_confident_nodes() {
-        let cfg = WarpConfig { patch: 48, spacing: 24, levels: 1, ..Default::default() };
+        let cfg = WarpConfig {
+            patch: 48,
+            spacing: 24,
+            levels: 1,
+            ..Default::default()
+        };
         let flat = RegistrationImage::build(&Plane::filled(256, 256, 0.5), 2);
         let f = refine_frame(&flat, &flat, &GlobalTransform::IDENTITY, &cfg);
         assert!(f.conf.iter().all(|&c| c == 0.0));

@@ -40,7 +40,12 @@ pub enum Severity {
 impl FieldReport {
     pub fn summary(&self) -> String {
         if self.values.len() == 1 {
-            format!("{} ({}/{})", self.values[0].0, self.values[0].1, self.total())
+            format!(
+                "{} ({}/{})",
+                self.values[0].0,
+                self.values[0].1,
+                self.total()
+            )
         } else {
             self.values
                 .iter()
@@ -84,7 +89,12 @@ impl BurstValidation {
                 Severity::Warning => "  <-- warning",
                 Severity::Fatal => "  <-- FATAL",
             };
-            s.push_str(&format!("{:<16} {}{}\n", format!("{}:", f.field), f.summary(), marker));
+            s.push_str(&format!(
+                "{:<16} {}{}\n",
+                format!("{}:", f.field),
+                f.summary(),
+                marker
+            ));
         }
         if !self.warnings.is_empty() {
             s.push('\n');
@@ -114,7 +124,11 @@ where
         field: field.to_string(),
         values,
         consistent,
-        severity: if consistent { Severity::Ok } else { sev_if_varying },
+        severity: if consistent {
+            Severity::Ok
+        } else {
+            sev_if_varying
+        },
     }
 }
 
@@ -162,7 +176,10 @@ pub fn validate_burst(frames: &[RawFrame]) -> BurstValidation {
         fmt_shutter(f.metadata.exposure_time)
     }));
     fields.push(tally(frames, "Aperture", Severity::Warning, |f| {
-        f.metadata.aperture.map(|a| format!("f/{a:.1}")).unwrap_or_else(|| "unknown".into())
+        f.metadata
+            .aperture
+            .map(|a| format!("f/{a:.1}"))
+            .unwrap_or_else(|| "unknown".into())
     }));
     fields.push(tally(frames, "Focal length", Severity::Warning, |f| {
         fmt_opt(f.metadata.focal_length, " mm", 0)
@@ -235,9 +252,7 @@ pub fn validate_burst(frames: &[RawFrame]) -> BurstValidation {
         ));
     }
 
-    let filter_conflict = fields
-        .iter()
-        .any(|f| f.field == "Filter" && !f.consistent);
+    let filter_conflict = fields.iter().any(|f| f.field == "Filter" && !f.consistent);
     BurstValidation {
         frame_count: frames.len(),
         fields,

@@ -6,7 +6,7 @@ use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use anyhow::{bail, ensure, Context, Result};
+use anyhow::{Context, Result, bail, ensure};
 use clap::{Args as ClapArgs, Subcommand};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -232,8 +232,10 @@ fn validate_filters<'a>(filters: impl IntoIterator<Item = &'a str>) -> Result<()
             "filter name {filter:?} is a reserved Windows directory name"
         );
         if let Some(previous) = spellings.insert(folded, filter) {
-            ensure!(previous == filter,
-                "filter names {previous:?} and {filter:?} collide on case-insensitive filesystems; use one consistent filter name");
+            ensure!(
+                previous == filter,
+                "filter names {previous:?} and {filter:?} collide on case-insensitive filesystems; use one consistent filter name"
+            );
         }
     }
     Ok(())
@@ -255,7 +257,11 @@ fn ingest(input: &Path, snapshot: &mut Snapshot) -> Result<(usize, usize)> {
     let total = paths.len();
     for (index, path) in paths.into_iter().enumerate() {
         if index % 10 == 0 || index + 1 == total {
-            log::info!("validating project input {}/{total}: {}", index + 1, path.display());
+            log::info!(
+                "validating project input {}/{total}: {}",
+                index + 1,
+                path.display()
+            );
         }
         let path = canonical(&path)?;
         let id = hash_file(&path)?;
@@ -263,8 +269,11 @@ fn ingest(input: &Path, snapshot: &mut Snapshot) -> Result<(usize, usize)> {
             duplicate += 1;
             continue;
         }
-        ensure!(!snapshot.frames.iter().any(|f| f.path == path),
-            "source changed at {}; retain the original and ingest revised calibration under a new path", path.display());
+        ensure!(
+            !snapshot.frames.iter().any(|f| f.path == path),
+            "source changed at {}; retain the original and ingest revised calibration under a new path",
+            path.display()
+        );
         let filter = sr_raw::peek_filter(&path)
             .filter(|f| !f.trim().is_empty())
             .with_context(|| format!("missing filter metadata: {}", path.display()))?;
@@ -309,11 +318,11 @@ fn apply_relinks(
     let mut changed = 0;
     for (id, path) in replacements {
         let mut moved = false;
-        if let Some(frame) = revised.frames.iter_mut().find(|f| &f.id == id) {
-            if frame.path != *path {
-                frame.path = path.clone();
-                moved = true;
-            }
+        if let Some(frame) = revised.frames.iter_mut().find(|f| &f.id == id)
+            && frame.path != *path
+        {
+            frame.path = path.clone();
+            moved = true;
         }
         if revised.reference.id == *id && revised.reference.path != *path {
             revised.reference.path = path.clone();
@@ -365,7 +374,10 @@ fn relink(input: &Path, snapshot: &mut Snapshot) -> Result<usize> {
             path.display()
         );
         if let Some(previous) = replacements.insert(id, path.clone()) {
-            ensure!(previous == path, "relink input names multiple copies of one exposure; supply one location per content identity");
+            ensure!(
+                previous == path,
+                "relink input names multiple copies of one exposure; supply one location per content identity"
+            );
         }
     }
     // Old sources need not remain online. Validate supplied replacements here;
@@ -386,14 +398,13 @@ fn revisions(directory: &Path) -> Result<Vec<(u64, PathBuf)>> {
         fs::read_dir(directory.join("revisions")).context("project has no revisions directory")?
     {
         let path = entry?.path();
-        if path.extension().is_some_and(|e| e == "json") {
-            if let Some(n) = path
+        if path.extension().is_some_and(|e| e == "json")
+            && let Some(n) = path
                 .file_stem()
                 .and_then(|s| s.to_str())
                 .and_then(|s| s.parse::<u64>().ok())
-            {
-                paths.push((n, path));
-            }
+        {
+            paths.push((n, path));
         }
     }
     paths.sort_by_key(|p| p.0);
@@ -591,44 +602,85 @@ fn build_review(stage: &Path, snapshot: &Snapshot) -> Result<()> {
     let assets = stage.join("review-assets");
     fs::create_dir_all(&assets)?;
     let mut rows = BTreeMap::new();
-    for report in run_files(&stage.join("diagnostics"))?.into_iter()
-        .filter(|p| p.file_name().is_some_and(|n| n == "frame-review.json")) {
+    for report in run_files(&stage.join("diagnostics"))?
+        .into_iter()
+        .filter(|p| p.file_name().is_some_and(|n| n == "frame-review.json"))
+    {
         let value: serde_json::Value = serde_json::from_slice(&fs::read(&report)?)?;
         let group: Vec<ReviewFrame> = serde_json::from_value(value["frames"].clone())?;
         for row in group {
             if let Some(asset) = &row.preview_asset {
-                let name = Path::new(asset).file_name().context("missing review asset name")?;
+                let name = Path::new(asset)
+                    .file_name()
+                    .context("missing review asset name")?;
                 fs::copy(report.parent().unwrap().join(asset), assets.join(name))?;
             }
-            ensure!(rows.insert(row.path.clone(),row).is_none(), "duplicate production review record");
+            ensure!(
+                rows.insert(row.path.clone(), row).is_none(),
+                "duplicate production review record"
+            );
         }
     }
     let read = read_options(&snapshot.fits_row_order)?;
     let mut frames = Vec::new();
     for source in &snapshot.frames {
         if let Some(reason) = &source.exclusion_reason {
-            let mut row = ReviewFrame { path:source.path.clone(), filter:source.filter.clone(),
-                status:"excluded".into(),reason:format!("Project review exclusion: {reason}"),
-                capture_time:None,exposure_seconds:None,iso_or_gain:None,photometric_gain:None,photometry_source:None,
-                weight:None,hfd:None,eccentricity:None,residual:None,suppressed:None,obstruction_mask:None,
-                preview_asset:None,preview_note:String::new() };
+            let mut row = ReviewFrame {
+                path: source.path.clone(),
+                filter: source.filter.clone(),
+                status: "excluded".into(),
+                reason: format!("Project review exclusion: {reason}"),
+                capture_time: None,
+                exposure_seconds: None,
+                iso_or_gain: None,
+                photometric_gain: None,
+                photometry_source: None,
+                weight: None,
+                hfd: None,
+                eccentricity: None,
+                residual: None,
+                suppressed: None,
+                obstruction_mask: None,
+                preview_asset: None,
+                preview_note: String::new(),
+            };
             let preview = (|| -> Result<()> {
-                ensure!(hash_file(&source.path)? == source.id,"excluded source content has changed");
-                let frame = sr_raw::decode_with(&source.path,&read)?;
-                ensure!(hash_file(&source.path)? == source.id,"excluded source changed during preview");
-                frame_review::capture(stage,&mut row,&frame,None,[frame.width as f32/2.0,frame.height as f32/2.0])
+                ensure!(
+                    hash_file(&source.path)? == source.id,
+                    "excluded source content has changed"
+                );
+                let frame = sr_raw::decode_with(&source.path, &read)?;
+                ensure!(
+                    hash_file(&source.path)? == source.id,
+                    "excluded source changed during preview"
+                );
+                frame_review::capture(
+                    stage,
+                    &mut row,
+                    &frame,
+                    None,
+                    [frame.width as f32 / 2.0, frame.height as f32 / 2.0],
+                )
             })();
             if let Err(error) = preview {
-                row.preview_asset=None;
-                row.preview_note=format!("Original preview unavailable: {error:#}. Exclusion remains recorded; no replacement pixels are shown.");
+                row.preview_asset = None;
+                row.preview_note = format!(
+                    "Original preview unavailable: {error:#}. Exclusion remains recorded; no replacement pixels are shown."
+                );
             }
             frames.push(row);
         } else {
-            frames.push(rows.remove(&source.path).context("selected input is missing production review evidence")?);
+            frames.push(
+                rows.remove(&source.path)
+                    .context("selected input is missing production review evidence")?,
+            );
         }
     }
-    ensure!(rows.is_empty(), "production review contains inputs outside project membership");
-    frame_review::write(stage,&frames)
+    ensure!(
+        rows.is_empty(),
+        "production review contains inputs outside project membership"
+    );
+    frame_review::write(stage, &frames)
 }
 
 fn build(
@@ -709,7 +761,10 @@ fn build(
         )
     });
     if let Err(error) = result {
-        bail!("build failed; previous masters unchanged; partial diagnostics preserved at {}: {error:#}", stage.display());
+        bail!(
+            "build failed; previous masters unchanged; partial diagnostics preserved at {}: {error:#}",
+            stage.display()
+        );
     }
     verify_sources(snapshot).context("sources changed during build; result remains unpublished")?;
     build_review(&stage, snapshot)?;
@@ -759,7 +814,10 @@ fn build(
         snapshot.revision,
         published.display()
     );
-    println!("Frame review: {}", published.join("frame-review.html").display());
+    println!(
+        "Frame review: {}",
+        published.join("frame-review.html").display()
+    );
     for path in artifacts
         .keys()
         .filter(|p| p.ends_with(".fits") || p.ends_with(".tif"))
@@ -1057,16 +1115,20 @@ mod tests {
         assert_eq!(s.reference.id, "a");
         assert_eq!(apply_relinks(&mut s, &replacements).unwrap(), 0);
         let before = serde_json::to_vec(&s).unwrap();
-        assert!(apply_relinks(
-            &mut s,
-            &BTreeMap::from([("unknown".into(), PathBuf::from("x.fits"))])
-        )
-        .is_err());
-        assert!(apply_relinks(
-            &mut s,
-            &BTreeMap::from([("b".into(), PathBuf::from("moved/a.fits"))])
-        )
-        .is_err());
+        assert!(
+            apply_relinks(
+                &mut s,
+                &BTreeMap::from([("unknown".into(), PathBuf::from("x.fits"))])
+            )
+            .is_err()
+        );
+        assert!(
+            apply_relinks(
+                &mut s,
+                &BTreeMap::from([("b".into(), PathBuf::from("moved/a.fits"))])
+            )
+            .is_err()
+        );
         assert_eq!(serde_json::to_vec(&s).unwrap(), before);
         s.reference.id = "external".into();
         assert_eq!(

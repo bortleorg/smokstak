@@ -31,13 +31,13 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicU64, Ordering};
 
-use anyhow::{anyhow, ensure, Context, Result};
+use anyhow::{Context, Result, anyhow, ensure};
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 /// The catalog this was written against. A default only; the page can point
 /// somewhere else.
@@ -157,7 +157,9 @@ fn store_file() -> Option<PathBuf> {
 /// defaults, which is enough to show the page; changing anything refuses
 /// instead, so that the bookmarks in it are not written over.
 fn load() -> Store {
-    let Some(path) = store_file() else { return Store::default() };
+    let Some(path) = store_file() else {
+        return Store::default();
+    };
     load_from(&path).unwrap_or_else(|e| {
         log::warn!("{e}");
         Store::default()
@@ -170,8 +172,12 @@ fn load_from(path: &Path) -> Result<Store> {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Store::default()),
         Err(e) => return Err(anyhow!("{} could not be read: {e}", path.display())),
     };
-    serde_json::from_str(&text)
-        .map_err(|e| anyhow!("{} could not be read ({e}); mend it or delete it", path.display()))
+    serde_json::from_str(&text).map_err(|e| {
+        anyhow!(
+            "{} could not be read ({e}); mend it or delete it",
+            path.display()
+        )
+    })
 }
 
 /// Written beside itself and renamed into place, so a server closed part way
@@ -222,8 +228,14 @@ struct Reply {
 /// A value for curl's config file, quoted. A line break would end the line
 /// and begin another option, so a setting holding one is refused.
 fn quoted(s: &str) -> Result<String> {
-    ensure!(!s.contains(['\n', '\r', '\0']), "a catalog setting holds a line break");
-    Ok(format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\"")))
+    ensure!(
+        !s.contains(['\n', '\r', '\0']),
+        "a catalog setting holds a line break"
+    );
+    Ok(format!(
+        "\"{}\"",
+        s.replace('\\', "\\\\").replace('"', "\\\"")
+    ))
 }
 
 /// Everything curl is told about one request, credentials included.
@@ -232,10 +244,16 @@ fn curl_config(s: &Settings, url: &str) -> Result<String> {
     if !s.user.is_empty() || !s.password.is_empty() {
         // Always with the colon: without one curl asks for the password on
         // the terminal, which here is the config it is reading.
-        c.push_str(&format!("user = {}\n", quoted(&format!("{}:{}", s.user, s.password))?));
+        c.push_str(&format!(
+            "user = {}\n",
+            quoted(&format!("{}:{}", s.user, s.password))?
+        ));
     }
     if !s.api_key.is_empty() {
-        c.push_str(&format!("header = {}\n", quoted(&format!("X-API-Key: {}", s.api_key))?));
+        c.push_str(&format!(
+            "header = {}\n",
+            quoted(&format!("X-API-Key: {}", s.api_key))?
+        ));
     }
     Ok(c)
 }
@@ -282,7 +300,11 @@ fn get(s: &Settings, url: &str) -> Result<Reply> {
         let said = String::from_utf8_lossy(&out.stderr).trim().to_string();
         return Err(anyhow!(
             "could not reach the catalog: {}",
-            if said.is_empty() { format!("curl ended with {}", out.status) } else { said }
+            if said.is_empty() {
+                format!("curl ended with {}", out.status)
+            } else {
+                said
+            }
         ));
     }
     let mut body = out.stdout;
@@ -302,7 +324,8 @@ fn answer(r: Reply) -> Result<Value> {
         v["error"]["message"].as_str().map(str::to_string)
     };
     match r.status {
-        200 => serde_json::from_slice(&r.body).context("the catalog answered with something other than JSON"),
+        200 => serde_json::from_slice(&r.body)
+            .context("the catalog answered with something other than JSON"),
         // The server sits behind a login, and a request it does not accept is
         // sent to the login page rather than refused.
         300..=399 => Err(anyhow!(
@@ -313,14 +336,20 @@ fn answer(r: Reply) -> Result<Value> {
             "the catalog refused the request{}; the credentials are under Connection and paths",
             said().map(|m| format!(" ({m})")).unwrap_or_default()
         )),
-        code => Err(anyhow!("the catalog said: {}", said().unwrap_or_else(|| format!("HTTP {code}")))),
+        code => Err(anyhow!(
+            "the catalog said: {}",
+            said().unwrap_or_else(|| format!("HTTP {code}"))
+        )),
     }
 }
 
 /// The API root, checked.
 fn base_of(s: &Settings) -> Result<String> {
     let base = s.base.trim().trim_end_matches('/');
-    ensure!(!base.is_empty(), "no catalog is set up; its address goes under Connection and paths");
+    ensure!(
+        !base.is_empty(),
+        "no catalog is set up; its address goes under Connection and paths"
+    );
     ensure!(
         base.starts_with("https://") || base.starts_with("http://"),
         "the catalog's address should start with https://"
@@ -351,7 +380,9 @@ fn capabilities_of(spec: &Value, base: &str) -> Capabilities {
         .iter()
         .filter_map(|p| {
             let name = p["name"].as_str()?;
-            let said = p["description"].as_str().or_else(|| p["schema"]["description"].as_str());
+            let said = p["description"]
+                .as_str()
+                .or_else(|| p["schema"]["description"].as_str());
             Some((name.to_string(), said.unwrap_or_default().to_string()))
         })
         .filter(|(name, _)| !RESERVED.contains(&name.as_str()))
@@ -359,7 +390,10 @@ fn capabilities_of(spec: &Value, base: &str) -> Capabilities {
     let schemas = &spec["components"]["schemas"];
     Capabilities {
         base: base.to_string(),
-        version: spec["info"]["version"].as_str().unwrap_or_default().to_string(),
+        version: spec["info"]["version"]
+            .as_str()
+            .unwrap_or_default()
+            .to_string(),
         frame_params: params,
         screening: schemas["Frame"]["properties"]["sequence"].is_object()
             && ["trailed", "occluded", "satellite"]
@@ -379,10 +413,8 @@ static CAPABILITIES: Mutex<Option<Capabilities>> = Mutex::new(None);
 fn capabilities(s: &Settings, fresh: bool) -> Option<Capabilities> {
     let base = base_of(s).ok()?;
     let mut held = CAPABILITIES.lock().unwrap_or_else(|e| e.into_inner());
-    if !fresh {
-        if let Some(c) = held.as_ref().filter(|c| c.base == base) {
-            return Some(c.clone());
-        }
+    if !fresh && let Some(c) = held.as_ref().filter(|c| c.base == base) {
+        return Some(c.clone());
     }
     match get(s, &format!("{base}/openapi.json")).and_then(answer) {
         Ok(spec) => {
@@ -391,7 +423,9 @@ fn capabilities(s: &Settings, fresh: bool) -> Option<Capabilities> {
             Some(c)
         }
         Err(e) => {
-            log::warn!("the catalog's specification could not be read, so queries go unchecked: {e}");
+            log::warn!(
+                "the catalog's specification could not be read, so queries go unchecked: {e}"
+            );
             None
         }
     }
@@ -427,7 +461,9 @@ fn check_supported(q: &Query, caps: &Capabilities) -> Result<()> {
 fn encode(s: &str) -> String {
     s.bytes()
         .map(|b| match b {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => (b as char).to_string(),
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                (b as char).to_string()
+            }
             _ => format!("%{b:02X}"),
         })
         .collect()
@@ -436,7 +472,10 @@ fn encode(s: &str) -> String {
 /// A query's own parameters, checked, with the empty ones dropped.
 fn params_of(q: &Query) -> Result<Vec<(String, String)>> {
     for s in &q.screen {
-        ensure!(SCREENS.contains(&s.as_str()), "{s:?} is not one of the catalog's screens");
+        ensure!(
+            SCREENS.contains(&s.as_str()),
+            "{s:?} is not one of the catalog's screens"
+        );
     }
     let mut out = Vec::new();
     for (k, v) in &q.params {
@@ -444,7 +483,10 @@ fn params_of(q: &Query) -> Result<Vec<(String, String)>> {
             !k.is_empty() && k.bytes().all(|b| b.is_ascii_lowercase() || b == b'_'),
             "{k:?} is not the name of a catalog parameter"
         );
-        ensure!(!RESERVED.contains(&k.as_str()), "{k} is set by the page itself, not by a query");
+        ensure!(
+            !RESERVED.contains(&k.as_str()),
+            "{k} is set by the page itself, not by a query"
+        );
         if q.saved > 0 {
             // The saved query makes its own selection, and the server takes
             // nothing else beside it.
@@ -481,7 +523,10 @@ fn frames_url(base: &str, q: &Query, page: usize, screening: bool) -> Result<Str
     } else {
         format!("{base}/frames")
     };
-    let query: Vec<String> = pairs.iter().map(|(k, v)| format!("{k}={}", encode(v))).collect();
+    let query: Vec<String> = pairs
+        .iter()
+        .map(|(k, v)| format!("{k}={}", encode(v)))
+        .collect();
     Ok(format!("{path}?{}", query.join("&")))
 }
 
@@ -513,7 +558,8 @@ struct Listed {
 
 impl Listed {
     fn from_json(v: &Value) -> Self {
-        let text = |group: &str, leaf: &str| v[group][leaf].as_str().unwrap_or_default().to_string();
+        let text =
+            |group: &str, leaf: &str| v[group][leaf].as_str().unwrap_or_default().to_string();
         Self {
             id: v["id"].as_u64().unwrap_or(0),
             path: text("file", "path"),
@@ -528,10 +574,16 @@ impl Listed {
             satellite: v["quality"]["satellite"].as_bool(),
             grade: text("status", "grade"),
             anomaly: v["sequence"]["anomaly"].as_bool(),
-            deviations: ["star_drop", "hfr_rise", "empty_rise", "spread_rise", "flux_drop"]
-                .into_iter()
-                .filter_map(|k| Some((k, v["sequence"][k].as_f64()?)))
-                .collect(),
+            deviations: [
+                "star_drop",
+                "hfr_rise",
+                "empty_rise",
+                "spread_rise",
+                "flux_drop",
+            ]
+            .into_iter()
+            .filter_map(|k| Some((k, v["sequence"][k].as_f64()?)))
+            .collect(),
         }
     }
 }
@@ -557,10 +609,18 @@ fn fetch_all(s: &Settings, caps: Option<&Capabilities>, q: &Query) -> Result<(Ve
             "that matches {total} frames, which is most of the catalog rather than a target; \
              narrow it with a target, a filter or some dates"
         );
-        let items = doc["items"].as_array().map(Vec::as_slice).unwrap_or_default();
+        let items = doc["items"]
+            .as_array()
+            .map(Vec::as_slice)
+            .unwrap_or_default();
         // A frame indexed while this pages can push one already fetched onto
         // the next page; it is the same frame and is listed once.
-        out.extend(items.iter().map(Listed::from_json).filter(|f| seen.insert(f.id)));
+        out.extend(
+            items
+                .iter()
+                .map(Listed::from_json)
+                .filter(|f| seen.insert(f.id)),
+        );
         let pages = doc["pages"].as_u64().unwrap_or(1) as usize;
         if items.is_empty() || page >= pages {
             return Ok((out, total));
@@ -611,7 +671,11 @@ fn unjudged(frames: &[Listed], q: &Query) -> BTreeMap<&'static str, usize> {
 }
 
 fn file_name(f: &Listed) -> &str {
-    let p = if f.host_path.is_empty() { &f.path } else { &f.host_path };
+    let p = if f.host_path.is_empty() {
+        &f.path
+    } else {
+        &f.host_path
+    };
     p.rsplit(['/', '\\']).next().unwrap_or(p)
 }
 
@@ -670,8 +734,14 @@ fn locate(f: &Listed, rules: &[Rewrite], exists: impl Fn(&str) -> bool) -> Locat
         }
     }
     match tried.iter().find(|t| exists(t.as_str())) {
-        Some(t) => Located { path: t.clone(), found: true },
-        None => Located { path: tried.first().cloned().unwrap_or_default(), found: false },
+        Some(t) => Located {
+            path: t.clone(),
+            found: true,
+        },
+        None => Located {
+            path: tried.first().cloned().unwrap_or_default(),
+            found: false,
+        },
     }
 }
 
@@ -715,7 +785,11 @@ fn summarise(listed: &[Listed], located: &[Located], total: usize) -> Value {
             cameras.insert(&f.camera);
         }
         // `N/A` is what some capture software writes for a date it lacks.
-        if let Some(day) = f.date.get(..10).filter(|d| d.as_bytes()[0].is_ascii_digit()) {
+        if let Some(day) = f
+            .date
+            .get(..10)
+            .filter(|d| d.as_bytes()[0].is_ascii_digit())
+        {
             dates.insert(day);
             taken.insert(&f.date);
         }
@@ -732,7 +806,11 @@ fn summarise(listed: &[Listed], located: &[Located], total: usize) -> Value {
         .filter(|(_, l)| !l.found)
         .take(3)
         .map(|(f, l)| {
-            let named = if f.host_path.is_empty() { &f.path } else { &f.host_path };
+            let named = if f.host_path.is_empty() {
+                &f.path
+            } else {
+                &f.host_path
+            };
             json!({ "catalog": named, "tried": l.path })
         })
         .collect();
@@ -760,7 +838,11 @@ fn summarise(listed: &[Listed], located: &[Located], total: usize) -> Value {
 /// A name for a query's list when the page gives none.
 fn default_name(q: &Query) -> String {
     if q.saved > 0 {
-        return if q.saved_name.is_empty() { format!("catalog query {}", q.saved) } else { q.saved_name.clone() };
+        return if q.saved_name.is_empty() {
+            format!("catalog query {}", q.saved)
+        } else {
+            q.saved_name.clone()
+        };
     }
     let parts: Vec<&str> = ["object", "filter"]
         .iter()
@@ -768,7 +850,11 @@ fn default_name(q: &Query) -> String {
         .map(|s| s.trim())
         .filter(|s| !s.is_empty())
         .collect();
-    if parts.is_empty() { "catalog".into() } else { parts.join(" ") }
+    if parts.is_empty() {
+        "catalog".into()
+    } else {
+        parts.join(" ")
+    }
 }
 
 /// The query in a line, for the top of the list it made.
@@ -778,7 +864,11 @@ fn describe(q: &Query) -> String {
     if q.saved == 0 {
         return params;
     }
-    let also = if params.is_empty() { String::new() } else { format!(", {params}") };
+    let also = if params.is_empty() {
+        String::new()
+    } else {
+        format!(", {params}")
+    };
     format!("saved query {} ({}){also}", q.saved, q.saved_name)
 }
 
@@ -796,7 +886,11 @@ fn slug(name: &str) -> String {
     }
     let out: String = out.trim_matches(['-', '.']).chars().take(60).collect();
     let out = out.trim_end_matches(['-', '.']);
-    if out.is_empty() { "catalog".into() } else { out.to_string() }
+    if out.is_empty() {
+        "catalog".into()
+    } else {
+        out.to_string()
+    }
 }
 
 /// Write the frames found as a list the stacker reads.
@@ -837,15 +931,29 @@ fn write_list(name: &str, what: &str, paths: &[&str]) -> Result<PathBuf> {
 fn keep_bookmark(marks: &mut Vec<Bookmark>, name: &str, query: Query) {
     match marks.iter_mut().find(|b| b.name == name) {
         Some(b) if b.query == query => {}
-        Some(b) => *b = Bookmark { name: name.into(), query, ..Default::default() },
-        None => marks.push(Bookmark { name: name.into(), query, ..Default::default() }),
+        Some(b) => {
+            *b = Bookmark {
+                name: name.into(),
+                query,
+                ..Default::default()
+            }
+        }
+        None => marks.push(Bookmark {
+            name: name.into(),
+            query,
+            ..Default::default()
+        }),
     }
 }
 
 /// Record what a bookmark found, if the question asked was still its question.
 fn note_run(name: &str, query: &Query, frames: usize) -> Result<Option<Vec<Bookmark>>> {
     update(|st| {
-        let Some(b) = st.bookmarks.iter_mut().find(|b| b.name == name && b.query == *query) else {
+        let Some(b) = st
+            .bookmarks
+            .iter_mut()
+            .find(|b| b.name == name && b.query == *query)
+        else {
             return Ok(None);
         };
         b.last_frames = frames;
@@ -890,14 +998,23 @@ pub fn save_settings(body: &str) -> Result<String> {
     let req: SettingsRequest = serde_json::from_str(body)?;
     let base = req.base.trim().trim_end_matches('/').to_string();
     if !base.is_empty() {
-        base_of(&Settings { base: base.clone(), ..Default::default() })?;
+        base_of(&Settings {
+            base: base.clone(),
+            ..Default::default()
+        })?;
     }
     let rewrites: Vec<Rewrite> = req
         .rewrites
         .into_iter()
-        .map(|r| Rewrite { from: r.from.trim().into(), to: r.to.trim().into() })
+        .map(|r| Rewrite {
+            from: r.from.trim().into(),
+            to: r.to.trim().into(),
+        })
         .collect();
-    ensure!(rewrites.iter().all(|r| !r.from.is_empty()), "a path rewrite needs a folder to replace");
+    ensure!(
+        rewrites.iter().all(|r| !r.from.is_empty()),
+        "a path rewrite needs a folder to replace"
+    );
     update(|st| {
         st.settings.base = base;
         st.settings.user = req.user.trim().to_string();
@@ -921,7 +1038,11 @@ pub fn summary_json() -> Result<String> {
     // Read afresh whenever the page connects, which is when a catalog that has
     // just been upgraded ought to be noticed.
     let caps = capabilities(&s, true).unwrap_or_default();
-    let keys = |v: &Value| v.as_object().map(|m| m.keys().cloned().collect::<Vec<_>>()).unwrap_or_default();
+    let keys = |v: &Value| {
+        v.as_object()
+            .map(|m| m.keys().cloned().collect::<Vec<_>>())
+            .unwrap_or_default()
+    };
     Ok(json!({
         "ok": true,
         "total": doc["total"],
@@ -947,10 +1068,12 @@ pub fn saved_queries_json() -> Result<String> {
         .map(Vec::as_slice)
         .unwrap_or_default()
         .iter()
-        .map(|q| json!({
-            "id": q["id"], "name": q["name"], "folder": q["folder"],
-            "expression": q["query"]["expression"],
-        }))
+        .map(|q| {
+            json!({
+                "id": q["id"], "name": q["name"], "folder": q["folder"],
+                "expression": q["query"]["expression"],
+            })
+        })
         .collect();
     Ok(json!({ "ok": true, "queries": queries }).to_string())
 }
@@ -986,7 +1109,9 @@ pub fn frames(body: &str) -> Result<String> {
     let listed: Vec<Listed> = fetched
         .into_iter()
         .filter(|f| {
-            let Some(why) = screened_by(f, &req.query) else { return true };
+            let Some(why) = screened_by(f, &req.query) else {
+                return true;
+            };
             *screened.entry(why).or_default() += 1;
             if why == "anomaly" && example.is_none() {
                 example = Some(json!({ "file": file_name(f), "deviations": f.deviations }));
@@ -999,7 +1124,11 @@ pub fn frames(body: &str) -> Result<String> {
         .par_iter()
         .map(|f| locate(f, &settings.rewrites, |p| Path::new(p).is_file()))
         .collect();
-    let found: Vec<&str> = located.iter().filter(|l| l.found).map(|l| l.path.as_str()).collect();
+    let found: Vec<&str> = located
+        .iter()
+        .filter(|l| l.found)
+        .map(|l| l.path.as_str())
+        .collect();
 
     let mut reply = summarise(&listed, &located, total);
     reply["matched"] = json!(matched);
@@ -1027,7 +1156,11 @@ pub fn frames(body: &str) -> Result<String> {
             listed.len(),
             located[0].path
         );
-        let name = if req.name.trim().is_empty() { default_name(&req.query) } else { req.name.trim().to_string() };
+        let name = if req.name.trim().is_empty() {
+            default_name(&req.query)
+        } else {
+            req.name.trim().to_string()
+        };
         let list = write_list(&name, &describe(&req.query), &found)?;
         reply["list"] = json!(list.to_string_lossy());
     }
@@ -1091,7 +1224,11 @@ pub fn thumbnail(query: &str) -> Result<(String, Vec<u8>)> {
         None => format!("{base}/frames/{id}/thumbnail"),
     };
     let r = get(&s, &url)?;
-    ensure!(r.status == 200, "the catalog has no picture of frame {id} (HTTP {})", r.status);
+    ensure!(
+        r.status == 200,
+        "the catalog has no picture of frame {id} (HTTP {})",
+        r.status
+    );
     Ok(("image/jpeg".into(), r.body))
 }
 
@@ -1100,20 +1237,36 @@ mod tests {
     use super::*;
 
     fn rule(from: &str, to: &str) -> Rewrite {
-        Rewrite { from: from.into(), to: to.into() }
+        Rewrite {
+            from: from.into(),
+            to: to.into(),
+        }
     }
 
     #[test]
     fn a_catalog_folder_becomes_this_computers_folder() {
         let unix_to_drive = [rule("/mnt/astro/", r"Z:\")];
         assert_eq!(
-            rewrite("/mnt/astro/site1/2026-09-09/LIGHT/WR 134/f_0588.fits", &unix_to_drive).as_deref(),
+            rewrite(
+                "/mnt/astro/site1/2026-09-09/LIGHT/WR 134/f_0588.fits",
+                &unix_to_drive
+            )
+            .as_deref(),
             Some(r"Z:\site1\2026-09-09\LIGHT\WR 134\f_0588.fits")
         );
         // With and without the trailing separators, the join has exactly one.
-        assert_eq!(rewrite("/mnt/astro/a.fits", &[rule("/mnt/astro", "Z:")]).as_deref(), Some(r"Z:\a.fits"));
-        assert_eq!(rewrite("/mnt/astro/a.fits", &[rule("/mnt/astro", r"Z:\")]).as_deref(), Some(r"Z:\a.fits"));
-        assert_eq!(rewrite("/mnt/astro/a.fits", &[rule("/mnt/astro/", "Z:")]).as_deref(), Some(r"Z:\a.fits"));
+        assert_eq!(
+            rewrite("/mnt/astro/a.fits", &[rule("/mnt/astro", "Z:")]).as_deref(),
+            Some(r"Z:\a.fits")
+        );
+        assert_eq!(
+            rewrite("/mnt/astro/a.fits", &[rule("/mnt/astro", r"Z:\")]).as_deref(),
+            Some(r"Z:\a.fits")
+        );
+        assert_eq!(
+            rewrite("/mnt/astro/a.fits", &[rule("/mnt/astro/", "Z:")]).as_deref(),
+            Some(r"Z:\a.fits")
+        );
         // A drive to a share, whichever way the rule's separators lean and in
         // whatever case the catalog wrote the drive.
         assert_eq!(
@@ -1127,13 +1280,25 @@ mod tests {
         );
         // The first rule that matches, and none at all when none does.
         let two = [rule("/mnt/astro/site1/", "Y:"), rule("/mnt/astro/", "Z:")];
-        assert_eq!(rewrite("/mnt/astro/site1/a.fits", &two).as_deref(), Some(r"Y:\a.fits"));
+        assert_eq!(
+            rewrite("/mnt/astro/site1/a.fits", &two).as_deref(),
+            Some(r"Y:\a.fits")
+        );
         assert_eq!(rewrite("/mnt/other/a.fits", &two), None);
-        assert_eq!(rewrite("/mnt/astro/a.fits", &[rule("  ", "Z:")]), None, "an empty rule matches nothing");
+        assert_eq!(
+            rewrite("/mnt/astro/a.fits", &[rule("  ", "Z:")]),
+            None,
+            "an empty rule matches nothing"
+        );
     }
 
     fn frame(path: &str, host: &str) -> Listed {
-        Listed { id: 1, path: path.into(), host_path: host.into(), ..Default::default() }
+        Listed {
+            id: 1,
+            path: path.into(),
+            host_path: host.into(),
+            ..Default::default()
+        }
     }
 
     #[test]
@@ -1141,37 +1306,76 @@ mod tests {
         let f = frame("/mnt/astro/a.fits", r"Z:\a.fits");
         // The drive the server already rewrote for is mounted: no rules needed.
         let here = |p: &str| p == r"Z:\a.fits";
-        assert_eq!(locate(&f, &[], here), Located { path: r"Z:\a.fits".into(), found: true });
+        assert_eq!(
+            locate(&f, &[], here),
+            Located {
+                path: r"Z:\a.fits".into(),
+                found: true
+            }
+        );
 
         // It is not; a rule the reader wrote is looked at first.
         let share = |p: &str| p == r"\\nas\astro\a.fits";
         let rules = [rule(r"Z:\", r"\\nas\astro\")];
-        assert_eq!(locate(&f, &rules, share), Located { path: r"\\nas\astro\a.fits".into(), found: true });
+        assert_eq!(
+            locate(&f, &rules, share),
+            Located {
+                path: r"\\nas\astro\a.fits".into(),
+                found: true
+            }
+        );
 
         // Nowhere: the name reported is the one looked at first.
         let nowhere = |_: &str| false;
-        assert_eq!(locate(&f, &rules, nowhere), Located { path: r"\\nas\astro\a.fits".into(), found: false });
-        assert_eq!(locate(&f, &[], nowhere), Located { path: r"Z:\a.fits".into(), found: false });
+        assert_eq!(
+            locate(&f, &rules, nowhere),
+            Located {
+                path: r"\\nas\astro\a.fits".into(),
+                found: false
+            }
+        );
+        assert_eq!(
+            locate(&f, &[], nowhere),
+            Located {
+                path: r"Z:\a.fits".into(),
+                found: false
+            }
+        );
         // A catalog with no map configured names only its own path.
-        assert_eq!(locate(&frame("/mnt/astro/a.fits", ""), &[], nowhere).path, "/mnt/astro/a.fits");
+        assert_eq!(
+            locate(&frame("/mnt/astro/a.fits", ""), &[], nowhere).path,
+            "/mnt/astro/a.fits"
+        );
     }
 
     #[test]
     fn a_query_becomes_the_request_the_server_documents() {
         let mut q = Query::default();
         q.params.insert("object".into(), "WR 134".into());
-        q.params.insert("where".into(), "hfr < median(hfr) + 2*mad(hfr) && path not like '%reject%'".into());
+        q.params.insert(
+            "where".into(),
+            "hfr < median(hfr) + 2*mad(hfr) && path not like '%reject%'".into(),
+        );
         q.params.insert("date_to".into(), "  ".into());
         let url = frames_url("https://cat.example/api/v1", &q, 2, false).unwrap();
-        assert!(url.starts_with("https://cat.example/api/v1/frames?"), "{url}");
+        assert!(
+            url.starts_with("https://cat.example/api/v1/frames?"),
+            "{url}"
+        );
         assert!(url.contains("object=WR%20134"), "{url}");
         assert!(
             url.contains("where=hfr%20%3C%20median%28hfr%29%20%2B%202%2Amad%28hfr%29%20%26%26%20path%20not%20like%20%27%25reject%25%27"),
             "{url}"
         );
-        assert!(!url.contains("date_to"), "an empty field is not a filter: {url}");
+        assert!(
+            !url.contains("date_to"),
+            "an empty field is not a filter: {url}"
+        );
         assert!(url.contains("sort=capture.date_obs"), "{url}");
-        assert!(url.contains("page=2") && url.contains("per_page=500"), "{url}");
+        assert!(
+            url.contains("page=2") && url.contains("per_page=500"),
+            "{url}"
+        );
 
         // Parameters the page sets are not the query's to set.
         let mut bad = Query::default();
@@ -1179,43 +1383,88 @@ mod tests {
         assert!(frames_url("https://c", &bad, 1, false).is_err());
         let mut odd = Query::default();
         odd.params.insert("x&y".into(), "1".into());
-        assert!(frames_url("https://c", &odd, 1, false).is_err(), "a name cannot smuggle in another parameter");
+        assert!(
+            frames_url("https://c", &odd, 1, false).is_err(),
+            "a name cannot smuggle in another parameter"
+        );
 
         // A query saved in the catalog is asked by id, and takes nothing else.
-        let saved = Query { saved: 3, saved_name: "Rosette Ha".into(), ..Default::default() };
+        let saved = Query {
+            saved: 3,
+            saved_name: "Rosette Ha".into(),
+            ..Default::default()
+        };
         let url = frames_url("https://c/api/v1", &saved, 1, false).unwrap();
-        assert!(url.starts_with("https://c/api/v1/queries/3/frames?"), "{url}");
+        assert!(
+            url.starts_with("https://c/api/v1/queries/3/frames?"),
+            "{url}"
+        );
         let mut extra = saved.clone();
         extra.params.insert("filter".into(), "Ha".into());
         assert!(frames_url("https://c", &extra, 1, false).is_err());
         extra.params.clear();
-        extra.params.insert("include_rejected".into(), "true".into());
-        assert!(frames_url("https://c", &extra, 1, false).unwrap().contains("include_rejected=true"));
+        extra
+            .params
+            .insert("include_rejected".into(), "true".into());
+        assert!(
+            frames_url("https://c", &extra, 1, false)
+                .unwrap()
+                .contains("include_rejected=true")
+        );
     }
 
     #[test]
     fn credentials_go_to_curl_as_config_and_cannot_break_out_of_it() {
-        let s = Settings { user: "astro".into(), password: "da\"ta\\".into(), ..Default::default() };
+        let s = Settings {
+            user: "astro".into(),
+            password: "da\"ta\\".into(),
+            ..Default::default()
+        };
         let c = curl_config(&s, "https://c/api/v1/catalog").unwrap();
-        assert_eq!(c, "url = \"https://c/api/v1/catalog\"\nuser = \"astro:da\\\"ta\\\\\"\n");
+        assert_eq!(
+            c,
+            "url = \"https://c/api/v1/catalog\"\nuser = \"astro:da\\\"ta\\\\\"\n"
+        );
         // A line break would begin a second option of the password's choosing.
-        let s = Settings { password: "x\nurl = \"https://elsewhere\"".into(), ..Default::default() };
+        let s = Settings {
+            password: "x\nurl = \"https://elsewhere\"".into(),
+            ..Default::default()
+        };
         assert!(curl_config(&s, "https://c").is_err());
         // No credentials, no user line.
-        assert!(!curl_config(&Settings::default(), "https://c").unwrap().contains("user"));
+        assert!(
+            !curl_config(&Settings::default(), "https://c")
+                .unwrap()
+                .contains("user")
+        );
     }
 
     #[test]
     fn a_login_page_is_a_refusal_and_not_an_answer() {
-        let e = answer(Reply { status: 302, body: b"<html>".to_vec() }).unwrap_err();
+        let e = answer(Reply {
+            status: 302,
+            body: b"<html>".to_vec(),
+        })
+        .unwrap_err();
         assert!(e.to_string().contains("not accepted"), "{e}");
         let e = answer(Reply {
             status: 400,
-            body: br#"{"error":{"code":"invalid_expression","message":"unknown variable hfrr"}}"#.to_vec(),
+            body: br#"{"error":{"code":"invalid_expression","message":"unknown variable hfrr"}}"#
+                .to_vec(),
         })
         .unwrap_err();
-        assert!(e.to_string().contains("unknown variable hfrr"), "the server's own words: {e}");
-        assert_eq!(answer(Reply { status: 200, body: b"{\"total\":3}".to_vec() }).unwrap()["total"], 3);
+        assert!(
+            e.to_string().contains("unknown variable hfrr"),
+            "the server's own words: {e}"
+        );
+        assert_eq!(
+            answer(Reply {
+                status: 200,
+                body: b"{\"total\":3}".to_vec()
+            })
+            .unwrap()["total"],
+            3
+        );
     }
 
     #[test]
@@ -1231,9 +1480,17 @@ mod tests {
             ]}"#,
         )
         .unwrap();
-        let listed: Vec<Listed> = page["items"].as_array().unwrap().iter().map(Listed::from_json).collect();
+        let listed: Vec<Listed> = page["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(Listed::from_json)
+            .collect();
         assert_eq!(listed[0].host_path, r"Z:\a.fits");
-        assert_eq!(listed[2].camera, "", "null is unknown, not a camera called null");
+        assert_eq!(
+            listed[2].camera, "",
+            "null is unknown, not a camera called null"
+        );
 
         // Only the drive is here, and one frame is missing from it.
         let located: Vec<Located> = listed
@@ -1274,7 +1531,11 @@ mod tests {
         q.params.insert("object".into(), "WR 134".into());
         q.params.insert("filter".into(), "Ha".into());
         assert_eq!(default_name(&q), "WR 134 Ha");
-        let saved = Query { saved: 3, saved_name: "Rosette / Rosette Ha".into(), ..Default::default() };
+        let saved = Query {
+            saved: 3,
+            saved_name: "Rosette / Rosette Ha".into(),
+            ..Default::default()
+        };
         assert_eq!(default_name(&saved), "Rosette / Rosette Ha");
     }
 
@@ -1313,11 +1574,17 @@ mod tests {
         marks[0].last_frames = 412;
         keep_bookmark(&mut marks, "Rosette Ha", q.clone());
         assert_eq!(marks.len(), 1);
-        assert_eq!(marks[0].last_frames, 412, "the same question, the same record");
+        assert_eq!(
+            marks[0].last_frames, 412,
+            "the same question, the same record"
+        );
         q.params.insert("rejected".into(), "false".into());
         keep_bookmark(&mut marks, "Rosette Ha", q.clone());
         assert_eq!(marks.len(), 1);
-        assert_eq!(marks[0].last_frames, 0, "a different question has not been asked yet");
+        assert_eq!(
+            marks[0].last_frames, 0,
+            "a different question has not been asked yet"
+        );
         assert_eq!(marks[0].query, q);
     }
 
@@ -1326,7 +1593,11 @@ mod tests {
         let dir = std::env::temp_dir().join("smokstak-catalog-store-test");
         let _ = std::fs::remove_dir_all(&dir);
         let file = dir.join("catalog.json");
-        assert_eq!(load_from(&file).unwrap().settings.base, DEFAULT_BASE, "nothing kept yet");
+        assert_eq!(
+            load_from(&file).unwrap().settings.base,
+            DEFAULT_BASE,
+            "nothing kept yet"
+        );
 
         let mut st = Store::default();
         st.settings.user = "astro".into();
@@ -1370,8 +1641,14 @@ mod tests {
         assert_eq!(
             caps.frame_params,
             [
-                ("object".to_string(), "OBJECT contains this text.".to_string()),
-                ("occluded".to_string(), "true = part of the field blocked.".to_string()),
+                (
+                    "object".to_string(),
+                    "OBJECT contains this text.".to_string()
+                ),
+                (
+                    "occluded".to_string(),
+                    "true = part of the field blocked.".to_string()
+                ),
             ],
             "what the page sets itself is not offered"
         );
@@ -1391,14 +1668,23 @@ mod tests {
             "https://c",
         );
         assert!(!old.screening && !old.preview);
-        let screened = Query { screen: ["anomaly".to_string()].into(), ..Default::default() };
+        let screened = Query {
+            screen: ["anomaly".to_string()].into(),
+            ..Default::default()
+        };
         assert!(check_supported(&screened, &old).is_err());
         assert!(check_supported(&screened, &caps).is_ok());
 
         // Screening asks for the verdicts and the session comparison.
         let url = frames_url("https://c/api/v1", &screened, 1, true).unwrap();
-        assert!(url.contains("expand=sequence") && url.contains("quality.occluded"), "{url}");
-        let unknown = Query { screen: ["cloudy".to_string()].into(), ..Default::default() };
+        assert!(
+            url.contains("expand=sequence") && url.contains("quality.occluded"),
+            "{url}"
+        );
+        let unknown = Query {
+            screen: ["cloudy".to_string()].into(),
+            ..Default::default()
+        };
         assert!(frames_url("https://c", &unknown, 1, false).is_err());
     }
 
@@ -1416,9 +1702,17 @@ mod tests {
             ]"#,
         )
         .unwrap();
-        let frames: Vec<Listed> = page.as_array().unwrap().iter().map(Listed::from_json).collect();
+        let frames: Vec<Listed> = page
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(Listed::from_json)
+            .collect();
         assert_eq!(frames[0].deviations.get("star_drop"), Some(&0.25));
-        assert!(!frames[0].deviations.contains_key("flux_drop"), "null is not a measurement");
+        assert!(
+            !frames[0].deviations.contains_key("flux_drop"),
+            "null is not a measurement"
+        );
 
         let mut q = Query {
             screen: ["anomaly", "trailed", "occluded"].map(String::from).into(),
@@ -1435,11 +1729,15 @@ mod tests {
         assert_eq!(screened_by(&frames[2], &q), Some("rejected"));
         q.screen.clear();
         q.params.clear();
-        assert!(frames.iter().all(|f| screened_by(f, &q).is_none()), "nothing asked, nothing left out");
+        assert!(
+            frames.iter().all(|f| screened_by(f, &q).is_none()),
+            "nothing asked, nothing left out"
+        );
 
         // A bookmark kept before screening existed asks for none.
         let old: Bookmark =
-            serde_json::from_str(r#"{"name":"Rosette Ha","query":{"params":{"filter":"Ha"}}}"#).unwrap();
+            serde_json::from_str(r#"{"name":"Rosette Ha","query":{"params":{"filter":"Ha"}}}"#)
+                .unwrap();
         assert!(old.query.screen.is_empty());
     }
 }

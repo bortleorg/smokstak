@@ -58,7 +58,10 @@ pub struct Correlator {
 
 impl Correlator {
     pub fn new(n: usize) -> Self {
-        assert!(n >= 8 && n % 2 == 0, "patch size must be even and >= 8");
+        assert!(
+            n >= 8 && n.is_multiple_of(2),
+            "patch size must be even and >= 8"
+        );
         let mut planner = FftPlanner::<f32>::new();
         let fwd = planner.plan_fft_forward(n);
         let inv = planner.plan_fft_inverse(n);
@@ -71,9 +74,7 @@ impl Correlator {
         // scene.
         let mut window = vec![0.0f32; n * n];
         let w1: Vec<f32> = (0..n)
-            .map(|i| {
-                0.5 - 0.5 * (2.0 * std::f32::consts::PI * i as f32 / (n - 1) as f32).cos()
-            })
+            .map(|i| 0.5 - 0.5 * (2.0 * std::f32::consts::PI * i as f32 / (n - 1) as f32).cos())
             .collect();
         for y in 0..n {
             for x in 0..n {
@@ -95,10 +96,13 @@ impl Correlator {
         let half = (n / 2) as i64;
         let mut etab = vec![Complex32::new(0.0, 0.0); n * k];
         for fi in 0..n {
-            let f = if fi as i64 >= half { fi as i64 - n as i64 } else { fi as i64 };
+            let f = if fi as i64 >= half {
+                fi as i64 - n as i64
+            } else {
+                fi as i64
+            };
             for (ui, &off) in offsets.iter().enumerate() {
-                etab[fi * k + ui] =
-                    Complex32::from_polar(1.0, tau * f as f32 * off / n as f32);
+                etab[fi * k + ui] = Complex32::from_polar(1.0, tau * f as f32 * off / n as f32);
             }
         }
 
@@ -141,7 +145,11 @@ impl Correlator {
                 if c.re == 0.0 && c.im == 0.0 {
                     continue;
                 }
-                let f = if fx as i64 >= nn / 2 { fx as i64 - nn } else { fx as i64 };
+                let f = if fx as i64 >= nn / 2 {
+                    fx as i64 - nn
+                } else {
+                    fx as i64
+                };
                 let phase = self.wtab[(f * ix).rem_euclid(nn) as usize];
                 let base = c * phase;
                 let e = &self.etab[fx * k..(fx + 1) * k];
@@ -159,9 +167,12 @@ impl Correlator {
         for vi in 0..k {
             acc.iter_mut().for_each(|c| *c = Complex32::new(0.0, 0.0));
             for fy in 0..n {
-                let f = if fy as i64 >= nn / 2 { fy as i64 - nn } else { fy as i64 };
-                let phase = self.wtab[(f * iy).rem_euclid(nn) as usize]
-                    * self.etab[fy * k + vi];
+                let f = if fy as i64 >= nn / 2 {
+                    fy as i64 - nn
+                } else {
+                    fy as i64
+                };
+                let phase = self.wtab[(f * iy).rem_euclid(nn) as usize] * self.etab[fy * k + vi];
                 let t = &self.up_t[fy * k..(fy + 1) * k];
                 for ui in 0..k {
                     acc[ui] += t[ui] * phase;
@@ -188,7 +199,8 @@ impl Correlator {
         let buf = if which { &mut self.a } else { &mut self.b };
         // Rows.
         for y in 0..n {
-            self.fwd.process_with_scratch(&mut buf[y * n..(y + 1) * n], &mut self.scratch);
+            self.fwd
+                .process_with_scratch(&mut buf[y * n..(y + 1) * n], &mut self.scratch);
         }
         // Columns, via transpose-free strided gather.
         let mut col = vec![Complex32::new(0.0, 0.0); n];
@@ -206,7 +218,8 @@ impl Correlator {
     fn ifft2_a(&mut self) {
         let n = self.n;
         for y in 0..n {
-            self.inv.process_with_scratch(&mut self.a[y * n..(y + 1) * n], &mut self.scratch);
+            self.inv
+                .process_with_scratch(&mut self.a[y * n..(y + 1) * n], &mut self.scratch);
         }
         let mut col = vec![Complex32::new(0.0, 0.0); n];
         for x in 0..n {
@@ -272,9 +285,17 @@ impl Correlator {
         let half = n as i64 / 2;
         let cutoff = 0.45f32 * n as f32;
         for y in 0..n {
-            let fy = if y as i64 > half { y as f32 - n as f32 } else { y as f32 };
+            let fy = if y as i64 > half {
+                y as f32 - n as f32
+            } else {
+                y as f32
+            };
             for x in 0..n {
-                let fx = if x as i64 > half { x as f32 - n as f32 } else { x as f32 };
+                let fx = if x as i64 > half {
+                    x as f32 - n as f32
+                } else {
+                    x as f32
+                };
                 let i = y * n + x;
                 let ra = self.a[i];
                 let tb = self.b[i];
@@ -362,7 +383,9 @@ impl Correlator {
         let dy = iy as f32 + sy;
 
         if std::env::var_os("SR_DEBUG_CORR").is_some() {
-            eprintln!("peak idx=({px},{py}) ix={ix} iy={iy} sx={sx} sy={sy} best={best} second={second}");
+            eprintln!(
+                "peak idx=({px},{py}) ix={ix} iy={iy} sx={sx} sy={sy} best={best} second={second}"
+            );
         }
         Some(PatchShift {
             dx,
@@ -418,7 +441,9 @@ mod tests {
         let mut v = vec![0.5f32; n * n];
         let mut seed = 0x1234_5678u64;
         let mut next = || {
-            seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            seed = seed
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
             ((seed >> 33) as f32 / (1u32 << 31) as f32) - 0.5
         };
         // Frequencies up to ~0.35 cycles/px keep the content inside the
@@ -442,34 +467,52 @@ mod tests {
 
     #[test]
     fn mono_proxy_tracks_sky_instead_of_stationary_sensor_spikes() {
-        use sr_core::{cfa::CfaPattern, frame::{RawFrame, NoiseModel}, samples::{SamplePlane, DefectMask}};
+        use sr_core::{
+            cfa::CfaPattern,
+            frame::{NoiseModel, RawFrame},
+            samples::{DefectMask, SamplePlane},
+        };
         let frame = |ox: f32, oy: f32| {
             let mut data = vec![0.01; 128 * 128];
             for (sx, sy) in [(28.0, 35.0), (77.0, 43.0), (51.0, 87.0), (98.0, 94.0)] {
                 for y in 0..128 {
                     for x in 0..128 {
-                        let r2 = (x as f32-sx-ox).powi(2)+(y as f32-sy-oy).powi(2);
-                        data[y*128+x] += 0.08*(-r2/4.5).exp();
+                        let r2 = (x as f32 - sx - ox).powi(2) + (y as f32 - sy - oy).powi(2);
+                        data[y * 128 + x] += 0.08 * (-r2 / 4.5).exp();
                     }
                 }
             }
             for i in 0..80 {
-                let x = 4+(i*37)%120;
-                let y = 4+(i*53)%120;
-                data[y*128+x] = 0.8;
+                let x = 4 + (i * 37) % 120;
+                let y = 4 + (i * 53) % 120;
+                data[y * 128 + x] = 0.8;
             }
-            RawFrame { width:128, height:128, cfa:CfaPattern::MONO,
-                samples:SamplePlane::from_normalised(128,128,data),
-                defects:DefectMask::none(128,128), noise:NoiseModel::nominal(100.0,65535.0),
-                metadata:Default::default() }
+            RawFrame {
+                width: 128,
+                height: 128,
+                cfa: CfaPattern::MONO,
+                samples: SamplePlane::from_normalised(128, 128, data),
+                defects: DefectMask::none(128, 128),
+                noise: NoiseModel::nominal(100.0, 65535.0),
+                metadata: Default::default(),
+            }
         };
-        let (a,b) = (frame(0.0,0.0),frame(6.0,-4.0));
+        let (a, b) = (frame(0.0, 0.0), frame(6.0, -4.0));
         let mut c = Correlator::new(64);
-        let old = c.shift(&a.guide_rgb().luma().data,&b.guide_rgb().luma().data).unwrap();
-        assert!(old.magnitude()<0.2,"fixture must reproduce stationary-pattern lock: {old:?}");
-        let corrected = c.shift(&a.registration_luma().data,&b.registration_luma().data).unwrap();
-        assert!((corrected.dx+3.0).abs()<0.2 && (corrected.dy-2.0).abs()<0.2,
-                "sky shift was not recovered: {corrected:?}");
+        let old = c
+            .shift(&a.guide_rgb().luma().data, &b.guide_rgb().luma().data)
+            .unwrap();
+        assert!(
+            old.magnitude() < 0.2,
+            "fixture must reproduce stationary-pattern lock: {old:?}"
+        );
+        let corrected = c
+            .shift(&a.registration_luma().data, &b.registration_luma().data)
+            .unwrap();
+        assert!(
+            (corrected.dx + 3.0).abs() < 0.2 && (corrected.dy - 2.0).abs() < 0.2,
+            "sky shift was not recovered: {corrected:?}"
+        );
     }
 
     #[test]

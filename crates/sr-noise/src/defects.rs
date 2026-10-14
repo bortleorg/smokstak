@@ -88,13 +88,22 @@ const PERSISTENT_MONO_SIGMA: f32 = 4.0;
 
 /// Per-exposure evidence for a changing mono hot pixel. Neighbor checks must
 /// happen before temporal aggregation: median neighbors can hide a moving PSF.
-fn isolated_mono_hot(frame: &RawFrame, x: usize, y: usize, d: f32, local: f32, noise: &NoiseModel) -> bool {
+fn isolated_mono_hot(
+    frame: &RawFrame,
+    x: usize,
+    y: usize,
+    d: f32,
+    local: f32,
+    noise: &NoiseModel,
+) -> bool {
     if d <= 0.0 || d * d < PERSISTENT_MONO_SIGMA * PERSISTENT_MONO_SIGMA * noise.variance(local) {
         return false;
     }
     for ny in y - 1..=y + 1 {
         for nx in x - 1..=x + 1 {
-            if nx == x && ny == y { continue; }
+            if nx == x && ny == y {
+                continue;
+            }
             let i = ny * frame.width + nx;
             let v = frame.value_at(i);
             if !frame.usable_value(i, v) || d < ISOLATION * (v - local).abs() {
@@ -193,20 +202,27 @@ pub fn find_fixed_pattern(frames: &[&RawFrame], noise: &NoiseModel) -> (DefectMa
     find_fixed_pattern_tiled(frames, noise, 128)
 }
 
-fn find_fixed_pattern_tiled(frames: &[&RawFrame], noise: &NoiseModel, tile_width: usize) -> (DefectMask, DefectReport) {
+fn find_fixed_pattern_tiled(
+    frames: &[&RawFrame],
+    noise: &NoiseModel,
+    tile_width: usize,
+) -> (DefectMask, DefectReport) {
     let (w, h) = (frames[0].width, frames[0].height);
     let mut mask = DefectMask::none(w, h);
     if frames.len() < MIN_FRAMES || w < 8 || h < 8 {
         return (mask, DefectReport::default());
     }
-    let variable_mono = frames.len() >= MIN_VARIABLE_FRAMES && frames.iter().all(|f| f.cfa.is_mono());
+    let variable_mono =
+        frames.len() >= MIN_VARIABLE_FRAMES && frames.iter().all(|f| f.cfa.is_mono());
 
     // One pass per band over the whole burst, so that each frame is read in
     // row order rather than the burst being strided through per site.
     // Bound scratch by a spatial tile, rather than the entire sensor width.
     // Two-pixel halos preserve the original same-colour isolation decision.
-    let tiles: Vec<(usize, usize)> = (2..h - 2).step_by(BAND)
-        .flat_map(|y| (4..w - 4).step_by(tile_width).map(move |x| (x, y))).collect();
+    let tiles: Vec<(usize, usize)> = (2..h - 2)
+        .step_by(BAND)
+        .flat_map(|y| (4..w - 4).step_by(tile_width).map(move |x| (x, y)))
+        .collect();
     let found: Vec<Vec<(usize, bool)>> = tiles
         .par_iter()
         .map(|&(x0, y0)| {
@@ -290,15 +306,11 @@ fn find_fixed_pattern_tiled(frames: &[&RawFrame], noise: &NoiseModel, tile_width
                     }
                     // Isolation: a defect is one site, and its same-colour
                     // neighbours are two away in each direction.
-                    let worst_neighbour = [
-                        med[k - 2],
-                        med[k + 2],
-                        med[k - 2 * span],
-                        med[k + 2 * span],
-                    ]
-                    .iter()
-                    .map(|v| v.abs())
-                    .fold(0.0f32, f32::max);
+                    let worst_neighbour =
+                        [med[k - 2], med[k + 2], med[k - 2 * span], med[k + 2 * span]]
+                            .iter()
+                            .map(|v| v.abs())
+                            .fold(0.0f32, f32::max);
                     if m.abs() < ISOLATION * worst_neighbour {
                         continue;
                     }
@@ -358,7 +370,10 @@ mod tests {
                 let (ox, oy) = if f == 0 {
                     (0, 0)
                 } else {
-                    ((f as i32 % (2 * dither + 1)) - dither, (f as i32 / 3 % (2 * dither + 1)) - dither)
+                    (
+                        (f as i32 % (2 * dither + 1)) - dither,
+                        (f as i32 / 3 % (2 * dither + 1)) - dither,
+                    )
                 };
                 let mut data = vec![0u16; N * N];
                 for y in 0..N {
@@ -385,12 +400,7 @@ mod tests {
                 RawFrame {
                     width: N,
                     height: N,
-                    samples: SamplePlane::from_u16(
-                        N,
-                        N,
-                        data,
-                        Levels::new([0.0; 4], [65535.0; 4]),
-                    ),
+                    samples: SamplePlane::from_u16(N, N, data, Levels::new([0.0; 4], [65535.0; 4])),
                     cfa: CfaPattern::RGGB,
                     defects: DefectMask::none(N, N),
                     noise: noise(),
@@ -402,14 +412,27 @@ mod tests {
 
     #[test]
     fn tiled_scan_preserves_band_decisions_at_tile_seams() {
-        let hot = [20*N+11, 30*N+12, 40*N+13, 50*N+19, 60*N+20, 70*N+21];
-        let mut frames = burst(24, &[(24,24),(44,30)], &hot, 3);
+        let hot = [
+            20 * N + 11,
+            30 * N + 12,
+            40 * N + 13,
+            50 * N + 19,
+            60 * N + 20,
+            70 * N + 21,
+        ];
+        let mut frames = burst(24, &[(24, 24), (44, 30)], &hot, 3);
         for mono in [false, true] {
-            if mono { for frame in &mut frames { frame.cfa = CfaPattern::MONO; } }
+            if mono {
+                for frame in &mut frames {
+                    frame.cfa = CfaPattern::MONO;
+                }
+            }
             let references = refs(&frames);
             let (expected, report) = find_fixed_pattern_tiled(&references, &noise(), N);
             let (actual, tiled_report) = find_fixed_pattern_tiled(&references, &noise(), 8);
-            for i in 0..N*N { assert_eq!(expected.get(i), actual.get(i), "site {i}"); }
+            for i in 0..N * N {
+                assert_eq!(expected.get(i), actual.get(i), "site {i}");
+            }
             assert_eq!(report.hot, tiled_report.hot);
             assert_eq!(report.cold, tiled_report.cold);
             assert!(actual.count() >= hot.len());
@@ -418,11 +441,11 @@ mod tests {
 
     #[test]
     fn persistent_mono_warm_pixel_below_single_frame_threshold_is_found() {
-        let mut frames = burst(24, &[(20,20),(44,30)], &[], 3);
-        let warm = 50*N+15;
-        let transient = 75*N+75;
-        let broad = 25*N+65;
-        for (f,frame) in frames.iter_mut().enumerate() {
+        let mut frames = burst(24, &[(20, 20), (44, 30)], &[], 3);
+        let warm = 50 * N + 15;
+        let transient = 75 * N + 75;
+        let broad = 25 * N + 65;
+        for (f, frame) in frames.iter_mut().enumerate() {
             frame.cfa = CfaPattern::MONO;
             let data = match &mut frame.samples.data {
                 sr_core::samples::SampleData::U16(v) => v,
@@ -430,31 +453,48 @@ mod tests {
             };
             // About six sigma in each exposure, with unambiguous isolation.
             // Reset only these neighborhoods to avoid stochastic boundary cases.
-            for center in [warm,transient,broad] {
-                for dy in -2isize..=2 { for dx in -2isize..=2 {
-                    data[(center as isize+dy*N as isize+dx) as usize]=6000;
-                }}
+            for center in [warm, transient, broad] {
+                for dy in -2isize..=2 {
+                    for dx in -2isize..=2 {
+                        data[(center as isize + dy * N as isize + dx) as usize] = 6000;
+                    }
+                }
             }
-            data[warm]=6950;
-            if f<4 { data[transient]=6950; }
-            for i in [broad,broad+1,broad+N,broad+N+1] { data[i]=6950; }
+            data[warm] = 6950;
+            if f < 4 {
+                data[transient] = 6950;
+            }
+            for i in [broad, broad + 1, broad + N, broad + N + 1] {
+                data[i] = 6950;
+            }
         }
-        let (mask,report)=find_fixed_pattern(&refs(&frames),&noise());
+        let (mask, report) = find_fixed_pattern(&refs(&frames), &noise());
         assert!(mask.get(warm), "persistent isolated warm signal was missed");
-        assert_eq!(report.hot,1, "moving stars, broad structure and transients must survive");
-        for frame in &mut frames { frame.cfa=CfaPattern::RGGB; }
-        assert!(!find_fixed_pattern(&refs(&frames),&noise()).0.get(warm));
-        for frame in &mut frames { frame.cfa=CfaPattern::MONO; }
-        assert!(!find_fixed_pattern(&refs(&frames[..15]),&noise()).0.get(warm));
+        assert_eq!(
+            report.hot, 1,
+            "moving stars, broad structure and transients must survive"
+        );
+        for frame in &mut frames {
+            frame.cfa = CfaPattern::RGGB;
+        }
+        assert!(!find_fixed_pattern(&refs(&frames), &noise()).0.get(warm));
+        for frame in &mut frames {
+            frame.cfa = CfaPattern::MONO;
+        }
+        assert!(
+            !find_fixed_pattern(&refs(&frames[..15]), &noise())
+                .0
+                .get(warm)
+        );
     }
 
     #[test]
     fn persistent_mono_four_sigma_site_requires_repeated_isolation() {
-        let mut frames = burst(24, &[(20,20),(44,30)], &[], 3);
-        let warm = 50*N+15;
-        let transient = 75*N+75;
-        let broad = 25*N+65;
-        for (f,frame) in frames.iter_mut().enumerate() {
+        let mut frames = burst(24, &[(20, 20), (44, 30)], &[], 3);
+        let warm = 50 * N + 15;
+        let transient = 75 * N + 75;
+        let broad = 25 * N + 65;
+        for (f, frame) in frames.iter_mut().enumerate() {
             frame.cfa = CfaPattern::MONO;
             let data = match &mut frame.samples.data {
                 sr_core::samples::SampleData::U16(v) => v,
@@ -462,22 +502,39 @@ mod tests {
             };
             // About four-and-a-half sigma in each exposure, with unambiguous isolation.
             // Reset only these neighborhoods to avoid stochastic boundary cases.
-            for center in [warm,transient,broad] {
-                for dy in -2isize..=2 { for dx in -2isize..=2 {
-                    data[(center as isize+dy*N as isize+dx) as usize]=6000;
-                }}
+            for center in [warm, transient, broad] {
+                for dy in -2isize..=2 {
+                    for dx in -2isize..=2 {
+                        data[(center as isize + dy * N as isize + dx) as usize] = 6000;
+                    }
+                }
             }
-            data[warm]=6700;
-            if f<4 { data[transient]=6700; }
-            for i in [broad,broad+1,broad+N,broad+N+1] { data[i]=6700; }
+            data[warm] = 6700;
+            if f < 4 {
+                data[transient] = 6700;
+            }
+            for i in [broad, broad + 1, broad + N, broad + N + 1] {
+                data[i] = 6700;
+            }
         }
-        let (mask,report)=find_fixed_pattern(&refs(&frames),&noise());
+        let (mask, report) = find_fixed_pattern(&refs(&frames), &noise());
         assert!(mask.get(warm), "persistent isolated warm signal was missed");
-        assert_eq!(report.hot,1, "moving stars, broad structure and transients must survive");
-        for frame in &mut frames { frame.cfa=CfaPattern::RGGB; }
-        assert!(!find_fixed_pattern(&refs(&frames),&noise()).0.get(warm));
-        for frame in &mut frames { frame.cfa=CfaPattern::MONO; }
-        assert!(!find_fixed_pattern(&refs(&frames[..15]),&noise()).0.get(warm));
+        assert_eq!(
+            report.hot, 1,
+            "moving stars, broad structure and transients must survive"
+        );
+        for frame in &mut frames {
+            frame.cfa = CfaPattern::RGGB;
+        }
+        assert!(!find_fixed_pattern(&refs(&frames), &noise()).0.get(warm));
+        for frame in &mut frames {
+            frame.cfa = CfaPattern::MONO;
+        }
+        assert!(
+            !find_fixed_pattern(&refs(&frames[..15]), &noise())
+                .0
+                .get(warm)
+        );
     }
 
     #[test]
@@ -500,16 +557,25 @@ mod tests {
             for i in [broad, broad + 1, broad + N, broad + N + 1] {
                 data[i] = 6000 + amplitude;
             }
-            if f < 4 { data[transient] = 30000; }
+            if f < 4 {
+                data[transient] = 30000;
+            }
         }
         let (mask, report) = find_fixed_pattern(&refs(&frames), &noise());
         assert!(mask.get(hot));
-        assert_eq!(report.hot, 1, "moving stars and the broad source must survive");
+        assert_eq!(
+            report.hot, 1,
+            "moving stars and the broad source must survive"
+        );
         assert!(!mask.get(transient));
-        for i in [broad, broad + 1, broad + N, broad + N + 1] { assert!(!mask.get(i)); }
+        for i in [broad, broad + 1, broad + N, broad + N + 1] {
+            assert!(!mask.get(i));
+        }
 
         // This is new mono evidence, not a change to the existing CFA rule.
-        for frame in &mut frames { frame.cfa = CfaPattern::RGGB; }
+        for frame in &mut frames {
+            frame.cfa = CfaPattern::RGGB;
+        }
         assert!(!find_fixed_pattern(&refs(&frames), &noise()).0.get(hot));
     }
 
@@ -523,12 +589,26 @@ mod tests {
                 sr_core::samples::SampleData::U16(v) => v,
                 _ => unreachable!(),
             };
-            data[hot] = if f < 19 { 6000 + [3000, 6000, 12000, 30000][f % 4] } else { 65535 };
+            data[hot] = if f < 19 {
+                6000 + [3000, 6000, 12000, 30000][f % 4]
+            } else {
+                65535
+            };
         }
-        assert!(!find_fixed_pattern(&refs(&frames), &noise()).0.get(hot), "saturated samples are not positive evidence");
-        if let sr_core::samples::SampleData::U16(data) = &mut frames[19].samples.data { data[hot] = 36000; }
+        assert!(
+            !find_fixed_pattern(&refs(&frames), &noise()).0.get(hot),
+            "saturated samples are not positive evidence"
+        );
+        if let sr_core::samples::SampleData::U16(data) = &mut frames[19].samples.data {
+            data[hot] = 36000;
+        }
         assert!(find_fixed_pattern(&refs(&frames), &noise()).0.get(hot));
-        assert!(!find_fixed_pattern(&refs(&frames[..12]), &noise()).0.get(hot), "short bursts keep the conservative rule");
+        assert!(
+            !find_fixed_pattern(&refs(&frames[..12]), &noise())
+                .0
+                .get(hot),
+            "short bursts keep the conservative rule"
+        );
     }
 
     #[test]
@@ -548,7 +628,13 @@ mod tests {
         for &i in &hot {
             assert!(mask.get(i), "missed the hot site at {i}");
         }
-        assert_eq!(report.hot, hot.len(), "flagged {} sites, planted {}", report.hot, hot.len());
+        assert_eq!(
+            report.hot,
+            hot.len(),
+            "flagged {} sites, planted {}",
+            report.hot,
+            hot.len()
+        );
         assert_eq!(report.cold, 0);
 
         // No star, at any of its dithered positions, may be masked.
